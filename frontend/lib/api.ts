@@ -1,11 +1,7 @@
 function resolveApiBase() {
   const configured = (process.env.NEXT_PUBLIC_API_BASE_PATH ?? "").trim();
   if (!configured) {
-    return "/backend/api/v1";
-  }
-  // Guard against stale env values that bypass the Next rewrite proxy.
-  if (configured === "/api/v1" || configured.startsWith("/api/v1/")) {
-    return `/backend${configured}`;
+    return "/api/v1";
   }
   return configured;
 }
@@ -59,10 +55,10 @@ export function resolveMediaUrl(raw?: string | null) {
     return raw;
   }
   if (raw.startsWith("/media/")) {
-    return `/backend${raw}`;
+    return `${BACKEND_ORIGIN}${raw}`;
   }
   if (raw.startsWith("media/")) {
-    return `/backend/${raw}`;
+    return `${BACKEND_ORIGIN}/${raw}`;
   }
   if (raw.startsWith("/")) {
     return `${BACKEND_ORIGIN}${raw}`;
