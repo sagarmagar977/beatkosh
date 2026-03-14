@@ -412,18 +412,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
 
-  // Some routes in this repo still depend on the legacy auth context (read-only in this environment).
-  // Render a safe placeholder instead of crashing the app when those pages are visited.
-  if (["/orders", "/wallet", "/projects", "/verification"].includes(normalizedPath)) {
-    return (
-      <div className="mx-auto flex min-h-screen max-w-[520px] flex-col items-center justify-center gap-3 px-6 text-center text-white">
-        <p className="text-sm text-white/70">This page is temporarily unavailable.</p>
-        <Link href="/" className="text-sm font-medium text-[#8f5cff] underline underline-offset-4">
-          Go back home
-        </Link>
-      </div>
-    );
-  }
+  // Legacy-route guard removed now that auth context is unified.
 
   return (
     <div className="min-h-screen pb-28 text-white">
