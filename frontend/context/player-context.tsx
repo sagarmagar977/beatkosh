@@ -2,6 +2,8 @@
 
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
+import { useAuth } from "@/app/auth-context";
+
 export type PlayerTrack = {
   id: number;
   title: string;
@@ -20,25 +22,45 @@ type PlayerContextType = {
   currentTime: number;
   duration: number;
   volume: number;
+  canPlay: boolean;
   playTrack: (track: PlayerTrack) => Promise<void>;
   togglePlay: () => Promise<void>;
   seekTo: (time: number) => void;
   setVolumeLevel: (value: number) => void;
+  stopPlayback: (clearTrack?: boolean) => void;
 };
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
+
+function debugPlayer(event: string, detail?: unknown) {
+  if (process.env.NODE_ENV !== "development") {
+    return;
+  }
+  if (detail === undefined) {
+    console.log(`[player-debug] ${event}`);
+    return;
+  }
+  console.log(`[player-debug] ${event}`, detail);
+}
 
 function clamp(num: number, min: number, max: number) {
   return Math.max(min, Math.min(num, max));
 }
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
+  const { token, loading } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentTrack, setCurrentTrack] = useState<PlayerTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
+  const canPlay = Boolean(token);
+
+  useEffect(() => {
+    debugPlayer("provider-mounted");
+    return () => debugPlayer("provider-unmounted");
+  }, []);
 
   useEffect(() => {
     const audio = new Audio();
@@ -76,13 +98,54 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [volume]);
 
+  const stopPlayback = (clearTrack = false) => {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+
+    debugPlayer("stopPlayback", { clearTrack, hadTrack: Boolean(currentTrack) });
+    audio.pause();
+    audio.currentTime = 0;
+    setCurrentTime(0);
+    setIsPlaying(false);
+
+    if (clearTrack) {
+      audio.src = "";
+      setCurrentTrack(null);
+      setDuration(0);
+    }
+  };
+
+  useEffect(() => {
+    debugPlayer("canPlay-changed", { canPlay, hasToken: Boolean(token), loading });
+    if (loading) {
+      return;
+    }
+    if (canPlay) {
+      return;
+    }
+    stopPlayback(true);
+  }, [canPlay, loading]);
+
   const playTrack = async (track: PlayerTrack) => {
+    if (loading) {
+      debugPlayer("play-blocked-auth-loading", { trackId: track.id });
+      return;
+    }
+    if (!canPlay) {
+      debugPlayer("play-blocked-no-session", { trackId: track.id });
+      stopPlayback(true);
+      return;
+    }
+
     const audio = audioRef.current;
     if (!audio) {
       return;
     }
     const switchingTrack = currentTrack?.id !== track.id || audio.src !== track.audioUrl;
     if (switchingTrack) {
+      debugPlayer("playTrack-switch", { trackId: track.id, title: track.title });
       setCurrentTrack(track);
       setCurrentTime(0);
       setDuration(0);
@@ -97,6 +160,16 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   };
 
   const togglePlay = async () => {
+    if (loading) {
+      debugPlayer("toggle-blocked-auth-loading");
+      return;
+    }
+    if (!canPlay) {
+      debugPlayer("toggle-blocked-no-session");
+      stopPlayback(true);
+      return;
+    }
+
     const audio = audioRef.current;
     if (!audio || !currentTrack) {
       return;
@@ -136,10 +209,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     currentTime,
     duration,
     volume,
+    canPlay,
     playTrack,
     togglePlay,
     seekTo,
     setVolumeLevel,
+    stopPlayback,
   };
 
   return <PlayerContext.Provider value={value}>{children}</PlayerContext.Provider>;

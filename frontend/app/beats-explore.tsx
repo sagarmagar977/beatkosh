@@ -1,8 +1,10 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
+import { useAuth } from "@/app/auth-context";
 import { usePlayer } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 
@@ -44,13 +46,15 @@ export function BeatsExplorePage({
   endpoint: string;
   genreFilter?: string | null;
 }) {
+  const router = useRouter();
+  const { token } = useAuth();
   const [beats, setBeats] = useState<Beat[]>([]);
   const [query, setQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [licenseModalBeat, setLicenseModalBeat] = useState<Beat | null>(null);
   const [selectedLicense, setSelectedLicense] = useState<LicenseKey>("wav");
-  const { currentTrack, isPlaying, playTrack, togglePlay } = usePlayer();
+  const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
 
   useEffect(() => {
     const run = async () => {
@@ -129,6 +133,31 @@ export function BeatsExplorePage({
     }
   }, [licenseOptions, selectedLicense]);
 
+  const handlePlayAttempt = (beat: Beat, playbackUrl: string, isCurrent: boolean) => {
+    if (!token || !canPlay) {
+      router.push("/auth/login");
+      return;
+    }
+    if (!playbackUrl) {
+      return;
+    }
+    if (isCurrent) {
+      void togglePlay();
+      return;
+    }
+    void playTrack({
+      id: beat.id,
+      title: beat.title,
+      artist: beat.producer_username,
+      bpm: beat.bpm,
+      key: beat.key,
+      genre: beat.genre,
+      price: beat.base_price,
+      coverText: beat.title,
+      audioUrl: playbackUrl,
+    });
+  };
+
   return (
     <div className="space-y-6">
       <section className="surface-panel rounded-xl p-4">
@@ -165,6 +194,12 @@ export function BeatsExplorePage({
         </div>
       </section>
 
+      {!token ? (
+        <section className="surface-panel rounded-xl border border-[#8b28ff]/20 bg-[#141826] p-4 text-sm text-white/75">
+          Login is required to preview beats. Once you sign in, playback keeps working until your session expires or you log out.
+        </section>
+      ) : null}
+
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
 
       {!loading && !error ? (
@@ -180,27 +215,11 @@ export function BeatsExplorePage({
                 <div className="flex items-start gap-3">
                   <button
                     type="button"
-                    onClick={() => {
-                      if (!playbackUrl) return;
-                      if (isCurrent) {
-                        void togglePlay();
-                        return;
-                      }
-                      void playTrack({
-                        id: beat.id,
-                        title: beat.title,
-                        artist: beat.producer_username,
-                        bpm: beat.bpm,
-                        key: beat.key,
-                        genre: beat.genre,
-                        price: beat.base_price,
-                        coverText: beat.title,
-                        audioUrl: playbackUrl,
-                      });
-                    }}
+                    onClick={() => handlePlayAttempt(beat, playbackUrl, isCurrent)}
+                    title={!token ? "Login to preview beats" : playbackUrl ? "Play preview" : "Preview unavailable"}
                     className={`mt-1 h-10 w-10 rounded-full border text-sm ${
                       isCurrent && isPlaying ? "border-[#8b28ff] bg-[#8b28ff] text-white" : "border-white/20 bg-white/5 text-white/85"
-                    }`}
+                    } ${!token ? "cursor-pointer border-white/10 text-white/45" : ""}`}
                   >
                     {isCurrent && isPlaying ? "II" : ">"}
                   </button>

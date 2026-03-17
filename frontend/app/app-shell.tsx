@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
@@ -267,20 +267,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [startSellingError, setStartSellingError] = useState<string | null>(null);
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [allowDegradedSession, setAllowDegradedSession] = useState(false);
+  const [uploadPickerOpen, setUploadPickerOpen] = useState(false);
 
   const menuCloseTimeout = useRef<number | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
 
-  const storedToken = (() => {
-    try {
-      return localStorage.getItem("beatkosh_access_token");
-    } catch {
-      return null;
-    }
-  })();
-
-  const effectiveToken = token ?? storedToken;
-  const hasSession = Boolean(effectiveToken);
+  const hasSession = Boolean(token);
 
   const normalizedPath = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   const publicAuthRoutes = ["/auth/login", "/auth/register"];
@@ -307,6 +299,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setHoverMenuOpen(null);
         setNotificationsOpen(false);
         setUserMenuOpen(false);
+        setUploadPickerOpen(false);
       }
     };
 
@@ -468,12 +461,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               {startSellingBusy ? "Starting..." : "Start Selling"}
             </button>
           ) : (
-            <Link
-              href="/producer/upload-wizard"
+            <button
+              type="button"
+              onClick={() => setUploadPickerOpen(true)}
               className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-4 py-2 text-xs font-semibold text-white"
             >
               Upload
-            </Link>
+            </button>
           )}
 
           <button
@@ -617,11 +611,73 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </div>
       </header>
 
+      {uploadPickerOpen ? (
+        <div
+          className="fixed inset-0 z-[120] flex items-start justify-center bg-black/70 px-4 pt-28 backdrop-blur-sm"
+          onClick={() => setUploadPickerOpen(false)}
+        >
+          <section
+            className="w-full max-w-[860px] rounded-2xl border border-white/15 bg-[#181a24] p-5 shadow-[0_30px_90px_rgba(0,0,0,0.5)]"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="mb-4 flex items-center justify-between">
+              <h2 className="text-xl font-semibold text-white">Upload</h2>
+              <button
+                type="button"
+                onClick={() => setUploadPickerOpen(false)}
+                className="rounded-md border border-white/15 px-2 py-1 text-xs text-white/75 hover:bg-white/5"
+              >
+                Close
+              </button>
+            </div>
+            <div className="grid gap-4 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadPickerOpen(false);
+                  router.push("/producer/upload-wizard?flow=beat");
+                }}
+                className="rounded-2xl border border-white/20 bg-gradient-to-b from-white/8 to-white/[0.03] p-6 text-left transition hover:border-[#8b28ff]/60 hover:bg-[#8b28ff]/10"
+              >
+                <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-[#8b28ff] to-[#601dff] text-2xl">
+                  B
+                </div>
+                <h3 className="text-3xl font-semibold leading-none tracking-tight text-white">Upload Beat</h3>
+                <p className="mt-3 text-sm text-white/70">Get paid by selling beats to 100K+ artists worldwide.</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadPickerOpen(false);
+                  router.push("/producer/upload-wizard?flow=kit");
+                }}
+                className="rounded-2xl border border-white/20 bg-gradient-to-b from-white/8 to-white/[0.03] p-6 text-left transition hover:border-[#1f77ff]/60 hover:bg-[#1f77ff]/10"
+              >
+                <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-[#1f77ff] to-[#1550ff] text-2xl">
+                  K
+                </div>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-3xl font-semibold leading-none tracking-tight text-white">Upload Sound</h3>
+                  <span className="rounded-full border border-[#ffcf7a]/40 bg-[#ff9f1c]/18 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#ffd58c]">
+                    New
+                  </span>
+                </div>
+                <p className="mt-3 text-sm text-white/70">
+                  Get paid by selling sound kits to musicians across the globe.
+                </p>
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       <main className="mx-auto max-w-[1240px] px-4 py-6 lg:px-6">{children}</main>
 
       {!hideGlobalPlayer ? <GlobalPlayer /> : null}
     </div>
   );
 }
+
 
 
