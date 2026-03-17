@@ -163,7 +163,7 @@ export default function ProducerProfilePage() {
                     {beat.title}
                   </Link>
                   <p className="text-lg text-white/70">
-                    {producerName} {" • "} {beat.bpm} BPM {" • "} {beat.key || "N/A"} {" • "} {beat.genre}
+                    {producerName} {" | "} {beat.bpm} BPM {" | "} {beat.key || "N/A"} {" | "} {beat.genre}
                   </p>
                 </div>
               </div>
