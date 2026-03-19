@@ -2,6 +2,7 @@ from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -194,6 +195,7 @@ class ArtistProfileMeView(generics.RetrieveUpdateAPIView):
 class ProducerProfileMeView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ProducerProfileSerializer
+    parser_classes = (JSONParser, MultiPartParser, FormParser)
 
     def get_object(self):
         profile, _ = ProducerProfile.objects.get_or_create(user=self.request.user)

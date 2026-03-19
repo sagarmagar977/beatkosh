@@ -17,8 +17,8 @@ from beats.metadata_choices import (
     MOOD_VALUES,
     PUBLISHING_RIGHTS_VALUES,
 )
-from beats.models import Beat, BeatTag, BeatUploadDraft, LicenseType
-from beats.serializers import BeatSerializer, BeatUploadDraftSerializer, LicenseTypeSerializer
+from beats.models import Beat, BeatTag, BeatUploadDraft, FeaturedCoverPhoto, LicenseType
+from beats.serializers import BeatSerializer, BeatUploadDraftSerializer, FeaturedCoverPhotoSerializer, LicenseTypeSerializer
 from common.permissions import IsProducerOrReadOnly
 
 
@@ -59,7 +59,7 @@ def _resolve_default_license_types(draft: BeatUploadDraft):
 
 
 class BeatListCreateView(generics.ListCreateAPIView):
-    queryset = Beat.objects.select_related("producer", "producer__producer_profile").prefetch_related(
+    queryset = Beat.objects.select_related("producer", "producer__producer_profile", "featured_cover_photo").prefetch_related(
         "tags", "available_licenses", "likes"
     )
     serializer_class = BeatSerializer
@@ -92,17 +92,23 @@ class BeatListCreateView(generics.ListCreateAPIView):
 
 
 class BeatDetailView(generics.RetrieveAPIView):
-    queryset = Beat.objects.select_related("producer", "producer__producer_profile").prefetch_related(
+    queryset = Beat.objects.select_related("producer", "producer__producer_profile", "featured_cover_photo").prefetch_related(
         "tags", "available_licenses", "likes"
     )
     serializer_class = BeatSerializer
 
 
 class TrendingBeatsView(generics.ListAPIView):
-    queryset = Beat.objects.filter(is_active=True).select_related("producer", "producer__producer_profile").prefetch_related(
+    queryset = Beat.objects.filter(is_active=True).select_related("producer", "producer__producer_profile", "featured_cover_photo").prefetch_related(
         "available_licenses", "likes"
     )[:10]
     serializer_class = BeatSerializer
+
+
+class FeaturedCoverPhotoListView(generics.ListAPIView):
+    queryset = FeaturedCoverPhoto.objects.filter(is_active=True)
+    serializer_class = FeaturedCoverPhotoSerializer
+    permission_classes = [permissions.AllowAny]
 
 
 class LicenseTypeListCreateView(generics.ListCreateAPIView):
@@ -175,6 +181,7 @@ class BeatUploadDraftPublishView(APIView):
             bpm=draft.bpm,
             key=draft.key,
             mood=draft.mood,
+            mood_types=draft.mood_types,
             description=draft.description,
             base_price=draft.base_price,
             commercial_mode=draft.commercial_mode,
@@ -199,7 +206,11 @@ class BeatUploadDraftPublishView(APIView):
             preview_audio_obj=draft.preview_audio_obj,
             stems_file_obj=draft.stems_file_obj,
             cover_art_obj=draft.cover_art_obj,
+            featured_cover_photo=draft.featured_cover_photo,
         )
+        if not beat.cover_art_obj and beat.featured_cover_photo:
+            beat.cover_art_obj = beat.featured_cover_photo.image.name
+            beat.save(update_fields=["cover_art_obj"])
         if not beat.preview_audio_obj and beat.audio_file_obj:
             try:
                 generate_stream_preview_for_beat(beat)
@@ -252,5 +263,3 @@ class BeatMetadataOptionsView(APIView):
                 "license_periods": LICENSE_PERIOD_VALUES,
             }
         )
-
-

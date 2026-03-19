@@ -3,14 +3,16 @@ from django.urls import path
 from beats.views import (
     BeatDetailView,
     BeatListCreateView,
+    BeatMetadataOptionsView,
     BeatUploadDraftDetailView,
     BeatUploadDraftListCreateView,
     BeatUploadDraftPublishView,
-    BeatMetadataOptionsView,
     BeatUploadView,
+    FeaturedCoverPhotoListView,
     LicenseTypeListCreateView,
     TrendingBeatsView,
 )
+
 
 def both(route: str, view, name: str):
     route = route.strip("/")
@@ -21,6 +23,7 @@ def both(route: str, view, name: str):
         path(f"{route}/", view, name=name),
     ]
 
+
 urlpatterns = [
     *both("", BeatListCreateView.as_view(), "beat-list-create"),
     *both("upload", BeatUploadView.as_view(), "beat-upload"),
@@ -28,6 +31,7 @@ urlpatterns = [
     *both("upload-drafts/<int:pk>", BeatUploadDraftDetailView.as_view(), "beat-upload-draft-detail"),
     *both("upload-drafts/<int:draft_id>/publish", BeatUploadDraftPublishView.as_view(), "beat-upload-draft-publish"),
     *both("trending", TrendingBeatsView.as_view(), "beat-trending"),
+    *both("featured-covers", FeaturedCoverPhotoListView.as_view(), "featured-cover-photo-list"),
     *both("licenses", LicenseTypeListCreateView.as_view(), "license-list-create"),
     *both("metadata-options", BeatMetadataOptionsView.as_view(), "beat-metadata-options"),
     *both("<int:pk>", BeatDetailView.as_view(), "beat-detail"),

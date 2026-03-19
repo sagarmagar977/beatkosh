@@ -45,6 +45,7 @@ class ArtistProfile(models.Model):
 class ProducerProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="producer_profile")
     producer_name = models.CharField(max_length=120, blank=True)
+    avatar_obj = models.FileField(upload_to="profiles/producers/", blank=True, null=True)
     headline = models.CharField(max_length=160, blank=True)
     bio = models.TextField(blank=True)
     genres = models.CharField(max_length=255, blank=True)

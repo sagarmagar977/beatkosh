@@ -1,3 +1,5 @@
+import hashlib
+
 from django.db import models
 
 from accounts.models import User
@@ -34,6 +36,37 @@ class BeatTag(models.Model):
         return self.name
 
 
+class FeaturedCoverPhoto(models.Model):
+    title = models.CharField(max_length=120)
+    image = models.FileField(upload_to="beats/featured-covers/")
+    checksum = models.CharField(max_length=64, unique=True, blank=True, null=True, editable=False)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("title", "-created_at")
+
+    def _build_checksum(self) -> str:
+        if not self.image:
+            return ""
+        hasher = hashlib.sha256()
+        self.image.open("rb")
+        try:
+            for chunk in self.image.chunks():
+                hasher.update(chunk)
+        finally:
+            self.image.seek(0)
+        return hasher.hexdigest()
+
+    def save(self, *args, **kwargs):
+        if self.image:
+            self.checksum = self._build_checksum()
+        return super().save(*args, **kwargs)
+
+    def __str__(self) -> str:
+        return self.title
+
+
 class Beat(models.Model):
     PROTECTION_UNSET = "unset"
     PROTECTION_MONITORED = "monitored"
@@ -62,6 +95,7 @@ class Beat(models.Model):
     bpm = models.PositiveIntegerField()
     key = models.CharField(max_length=30, choices=KEY_CHOICES, blank=True)
     mood = models.CharField(max_length=80, choices=MOOD_CHOICES, blank=True)
+    mood_types = models.JSONField(default=list, blank=True)
     description = models.TextField(blank=True)
     base_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     commercial_mode = models.CharField(max_length=20, choices=COMMERCIAL_MODE_CHOICES, default="Presets")
@@ -86,6 +120,13 @@ class Beat(models.Model):
     preview_audio_obj = models.FileField(upload_to="beats/preview/", blank=True, null=True)
     stems_file_obj = models.FileField(upload_to="beats/stems/", blank=True, null=True)
     cover_art_obj = models.FileField(upload_to="beats/covers/", blank=True, null=True)
+    featured_cover_photo = models.ForeignKey(
+        FeaturedCoverPhoto,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="beats",
+    )
     cover_art = models.URLField(blank=True)
     preview_audio = models.URLField(blank=True)
     audio_file = models.URLField(blank=True)
@@ -118,6 +159,7 @@ class BeatUploadDraft(models.Model):
     bpm = models.PositiveIntegerField(null=True, blank=True)
     key = models.CharField(max_length=30, choices=KEY_CHOICES, blank=True)
     mood = models.CharField(max_length=80, choices=MOOD_CHOICES, blank=True)
+    mood_types = models.JSONField(default=list, blank=True)
     description = models.TextField(blank=True)
     base_price = models.DecimalField(max_digits=10, decimal_places=2, default=0)
     commercial_mode = models.CharField(max_length=20, choices=COMMERCIAL_MODE_CHOICES, default="Presets")
@@ -144,6 +186,13 @@ class BeatUploadDraft(models.Model):
     preview_audio_obj = models.FileField(upload_to="beats/drafts/preview/", blank=True, null=True)
     stems_file_obj = models.FileField(upload_to="beats/drafts/stems/", blank=True, null=True)
     cover_art_obj = models.FileField(upload_to="beats/drafts/covers/", blank=True, null=True)
+    featured_cover_photo = models.ForeignKey(
+        FeaturedCoverPhoto,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="drafts",
+    )
     current_step = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     published_beat = models.OneToOneField(Beat, null=True, blank=True, on_delete=models.SET_NULL)
@@ -155,4 +204,3 @@ class BeatUploadDraft(models.Model):
 
     def __str__(self) -> str:
         return f"Draft<{self.id}> {self.producer.username}"
-

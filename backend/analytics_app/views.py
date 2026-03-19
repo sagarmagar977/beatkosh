@@ -185,18 +185,31 @@ class RecommendedBeatsView(APIView):
             listened_ids = list(ListeningHistory.objects.filter(user=request.user).values_list("beat_id", flat=True)[:8])
             followed_producers = list(ProducerFollow.objects.filter(artist=request.user).values_list("producer_id", flat=True))
             genre_values = list(Beat.objects.filter(id__in=listened_ids).values_list("genre", flat=True))
-            mood_values = list(Beat.objects.filter(id__in=listened_ids).exclude(mood="").values_list("mood", flat=True))
+            listened_beats = Beat.objects.filter(id__in=listened_ids).only("mood", "mood_types")
+            mood_values = []
+            for item in listened_beats:
+                source = item.mood_types or ([item.mood] if item.mood else [])
+                for mood in source:
+                    if mood and mood not in mood_values:
+                        mood_values.append(mood)
             filtered = queryset.exclude(id__in=listened_ids)
             if genre_values:
                 filtered = filtered.filter(genre__in=genre_values)
                 based_on = "your listening history"
-            if mood_values:
-                filtered = filtered.filter(Q(mood__in=mood_values) | Q(mood=""))
             if followed_producers:
                 filtered = filtered.filter(Q(producer_id__in=followed_producers) | Q(genre__in=genre_values))
                 based_on = "followed producers and recent plays"
-            queryset = filtered
-        beats = list(queryset.order_by("-created_at")[:8])
+            if mood_values:
+                ranked_candidates = list(filtered.order_by("-created_at")[:40])
+                filtered_beats = []
+                for item in ranked_candidates:
+                    item_moods = set(item.mood_types or ([item.mood] if item.mood else []))
+                    if not item_moods or item_moods.intersection(mood_values):
+                        filtered_beats.append(item)
+                queryset = filtered_beats
+            else:
+                queryset = filtered
+        beats = list(queryset[:8] if isinstance(queryset, list) else queryset.order_by("-created_at")[:8])
         return Response(RecommendationFeedSerializer({"based_on": based_on, "beats": beats}).data)
 
 
@@ -217,6 +230,7 @@ class SimilarBeatsView(APIView):
         )
         beat_tags = set(beat.tags.values_list("name", flat=True))
         beat_instruments = set(beat.instrument_types or ([beat.instrument_type] if beat.instrument_type else []))
+        beat_moods = set(beat.mood_types or ([beat.mood] if beat.mood else []))
 
         def score(candidate: Beat):
             score_value = 0
@@ -224,9 +238,10 @@ class SimilarBeatsView(APIView):
             candidate_instruments = set(
                 candidate.instrument_types or ([candidate.instrument_type] if candidate.instrument_type else [])
             )
+            candidate_moods = set(candidate.mood_types or ([candidate.mood] if candidate.mood else []))
             if candidate.genre == beat.genre:
                 score_value += 40
-            if beat.mood and candidate.mood == beat.mood:
+            if beat_moods and beat_moods.intersection(candidate_moods):
                 score_value += 22
             if beat.beat_type and candidate.beat_type == beat.beat_type:
                 score_value += 18

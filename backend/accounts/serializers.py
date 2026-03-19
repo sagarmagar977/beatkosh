@@ -16,10 +16,14 @@ class ArtistProfileSerializer(serializers.ModelSerializer):
 
 
 class ProducerProfileSerializer(serializers.ModelSerializer):
+    avatar_upload = serializers.FileField(source="avatar_obj", required=False, allow_null=True, write_only=True)
+
     class Meta:
         model = ProducerProfile
         fields = (
             "producer_name",
+            "avatar_obj",
+            "avatar_upload",
             "headline",
             "bio",
             "genres",

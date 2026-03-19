@@ -27,6 +27,7 @@ type Beat = {
   genre: string;
   beat_type?: string | null;
   instrument_type?: string | null;
+  instrument_types?: string[] | null;
   bpm: number;
   key?: string | null;
   mood?: string | null;
@@ -418,5 +419,6 @@ export default function BeatDetailPage() {
     </div>
   );
 }
+
 
 

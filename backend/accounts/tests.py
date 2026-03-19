@@ -1,3 +1,7 @@
+import shutil
+from pathlib import Path
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.test import override_settings
 from django.urls import reverse
 from rest_framework import status
 from rest_framework.test import APITestCase
@@ -83,6 +87,25 @@ class AccountsFlowTests(APITestCase):
         )
         self.assertEqual(producer_response.status_code, status.HTTP_200_OK)
         self.assertTrue(producer_response.data["accepts_album_projects"])
+
+        temp_media_root = Path(__file__).resolve().parent.parent / "_test_media"
+        if temp_media_root.exists():
+            shutil.rmtree(temp_media_root, ignore_errors=True)
+        temp_media_root.mkdir(parents=True, exist_ok=True)
+        with override_settings(MEDIA_ROOT=str(temp_media_root)):
+            avatar_upload = SimpleUploadedFile("avatar.jpg", b"fake-image-bytes", content_type="image/jpeg")
+            avatar_response = self.client.patch(
+                reverse("producer-profile-me"),
+                {
+                    "producer_name": "Sagar Producer Updated",
+                    "avatar_upload": avatar_upload,
+                },
+                format="multipart",
+            )
+            self.assertEqual(avatar_response.status_code, status.HTTP_200_OK)
+            self.assertEqual(avatar_response.data["producer_name"], "Sagar Producer Updated")
+            self.assertIn("avatar_obj", avatar_response.data)
+        shutil.rmtree(temp_media_root, ignore_errors=True)
 
     def test_follow_and_like_flow(self):
         producer = User.objects.create_user(

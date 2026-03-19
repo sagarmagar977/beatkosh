@@ -1,11 +1,13 @@
-from django.urls import reverse
-from django.core.files.uploadedfile import SimpleUploadedFile
-from rest_framework import status
-from rest_framework.test import APITestCase
 from unittest.mock import patch
 
+from django.contrib.auth import get_user_model
+from django.core.files.uploadedfile import SimpleUploadedFile
+from django.urls import reverse
+from rest_framework import status
+from rest_framework.test import APITestCase
+
 from accounts.models import User
-from beats.models import LicenseType
+from beats.models import FeaturedCoverPhoto, LicenseType
 
 
 class BeatsApiTests(APITestCase):
@@ -90,7 +92,7 @@ class BeatsApiTests(APITestCase):
         self.assertEqual(publish_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(publish_response.data["title"], "Draft Song")
 
-    def test_upload_draft_persists_multiple_instruments(self):
+    def test_upload_draft_persists_multiple_instruments_and_moods(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
 
         create_draft_response = self.client.post(
@@ -101,6 +103,7 @@ class BeatsApiTests(APITestCase):
                 "bpm": 140,
                 "base_price": "25.00",
                 "instrument_types": ["Piano", "Synthesizer", "Flute"],
+                "mood_types": ["Dark", "Energetic", "Dark"],
                 "media": {"tags": ["ram", "boom bap"]},
                 "current_step": 2,
             },
@@ -109,6 +112,8 @@ class BeatsApiTests(APITestCase):
         self.assertEqual(create_draft_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(create_draft_response.data["instrument_types"], ["Piano", "Synthesizer", "Flute"])
         self.assertEqual(create_draft_response.data["instrument_type"], "Piano")
+        self.assertEqual(create_draft_response.data["mood_types"], ["Dark", "Energetic"])
+        self.assertEqual(create_draft_response.data["mood"], "Dark")
 
         draft_id = create_draft_response.data["id"]
         publish_response = self.client.post(
@@ -119,6 +124,8 @@ class BeatsApiTests(APITestCase):
         self.assertEqual(publish_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(publish_response.data["instrument_types"], ["Piano", "Synthesizer", "Flute"])
         self.assertEqual(publish_response.data["instrument_type"], "Piano")
+        self.assertEqual(publish_response.data["mood_types"], ["Dark", "Energetic"])
+        self.assertEqual(publish_response.data["mood"], "Dark")
         self.assertEqual(sorted(publish_response.data["tag_names"]), ["boom bap", "ram"])
 
     def test_upload_draft_media_step(self):
@@ -185,4 +192,60 @@ class BeatsApiTests(APITestCase):
         self.assertIn("moods", response.data)
         self.assertIn("keys", response.data)
 
+    def test_featured_cover_list_endpoint(self):
+        FeaturedCoverPhoto.objects.create(
+            title="Midnight Texture",
+            image=SimpleUploadedFile("cover.jpg", b"fake-image", content_type="image/jpeg"),
+            is_active=True,
+        )
+        response = self.client.get(reverse("featured-cover-photo-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["title"], "Midnight Texture")
 
+    def test_producer_can_create_beat_with_featured_cover(self):
+        featured_cover = FeaturedCoverPhoto.objects.create(
+            title="Silver Haze",
+            image=SimpleUploadedFile("featured.jpg", b"fake-image", content_type="image/jpeg"),
+            is_active=True,
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+        response = self.client.post(
+            reverse("beat-upload"),
+            {
+                "title": "Featured Cover Beat",
+                "genre": "Hip Hop",
+                "bpm": 98,
+                "base_price": "15.00",
+                "featured_cover_photo_id": featured_cover.id,
+            },
+            format="multipart",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertTrue(response.data["cover_art_obj"])
+        self.assertEqual(response.data["featured_cover_photo"], featured_cover.id)
+
+
+class FeaturedCoverPhotoAdminTests(APITestCase):
+    def setUp(self):
+        self.superuser = get_user_model().objects.create_superuser(
+            username="adminuser",
+            email="admin@example.com",
+            password="strong-pass-123",
+        )
+        self.client.force_login(self.superuser)
+
+    def test_bulk_upload_skips_duplicate_images(self):
+        image_one = SimpleUploadedFile("cover-one.jpg", b"same-image-bytes", content_type="image/jpeg")
+        image_two = SimpleUploadedFile("cover-two.jpg", b"same-image-bytes", content_type="image/jpeg")
+
+        response = self.client.post(
+            reverse("admin:beats_featuredcoverphoto_bulk_upload"),
+            {"files": [image_one, image_two], "is_active": "on"},
+            format="multipart",
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(FeaturedCoverPhoto.objects.count(), 1)
+        self.assertTrue(FeaturedCoverPhoto.objects.first().checksum)

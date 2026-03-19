@@ -1,6 +1,6 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ChangeEvent, type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertTriangle, ChevronDown, FileAudio, ImageIcon, Music2, Package, Search, X } from "lucide-react";
 
@@ -27,6 +27,7 @@ type BeatDraft = {
   bpm: number | null;
   key: string;
   mood: string;
+  mood_types: string[];
   description: string;
   base_price: string;
   commercial_mode: string;
@@ -52,6 +53,13 @@ type BeatDraft = {
   preview_audio_obj?: string | null;
   stems_file_obj?: string | null;
   cover_art_obj?: string | null;
+  featured_cover_photo?: number | null;
+};
+
+type FeaturedCoverPhoto = {
+  id: number;
+  title: string;
+  image_url: string;
 };
 
 type SoundKitDraft = {
@@ -109,6 +117,7 @@ type BeatMetadataOptions = {
 const beatSteps = ["Meta Data", "Media Upload", "License"];
 const kitSteps = ["Kit Type", "Metadata", "Upload Files", "Licensing"];
 const BEAT_WIZARD_SESSION_KEY = "producer-upload-wizard-beat-session";
+const KIT_WIZARD_SESSION_KEY = "producer-upload-wizard-kit-session";
 
 type UploadWizardPickerProps = {
   label: string;
@@ -196,11 +205,12 @@ function UploadWizardPicker({ label, options, selectedValues, onToggle, placehol
   );
 }
 
-function UploadAssetCard({ icon, title, status, fileName, href }: { icon: ReactNode; title: string; status: string; fileName?: string; href?: string }) {
+function UploadAssetCard({ icon, title, status, fileName, href, previewUrl, compactPreview = false }: { icon: ReactNode; title: string; status: string; fileName?: string; href?: string; previewUrl?: string | null; compactPreview?: boolean }) {
   if (!fileName && !href) return null;
   return (
     <div className="mt-3 rounded-lg border border-white/10 bg-[#17191f] px-3 py-3 text-sm text-white/75">
       <div className="flex items-start gap-3">
+        {previewUrl ? <img src={previewUrl} alt={title} className={`${compactPreview ? "h-12 w-12 rounded-lg" : "h-16 w-16 rounded-xl"} object-cover`} /> : null}
         <div className="mt-0.5 text-white/55">{icon}</div>
         <div className="min-w-0 flex-1">
           <p className="font-medium text-white/82">{title}</p>
@@ -213,10 +223,39 @@ function UploadAssetCard({ icon, title, status, fileName, href }: { icon: ReactN
   );
 }
 
+async function cropImageToSquare(file: File): Promise<File> {
+  const imageUrl = URL.createObjectURL(file);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const instance = new Image();
+      instance.onload = () => resolve(instance);
+      instance.onerror = () => reject(new Error("Could not load image for cropping"));
+      instance.src = imageUrl;
+    });
+
+    const size = Math.min(image.width, image.height);
+    const offsetX = (image.width - size) / 2;
+    const offsetY = (image.height - size) / 2;
+    const canvas = document.createElement("canvas");
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext("2d");
+    if (!context) return file;
+    context.drawImage(image, offsetX, offsetY, size, size, 0, 0, size, size);
+    const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, file.type || "image/jpeg", 0.92));
+    if (!blob) return file;
+    return new File([blob], file.name, { type: blob.type || file.type || "image/jpeg" });
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
 export default function ProducerUploadWizardPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { token, user } = useAuth();
+  const draftParam = searchParams.get("draft");
+  const freshParam = searchParams.get("fresh");
   const [flow, setFlow] = useState<"beat" | "kit">("beat");
   const [step, setStep] = useState(0);
   const [beatDraft, setBeatDraft] = useState<BeatDraft | null>(null);
@@ -233,7 +272,7 @@ export default function ProducerUploadWizardPage() {
   const [instrumentTypes, setInstrumentTypes] = useState<string[]>([]);
   const [bpm, setBpm] = useState("");
   const [keyText, setKeyText] = useState("");
-  const [mood, setMood] = useState("");
+  const [moodTypes, setMoodTypes] = useState<string[]>([]);
   const [description, setDescription] = useState("");
   const [basePrice, setBasePrice] = useState("0.00");
   const [beatMetadataOptions, setBeatMetadataOptions] = useState<BeatMetadataOptions>({
@@ -273,6 +312,9 @@ export default function ProducerUploadWizardPage() {
   const [wavFile, setWavFile] = useState<File | null>(null);
   const [stemsFile, setStemsFile] = useState<File | null>(null);
   const [coverArt, setCoverArt] = useState<File | null>(null);
+  const [coverPickerOpen, setCoverPickerOpen] = useState(false);
+  const [featuredCovers, setFeaturedCovers] = useState<FeaturedCoverPhoto[]>([]);
+  const [selectedFeaturedCoverId, setSelectedFeaturedCoverId] = useState<number | null>(null);
 
   const [kitType, setKitType] = useState("");
   const [kitTitle, setKitTitle] = useState("");
@@ -287,21 +329,30 @@ export default function ProducerUploadWizardPage() {
   const [kitArchiveFile, setKitArchiveFile] = useState<File | null>(null);
   const [kitPreviewAudio, setKitPreviewAudio] = useState<File | null>(null);
   const [kitCoverArt, setKitCoverArt] = useState<File | null>(null);
+  const customCoverInputRef = useRef<HTMLInputElement | null>(null);
+
+  const beatWizardSessionKey = useMemo(() => `${BEAT_WIZARD_SESSION_KEY}:${draftParam ?? "active"}`, [draftParam]);
+  const kitWizardSessionKey = useMemo(() => `${KIT_WIZARD_SESSION_KEY}:${draftParam ?? "active"}`, [draftParam]);
 
   const steps = flow === "beat" ? beatSteps : kitSteps;
+  const selectedFeaturedCover = useMemo(() => featuredCovers.find((item) => item.id === selectedFeaturedCoverId) ?? null, [featuredCovers, selectedFeaturedCoverId]);
+  const selectedFeaturedCoverUrl = useMemo(() => resolveMediaUrl(selectedFeaturedCover?.image_url), [selectedFeaturedCover]);
+  const customCoverPreviewUrl = useMemo(() => (coverArt ? URL.createObjectURL(coverArt) : null), [coverArt]);
   const producerModeReady = Boolean(user?.is_producer && user?.active_role === "producer");
   const beat22SelectClass = "h-12 w-full rounded-lg border border-white/10 bg-[#2f3138] px-4 text-sm text-white/85 outline-none";
   const beat22InvalidClass = "border-[#f2be43] shadow-[0_0_0_1px_rgba(242,190,67,0.25)]";
 
   const syncBeatFromDraft = (item: BeatDraft) => {
+    setStep(Math.max(0, Math.min((item.current_step ?? 1) - 1, beatSteps.length - 1)));
     setTitle(item.title ?? "");
     setBeatType(item.beat_type ?? "");
     setGenre(item.genre ?? "");
     setInstrumentTypes(item.instrument_types?.length ? item.instrument_types : item.instrument_type ? [item.instrument_type] : []);
     setBpm(item.bpm ? String(item.bpm) : "");
     setKeyText(item.key ?? "");
-    setMood(item.mood ?? "");
+    setMoodTypes(item.mood_types?.length ? item.mood_types : item.mood ? [item.mood] : []);
     setDescription(item.description ?? "");
+    setSelectedFeaturedCoverId(item.featured_cover_photo ?? null);
     setBeatTags((prev) => ((item.media?.tags ?? []).length ? item.media?.tags ?? [] : prev));
     setUploadCardState((prev) => ({ ...prev, ...(item.media?.upload_card_state ?? {}) }));
     setBasePrice(item.base_price ?? "0.00");
@@ -322,6 +373,7 @@ export default function ProducerUploadWizardPage() {
   };
 
   const syncKitFromDraft = (item: SoundKitDraft) => {
+    setStep(Math.max(0, Math.min((item.current_step ?? 1) - 1, kitSteps.length - 1)));
     setKitTitle(item.title ?? "");
     setKitType(item.kit_type ?? "");
     setKitDescription(item.description ?? "");
@@ -334,36 +386,213 @@ export default function ProducerUploadWizardPage() {
     setKitTags((item.tags ?? []).join(", "));
   };
 
+  const resetBeatWizardState = () => {
+    setBeatDraft(null);
+    setPublishedBeat(null);
+    setTitle("");
+    setBeatType("");
+    setGenre("");
+    setInstrumentTypes([]);
+    setBpm("");
+    setKeyText("");
+    setMoodTypes([]);
+    setDescription("");
+    setBasePrice("0.00");
+    setBeatTags([]);
+    setTagInput("");
+    setUploadCardState({});
+    setCommercialMode("Presets");
+    setEnableFreeMp3Download(false);
+    setNonExclusiveWavEnabled(true);
+    setNonExclusiveWavFee("0.00");
+    setNonExclusiveStemsEnabled(false);
+    setNonExclusiveStemsFee("0.00");
+    setNonExclusivePublishingRights("");
+    setNonExclusiveMasterRecordings("");
+    setNonExclusiveLicensePeriod("");
+    setExclusiveEnabled(false);
+    setExclusiveLicenseFee("0.00");
+    setExclusivePublishingRights("");
+    setExclusiveNegotiable(false);
+    setDeclarationAccepted(false);
+    setTaggedMp3(null);
+    setWavFile(null);
+    setStemsFile(null);
+    setCoverArt(null);
+    setSelectedFeaturedCoverId(null);
+    setCoverPickerOpen(false);
+    setMetaErrors({});
+    setMessage(null);
+    setError(null);
+    setStep(0);
+  };
+
+  const resetKitWizardState = () => {
+    setKitDraft(null);
+    setPublishedKit(null);
+    setKitType("");
+    setKitTitle("");
+    setKitDescription("");
+    setKitGenre("");
+    setKitMood("");
+    setKitBpmMin("");
+    setKitBpmMax("");
+    setKitBasePrice("0.00");
+    setKitReference("");
+    setKitTags("");
+    setKitArchiveFile(null);
+    setKitPreviewAudio(null);
+    setKitCoverArt(null);
+    setMessage(null);
+    setError(null);
+    setStep(0);
+  };
+
+  const applyBeatWizardSession = (payload: Partial<{
+    step: number;
+    title: string;
+    beatType: string;
+    genre: string;
+    instrumentTypes: string[];
+    bpm: string;
+    keyText: string;
+    moodTypes: string[];
+    description: string;
+    basePrice: string;
+    beatTags: string[];
+    tagInput: string;
+    uploadCardState: BeatDraftMedia["upload_card_state"];
+    commercialMode: string;
+    enableFreeMp3Download: boolean;
+    nonExclusiveWavEnabled: boolean;
+    nonExclusiveWavFee: string;
+    nonExclusiveStemsEnabled: boolean;
+    nonExclusiveStemsFee: string;
+    nonExclusivePublishingRights: string;
+    nonExclusiveMasterRecordings: string;
+    nonExclusiveLicensePeriod: string;
+    exclusiveEnabled: boolean;
+    exclusiveLicenseFee: string;
+    exclusivePublishingRights: string;
+    exclusiveNegotiable: boolean;
+    declarationAccepted: boolean;
+    selectedFeaturedCoverId: number | null;
+  }>) => {
+    if (typeof payload.step === "number") setStep(payload.step);
+    if (typeof payload.title === "string") setTitle(payload.title);
+    if (typeof payload.beatType === "string") setBeatType(payload.beatType);
+    if (typeof payload.genre === "string") setGenre(payload.genre);
+    if (Array.isArray(payload.instrumentTypes)) setInstrumentTypes(payload.instrumentTypes);
+    if (typeof payload.bpm === "string") setBpm(payload.bpm);
+    if (typeof payload.keyText === "string") setKeyText(payload.keyText);
+    if (Array.isArray(payload.moodTypes)) setMoodTypes(payload.moodTypes);
+    if (typeof payload.description === "string") setDescription(payload.description);
+    if (typeof payload.basePrice === "string") setBasePrice(payload.basePrice);
+    if (Array.isArray(payload.beatTags)) setBeatTags(payload.beatTags);
+    if (typeof payload.tagInput === "string") setTagInput(payload.tagInput);
+    if (payload.uploadCardState) setUploadCardState(payload.uploadCardState);
+    if (typeof payload.commercialMode === "string") setCommercialMode(payload.commercialMode);
+    if (typeof payload.enableFreeMp3Download === "boolean") setEnableFreeMp3Download(payload.enableFreeMp3Download);
+    if (typeof payload.nonExclusiveWavEnabled === "boolean") setNonExclusiveWavEnabled(payload.nonExclusiveWavEnabled);
+    if (typeof payload.nonExclusiveWavFee === "string") setNonExclusiveWavFee(payload.nonExclusiveWavFee);
+    if (typeof payload.nonExclusiveStemsEnabled === "boolean") setNonExclusiveStemsEnabled(payload.nonExclusiveStemsEnabled);
+    if (typeof payload.nonExclusiveStemsFee === "string") setNonExclusiveStemsFee(payload.nonExclusiveStemsFee);
+    if (typeof payload.nonExclusivePublishingRights === "string") setNonExclusivePublishingRights(payload.nonExclusivePublishingRights);
+    if (typeof payload.nonExclusiveMasterRecordings === "string") setNonExclusiveMasterRecordings(payload.nonExclusiveMasterRecordings);
+    if (typeof payload.nonExclusiveLicensePeriod === "string") setNonExclusiveLicensePeriod(payload.nonExclusiveLicensePeriod);
+    if (typeof payload.exclusiveEnabled === "boolean") setExclusiveEnabled(payload.exclusiveEnabled);
+    if (typeof payload.exclusiveLicenseFee === "string") setExclusiveLicenseFee(payload.exclusiveLicenseFee);
+    if (typeof payload.exclusivePublishingRights === "string") setExclusivePublishingRights(payload.exclusivePublishingRights);
+    if (typeof payload.exclusiveNegotiable === "boolean") setExclusiveNegotiable(payload.exclusiveNegotiable);
+    if (typeof payload.declarationAccepted === "boolean") setDeclarationAccepted(payload.declarationAccepted);
+    if (typeof payload.selectedFeaturedCoverId === "number" || payload.selectedFeaturedCoverId === null) setSelectedFeaturedCoverId(payload.selectedFeaturedCoverId ?? null);
+  };
+
+  const applyKitWizardSession = (payload: Partial<{
+    step: number;
+    kitType: string;
+    kitTitle: string;
+    kitDescription: string;
+    kitGenre: string;
+    kitMood: string;
+    kitBpmMin: string;
+    kitBpmMax: string;
+    kitBasePrice: string;
+    kitReference: string;
+    kitTags: string;
+  }>) => {
+    if (typeof payload.step === "number") setStep(payload.step);
+    if (typeof payload.kitType === "string") setKitType(payload.kitType);
+    if (typeof payload.kitTitle === "string") setKitTitle(payload.kitTitle);
+    if (typeof payload.kitDescription === "string") setKitDescription(payload.kitDescription);
+    if (typeof payload.kitGenre === "string") setKitGenre(payload.kitGenre);
+    if (typeof payload.kitMood === "string") setKitMood(payload.kitMood);
+    if (typeof payload.kitBpmMin === "string") setKitBpmMin(payload.kitBpmMin);
+    if (typeof payload.kitBpmMax === "string") setKitBpmMax(payload.kitBpmMax);
+    if (typeof payload.kitBasePrice === "string") setKitBasePrice(payload.kitBasePrice);
+    if (typeof payload.kitReference === "string") setKitReference(payload.kitReference);
+    if (typeof payload.kitTags === "string") setKitTags(payload.kitTags);
+  };
+
   useEffect(() => {
     const run = async () => {
       if (!token) {
         return;
       }
       try {
-        const [beatDrafts, soundKitDrafts, metadataOptions] = await Promise.all([
+        const [beatDrafts, soundKitDrafts, metadataOptions, featuredCoverData] = await Promise.all([
           apiRequest<BeatDraft[]>("/beats/upload-drafts/", { token }),
           apiRequest<SoundKitDraft[]>("/soundkits/upload-drafts/", { token }),
           apiRequest<BeatMetadataOptions>("/beats/metadata-options/"),
+          apiRequest<FeaturedCoverPhoto[]>("/beats/featured-covers/"),
         ]);
         setBeatMetadataOptions(metadataOptions);
+        setFeaturedCovers(featuredCoverData);
 
-        const activeBeatDraft = beatDrafts.find((item) => item.status === "draft") ?? null;
-        setBeatDraft(activeBeatDraft);
-        if (activeBeatDraft) {
-          syncBeatFromDraft(activeBeatDraft);
+        const flowParam = searchParams.get("flow");
+        const draftId = draftParam ? Number(draftParam) : null;
+        const isFreshStart = freshParam === "1" && !draftId;
+        if (isFreshStart) {
+          if (typeof window !== "undefined") {
+            window.sessionStorage.removeItem(beatWizardSessionKey);
+            window.sessionStorage.removeItem(kitWizardSessionKey);
+          }
+          if (flowParam === "kit") {
+            resetKitWizardState();
+          } else {
+            resetBeatWizardState();
+          }
+        }
+        const selectedBeatDraft = draftId ? beatDrafts.find((item) => item.id === draftId) ?? null : null;
+        setBeatDraft(selectedBeatDraft);
+        if (selectedBeatDraft && flowParam !== "kit") {
+          syncBeatFromDraft(selectedBeatDraft);
         }
 
-        const activeKitDraft = soundKitDrafts.find((item) => item.status === "draft") ?? null;
-        setKitDraft(activeKitDraft);
-        if (activeKitDraft) {
-          syncKitFromDraft(activeKitDraft);
+        const selectedKitDraft = draftId ? soundKitDrafts.find((item) => item.id === draftId) ?? null : null;
+        setKitDraft(selectedKitDraft);
+        if (selectedKitDraft && flowParam === "kit") {
+          syncKitFromDraft(selectedKitDraft);
+        }
+
+        if (typeof window !== "undefined") {
+          const beatRaw = window.sessionStorage.getItem(beatWizardSessionKey);
+          if (beatRaw && flowParam !== "kit" && !isFreshStart) {
+            applyBeatWizardSession(JSON.parse(beatRaw));
+          }
+          const kitRaw = window.sessionStorage.getItem(kitWizardSessionKey);
+          if (kitRaw && flowParam === "kit" && !isFreshStart) {
+            applyKitWizardSession(JSON.parse(kitRaw));
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load wizard");
+      } finally {
+        setSessionReady(true);
       }
     };
     void run();
-  }, [token]);
+  }, [beatWizardSessionKey, draftParam, freshParam, kitWizardSessionKey, token]);
 
   useEffect(() => {
     const flowParam = searchParams.get("flow");
@@ -438,7 +667,7 @@ export default function ProducerUploadWizardPage() {
     if (!beatType) next.beatType = "This field is required";
     if (!genre) next.genre = "This field is required";
     if (instrumentTypes.length === 0) next.instrumentType = "Select at least one instrument";
-    if (!mood) next.mood = "This field is required";
+    if (moodTypes.length === 0) next.mood = "Select at least one mood";
     if (!bpm.trim()) next.bpm = "This field is required";
     if (!keyText) next.keyText = "This field is required";
     const numericBasePrice = Number(basePrice);
@@ -454,7 +683,7 @@ export default function ProducerUploadWizardPage() {
   };
 
   const toggleMood = (value: string) => {
-    setMood((prev) => (prev === value ? "" : value));
+    setMoodTypes((prev) => (prev.includes(value) ? prev.filter((item) => item !== value) : [...prev, value]));
     setMetaErrors((prev) => ({ ...prev, mood: "" }));
   };
 
@@ -473,6 +702,26 @@ export default function ProducerUploadWizardPage() {
     setUploadCardState((prev) => ({ ...prev, [key]: file?.name ?? prev?.[key] ?? undefined }));
   };
 
+  const handleCustomCoverChange = async (event: ChangeEvent<HTMLInputElement>) => {
+    const rawFile = event.target.files?.[0] ?? null;
+    if (!rawFile) return;
+    const croppedFile = await cropImageToSquare(rawFile);
+    setCoverArt(croppedFile);
+    setSelectedFeaturedCoverId(null);
+    updateUploadCard("cover_art", croppedFile);
+    setCoverPickerOpen(false);
+    if (event.target) {
+      event.target.value = "";
+    }
+  };
+
+  const handleFeaturedCoverSelect = (cover: FeaturedCoverPhoto) => {
+    setSelectedFeaturedCoverId(cover.id);
+    setCoverArt(null);
+    setUploadCardState((prev) => ({ ...prev, cover_art: cover.title }));
+    setCoverPickerOpen(false);
+  };
+
   const buildBeatDraftMedia = () => JSON.stringify({
     ...(beatDraft?.media ?? {}),
     tags: beatTags,
@@ -481,7 +730,13 @@ export default function ProducerUploadWizardPage() {
 
   const clearBeatWizardSession = () => {
     if (typeof window !== "undefined") {
-      window.sessionStorage.removeItem(BEAT_WIZARD_SESSION_KEY);
+      window.sessionStorage.removeItem(beatWizardSessionKey);
+    }
+  };
+
+  const clearKitWizardSession = () => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.removeItem(kitWizardSessionKey);
     }
   };
 
@@ -497,7 +752,7 @@ export default function ProducerUploadWizardPage() {
     beatType ||
     genre ||
     instrumentTypes.length ||
-    mood ||
+    moodTypes.length ||
     bpm ||
     keyText ||
     description.trim() ||
@@ -513,27 +768,62 @@ export default function ProducerUploadWizardPage() {
   );
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const raw = window.sessionStorage.getItem(BEAT_WIZARD_SESSION_KEY);
-    if (!raw) {
-      setSessionReady(true);
-      return;
-    }
-    try {
-      const payload = JSON.parse(raw) as { beatTags?: string[]; uploadCardState?: BeatDraftMedia["upload_card_state"] };
-      if (payload.beatTags?.length) setBeatTags(payload.beatTags);
-      if (payload.uploadCardState) setUploadCardState(payload.uploadCardState);
-    } catch {
-      window.sessionStorage.removeItem(BEAT_WIZARD_SESSION_KEY);
-    } finally {
-      setSessionReady(true);
-    }
-  }, []);
+    if (typeof window === "undefined" || !sessionReady) return;
+    window.sessionStorage.setItem(beatWizardSessionKey, JSON.stringify({
+      step,
+      title,
+      beatType,
+      genre,
+      instrumentTypes,
+      bpm,
+      keyText,
+      moodTypes,
+      description,
+      basePrice,
+      beatTags,
+      tagInput,
+      uploadCardState,
+      commercialMode,
+      enableFreeMp3Download,
+      nonExclusiveWavEnabled,
+      nonExclusiveWavFee,
+      nonExclusiveStemsEnabled,
+      nonExclusiveStemsFee,
+      nonExclusivePublishingRights,
+      nonExclusiveMasterRecordings,
+      nonExclusiveLicensePeriod,
+      exclusiveEnabled,
+      exclusiveLicenseFee,
+      exclusivePublishingRights,
+      exclusiveNegotiable,
+      declarationAccepted,
+      selectedFeaturedCoverId,
+    }));
+  }, [
+    basePrice, beatTags, beatType, beatWizardSessionKey, bpm, commercialMode, declarationAccepted, description,
+    enableFreeMp3Download, exclusiveEnabled, exclusiveLicenseFee, exclusiveNegotiable, exclusivePublishingRights,
+    selectedFeaturedCoverId,
+    genre, instrumentTypes, keyText, moodTypes, nonExclusiveLicensePeriod, nonExclusiveMasterRecordings,
+    nonExclusivePublishingRights, nonExclusiveStemsEnabled, nonExclusiveStemsFee, nonExclusiveWavEnabled,
+    nonExclusiveWavFee, sessionReady, step, tagInput, title, uploadCardState,
+  ]);
 
   useEffect(() => {
     if (typeof window === "undefined" || !sessionReady) return;
-    window.sessionStorage.setItem(BEAT_WIZARD_SESSION_KEY, JSON.stringify({ beatTags, uploadCardState }));
-  }, [beatTags, sessionReady, uploadCardState]);
+    window.sessionStorage.setItem(kitWizardSessionKey, JSON.stringify({
+      step,
+      kitType,
+      kitTitle,
+      kitDescription,
+      kitGenre,
+      kitMood,
+      kitBpmMin,
+      kitBpmMax,
+      kitBasePrice,
+      kitReference,
+      kitTags,
+    }));
+  }, [kitBasePrice, kitBpmMax, kitBpmMin, kitDescription, kitGenre, kitMood, kitReference, kitTags, kitTitle, kitType, kitWizardSessionKey, sessionReady, step]);
 
   useEffect(() => {
     if (!hasBeatWizardProgress || typeof window === "undefined") return;
@@ -624,10 +914,11 @@ export default function ProducerUploadWizardPage() {
                   <UploadWizardPicker
                     label="Moods"
                     options={beatMetadataOptions.moods}
-                    selectedValues={mood ? [mood] : []}
+                    selectedValues={moodTypes}
                     onToggle={toggleMood}
                     placeholder="Moods"
                     error={metaErrors.mood}
+                    multiple
                   />
                   <div className="space-y-1">
                     <input
@@ -705,11 +996,12 @@ export default function ProducerUploadWizardPage() {
                       form.append("title", title);
                       form.append("beat_type", beatType);
                       form.append("genre", genre);
-                      instrumentTypes.forEach((item) => form.append("instrument_types", item));
+                      form.append("instrument_types", JSON.stringify(instrumentTypes));
                       form.append("instrument_type", instrumentTypes[0] ?? "");
                       form.append("bpm", bpm ? String(Number(bpm)) : "");
                       form.append("key", keyText);
-                      form.append("mood", mood);
+                      form.append("mood_types", JSON.stringify(moodTypes));
+                      form.append("mood", moodTypes[0] ?? "");
                       form.append("description", description);
                       form.append("media", buildBeatDraftMedia());
                       form.append("base_price", basePrice || "0.00");
@@ -729,7 +1021,7 @@ export default function ProducerUploadWizardPage() {
                 <div className="space-y-4">
                   <div className="rounded-lg border border-[#f2be43]/25 bg-[#2a2619] px-4 py-3 text-sm text-[#efd7a0]">
                     <p className="font-semibold text-[#ffd979]">Add Account & Bank Details</p>
-                    <p className="mt-0.5 text-[#d7c08b]">Saved draft uploads stay here across steps. If you refresh before uploading, the browser can remember the file name for this tab, but you may need to pick the file again.</p>
+                    <p className="mt-0.5 text-[#d7c08b]">Saved draft uploads stay here across steps. Cover art can come from a square-cropped custom upload or a featured cover from the backend.</p>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
@@ -738,9 +1030,10 @@ export default function ProducerUploadWizardPage() {
                       <UploadAssetCard icon={<Music2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Tagged MP3" status={taggedMp3 ? "Selected in this browser session" : beatDraft?.preview_audio_obj ? "Saved to draft" : uploadCardState?.tagged_mp3 ? "Remembered for this tab" : ""} fileName={taggedMp3?.name ?? uploadCardState?.tagged_mp3 ?? fileNameFromUrl(beatDraft?.preview_audio_obj)} href={resolveMediaUrl(beatDraft?.preview_audio_obj)} />
                     </label>
                     <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
-                      <p className="text-sm text-white/80">Upload cover art (.png, .jpg, .jpeg)</p>
-                      <input type="file" accept="image/png,image/jpg,image/jpeg" onChange={(e) => { const file = e.target.files?.[0] ?? null; setCoverArt(file); updateUploadCard("cover_art", file); }} className="mt-3 h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
-                      <UploadAssetCard icon={<ImageIcon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Cover Art" status={coverArt ? "Selected in this browser session" : beatDraft?.cover_art_obj ? "Saved to draft" : uploadCardState?.cover_art ? "Remembered for this tab" : ""} fileName={coverArt?.name ?? uploadCardState?.cover_art ?? fileNameFromUrl(beatDraft?.cover_art_obj)} href={resolveMediaUrl(beatDraft?.cover_art_obj)} />
+                      <p className="text-sm text-white/80">Cover art</p>
+                      <button type="button" onClick={() => setCoverPickerOpen(true)} className="mt-3 flex h-10 w-full items-center justify-center rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80 hover:bg-white/10">Choose cover art</button>
+                      <p className="mt-2 text-xs text-white/45">Custom uploads are auto-cropped to a 1:1 square. You can also pick any featured cover below.</p>
+                      <UploadAssetCard icon={<ImageIcon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Cover Art" status={coverArt ? "Custom cover cropped to square and ready" : selectedFeaturedCover ? "Featured cover selected" : beatDraft?.cover_art_obj ? "Saved to draft" : uploadCardState?.cover_art ? "Remembered for this tab" : ""} fileName={coverArt?.name ?? (selectedFeaturedCover ? "Featured cover" : uploadCardState?.cover_art ?? fileNameFromUrl(beatDraft?.cover_art_obj))} href={selectedFeaturedCoverUrl ?? resolveMediaUrl(beatDraft?.cover_art_obj)} previewUrl={customCoverPreviewUrl ?? selectedFeaturedCoverUrl ?? resolveMediaUrl(beatDraft?.cover_art_obj)} compactPreview />
                     </label>
                     <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
                       <p className="text-sm text-white/80">Upload untagged WAV file (.wav)</p>
@@ -771,6 +1064,7 @@ export default function ProducerUploadWizardPage() {
                           if (taggedMp3) form.append("preview_audio_upload", taggedMp3);
                           if (wavFile) form.append("audio_file_upload", wavFile);
                           if (coverArt) form.append("cover_art_upload", coverArt);
+                          if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
                           if (stemsFile) form.append("stems_file_upload", stemsFile);
                           await patchBeatDraft(form, true);
                           setMessage("Beat media saved as draft.");
@@ -789,6 +1083,7 @@ export default function ProducerUploadWizardPage() {
                           if (taggedMp3) form.append("preview_audio_upload", taggedMp3);
                           if (wavFile) form.append("audio_file_upload", wavFile);
                           if (coverArt) form.append("cover_art_upload", coverArt);
+                          if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
                           if (stemsFile) form.append("stems_file_upload", stemsFile);
                           await patchBeatDraft(form, true);
                           setMessage("Beat media uploaded.");
@@ -932,7 +1227,7 @@ export default function ProducerUploadWizardPage() {
                           // Re-send the core required fields to avoid publishing an incomplete draft.
                           form.append("title", title.trim());
                           form.append("genre", genre);
-                          instrumentTypes.forEach((item) => form.append("instrument_types", item));
+                          form.append("instrument_types", JSON.stringify(instrumentTypes));
                           form.append("instrument_type", instrumentTypes[0] ?? "");
                           form.append("bpm", String(numericBpm));
                           form.append("base_price", basePrice);
@@ -951,6 +1246,7 @@ export default function ProducerUploadWizardPage() {
                           form.append("exclusive_negotiable", exclusiveNegotiable ? "true" : "false");
                           form.append("declaration_accepted", declarationAccepted ? "true" : "false");
                           form.append("media", buildBeatDraftMedia());
+                          if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
                           await patchBeatDraft(form, true);
                           setMessage("License details saved as draft.");
                         })}
@@ -979,13 +1275,22 @@ export default function ProducerUploadWizardPage() {
                           form.append("exclusive_negotiable", exclusiveNegotiable ? "true" : "false");
                           form.append("declaration_accepted", declarationAccepted ? "true" : "false");
                           form.append("media", buildBeatDraftMedia());
+                          if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
                           await patchBeatDraft(form, true);
                           const draft = await ensureBeatDraft();
                           const beat = await apiRequest<PublishedBeat>(`/beats/upload-drafts/${draft.id}/publish/`, { method: "POST", token, body: {} });
+                          if (typeof window !== "undefined") {
+                            window.sessionStorage.setItem("beatkosh-global-flash", `Beat has been submitted: ${beat.title}`);
+                          }
                           clearBeatWizardSession();
                           setUploadCardState({});
+                          setSelectedFeaturedCoverId(null);
+                          setCoverArt(null);
+                          setTaggedMp3(null);
+                          setWavFile(null);
+                          setStemsFile(null);
                           setPublishedBeat(beat);
-                          setMessage(`Beat published: ${beat.title}`);
+                          router.push("/");
                         })}
                         disabled={!producerModeReady || busy || !declarationAccepted}
                         className="brand-btn px-4 py-2.5 text-sm disabled:opacity-60"
@@ -1091,6 +1396,7 @@ export default function ProducerUploadWizardPage() {
                       if (!token) return;
                       const draft = await ensureKitDraft();
                       const kit = await apiRequest<PublishedSoundKit>(`/soundkits/upload-drafts/${draft.id}/publish/`, { method: "POST", token, body: {} });
+                      clearKitWizardSession();
                       setPublishedKit(kit);
                       setMessage(`Sound kit published: ${kit.title}`);
                     })}
@@ -1106,14 +1412,72 @@ export default function ProducerUploadWizardPage() {
         </div>
       </section>
 
+      {coverPickerOpen ? (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
+          <div className="w-full max-w-[760px] rounded-[24px] border border-white/10 bg-[#202126] p-5 shadow-2xl shadow-black/40 max-h-[88vh] overflow-hidden">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.24em] text-white/45">Cover Art</p>
+                <h3 className="mt-2 text-xl font-semibold">Choose a square cover</h3>
+                <p className="mt-2 text-sm text-white/62">Upload your own art or pick one featured cover. Everything is cropped or displayed in 1:1.</p>
+              </div>
+              <button type="button" onClick={() => setCoverPickerOpen(false)} className="rounded-lg border border-white/12 px-3 py-2 text-sm text-white/72 hover:bg-white/5">Close</button>
+            </div>
+
+            <div className="mt-4 rounded-[20px] border border-white/10 bg-[#17191f] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-white/86">Upload custom cover</p>
+                  <p className="mt-1 text-xs text-white/45">Best for your own art. The image is cropped to a square automatically.</p>
+                </div>
+                <button type="button" onClick={() => customCoverInputRef.current?.click()} className="brand-btn px-4 py-2 text-sm">Upload Custom Cover</button>
+                <input ref={customCoverInputRef} type="file" accept="image/png,image/jpg,image/jpeg,image/webp" onChange={(event) => void handleCustomCoverChange(event)} className="hidden" />
+              </div>
+              {customCoverPreviewUrl ? (
+                <div className="mt-4 flex items-center gap-4 rounded-2xl border border-white/10 bg-black/10 p-4">
+                  <img src={customCoverPreviewUrl} alt="Custom cover preview" className="h-24 w-24 rounded-2xl object-cover" />
+                  <div>
+                    <p className="text-sm font-medium text-white/84">{coverArt?.name}</p>
+                    <p className="mt-1 text-xs text-white/45">Square crop ready for upload</p>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+
+            <div className="mt-4 min-h-0 flex-1 overflow-hidden">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-medium text-white/86">Featured covers</p>
+                  <p className="mt-1 text-xs text-white/45">Choose from the featured cover photos already available in the backend.</p>
+                </div>
+              </div>
+              <div className="mt-4 max-h-[42vh] overflow-y-auto pr-1">
+                <div className="grid gap-3 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                  {featuredCovers.map((cover) => {
+                    const active = selectedFeaturedCoverId === cover.id;
+                    const coverUrl = resolveMediaUrl(cover.image_url);
+                    return (
+                      <button key={cover.id} type="button" onClick={() => handleFeaturedCoverSelect(cover)} className={`aspect-square overflow-hidden rounded-[18px] border transition ${active ? "border-[#8b28ff] ring-2 ring-[#8b28ff]/50" : "border-white/10 hover:border-white/25"}`}>
+                        {coverUrl ? <img src={coverUrl} alt="Featured cover" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center bg-white/5 text-xs text-white/40">No image</div>}
+                      </button>
+                    );
+                  })}
+                  {featuredCovers.length === 0 ? <p className="col-span-full text-sm text-white/55">No featured covers are available yet.</p> : null}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : null}
+
       {leaveModalOpen ? (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
           <div className="w-full max-w-[520px] rounded-[28px] border border-white/10 bg-[#202126] p-8 text-center shadow-2xl shadow-black/40">
             <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/8 text-white/85">
               <AlertTriangle className="h-8 w-8" strokeWidth={1.8} aria-hidden="true" />
             </div>
-            <h3 className="mt-6 text-2xl font-semibold">Leave this upload?</h3>
-            <p className="mt-3 text-sm text-white/62">Unsaved local selections may be lost. Saved draft files and metadata will still stay on the draft.</p>
+            <h3 className="mt-6 text-2xl font-semibold">Are you sure you want to leave?</h3>
+            <p className="mt-3 text-sm text-white/62">Unsaved changes in this upload card will be lost. Saved drafts will remain available in Media Uploads.</p>
             <div className="mt-6 flex items-center justify-center gap-3">
               <button type="button" onClick={() => {
                 setLeaveModalOpen(false);
@@ -1144,6 +1508,7 @@ export default function ProducerUploadWizardPage() {
     </div>
   );
 }
+
 
 
 

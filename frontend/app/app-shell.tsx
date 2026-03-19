@@ -54,6 +54,8 @@ type MenuItem = {
 };
 
 type NavLink = { href: string; label: string; menu?: MenuItem[] };
+const GLOBAL_FLASH_SESSION_KEY = "beatkosh-global-flash";
+
 type AppNotification = {
   id: number;
   notification_type: string;
@@ -126,6 +128,7 @@ const browseMenu: MenuItem[] = [
   { label: "Play History", href: "/projects", icon: "history" },
   { label: "Download History", href: "/wallet", icon: "download" },
   { label: "Studio", href: "/producer/studio", icon: "studio" },
+  { label: "Media Uploads", href: "/producer/media-uploads", icon: "studio" },
   { label: "Negotiations", href: "/projects", icon: "negotiation" },
   { label: "Follower Drops", href: "/activity", icon: "drop" },
   { label: "Followed By You", href: "/activity", icon: "group" },
@@ -162,12 +165,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [logoutBusy, setLogoutBusy] = useState(false);
   const [allowDegradedSession, setAllowDegradedSession] = useState(false);
   const [uploadPickerOpen, setUploadPickerOpen] = useState(false);
+  const [globalFlash, setGlobalFlash] = useState<string | null>(null);
 
   const menuCloseTimeout = useRef<number | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
 
   const hasSession = Boolean(token);
-  const profileHref = user?.is_producer ? `/producers/${user.id}` : null;
+  const profileHref = user?.is_producer ? "/producer/profile" : null;
 
   const normalizedPath = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   const publicAuthRoutes = ["/auth/login", "/auth/register"];
@@ -216,6 +220,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("pointerdown", onPointerDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    const raw = window.sessionStorage.getItem(GLOBAL_FLASH_SESSION_KEY);
+    if (!raw) {
+      return;
+    }
+    setGlobalFlash(raw);
+    window.sessionStorage.removeItem(GLOBAL_FLASH_SESSION_KEY);
+    const timer = window.setTimeout(() => setGlobalFlash(null), 3200);
+    return () => window.clearTimeout(timer);
+  }, [pathname]);
 
   useEffect(() => {
     if (!token || !notificationsOpen) {
@@ -588,12 +606,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 Close
               </button>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 md:grid-cols-3">
               <button
                 type="button"
                 onClick={() => {
                   setUploadPickerOpen(false);
-                  router.push("/producer/upload-wizard?flow=beat");
+                  router.push("/producer/upload-wizard?flow=beat&fresh=1");
                 }}
                 className="rounded-2xl border border-white/20 bg-gradient-to-b from-white/8 to-white/[0.03] p-6 text-left transition hover:border-[#8b28ff]/60 hover:bg-[#8b28ff]/10"
               >
@@ -608,7 +626,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => {
                   setUploadPickerOpen(false);
-                  router.push("/producer/upload-wizard?flow=kit");
+                  router.push("/producer/upload-wizard?flow=kit&fresh=1");
                 }}
                 className="rounded-2xl border border-white/20 bg-gradient-to-b from-white/8 to-white/[0.03] p-6 text-left transition hover:border-[#1f77ff]/60 hover:bg-[#1f77ff]/10"
               >
@@ -625,8 +643,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   Get paid by selling sound kits to musicians across the globe.
                 </p>
               </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setUploadPickerOpen(false);
+                  router.push("/producer/media-uploads");
+                }}
+                className="rounded-2xl border border-white/20 bg-gradient-to-b from-white/8 to-white/[0.03] p-6 text-left transition hover:border-[#f6b067]/60 hover:bg-[#f6b067]/10"
+              >
+                <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-[#f6b067] to-[#ff8a38] text-2xl text-[#20150e]">M</div>
+                <h3 className="text-3xl font-semibold leading-none tracking-tight text-white">Media Uploads</h3>
+                <p className="mt-3 text-sm text-white/70">Open saved drafts, continue editing, or remove old uploads.</p>
+              </button>
             </div>
           </section>
+        </div>
+      ) : null}
+
+      {globalFlash ? (
+        <div className="pointer-events-none fixed left-1/2 top-24 z-[160] w-full max-w-[720px] -translate-x-1/2 px-4">
+          <div className="rounded-[24px] border border-emerald-300/20 bg-[linear-gradient(135deg,rgba(10,24,20,0.96),rgba(20,56,44,0.96))] px-6 py-5 text-center shadow-[0_30px_90px_rgba(0,0,0,0.45)] backdrop-blur-xl">
+            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-emerald-200/75">Upload Complete</p>
+            <p className="mt-2 text-2xl font-semibold text-white">{globalFlash}</p>
+          </div>
         </div>
       ) : null}
 

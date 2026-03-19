@@ -1,11 +1,11 @@
 "use client";
 
-import { Pause, Play, ShoppingCart, X } from "lucide-react";
-import Link from "next/link";
+import { ShoppingCart, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { BeatListRow } from "@/components/beat-list-row";
 import { useCart } from "@/context/cart-context";
 import { usePlayer } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
@@ -51,6 +51,7 @@ type Beat = {
   non_exclusive_license_period?: string;
   exclusive_publishing_rights?: string;
   licenses?: License[];
+  tag_names?: string[];
 };
 
 const filters = ["Beat Type", "Moods", "Tempo", "Genre", "Keys", "Instruments", "Price"];
@@ -68,6 +69,7 @@ export default function BeatsPage() {
   const [licenseCatalog, setLicenseCatalog] = useState<License[]>([]);
   const [selectedLicenseId, setSelectedLicenseId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [cartBeatIds, setCartBeatIds] = useState<number[]>([]);
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
 
   useEffect(() => {
@@ -98,7 +100,8 @@ export default function BeatsPage() {
         beat.title.toLowerCase().includes(q) ||
         beat.producer_username.toLowerCase().includes(q) ||
         beat.genre.toLowerCase().includes(q) ||
-        (beat.mood ?? "").toLowerCase().includes(q)
+        (beat.mood ?? "").toLowerCase().includes(q) ||
+        (beat.tag_names ?? []).some((tag) => tag.toLowerCase().includes(q))
       );
     });
   }, [beats, query]);
@@ -153,7 +156,7 @@ export default function BeatsPage() {
 
   const notify = (text: string) => {
     setMessage(text);
-    window.setTimeout(() => setMessage(null), 2200);
+    window.setTimeout(() => setMessage(null), 2400);
   };
 
   const handlePlayAttempt = (beat: Beat, playbackUrl: string, isCurrent: boolean) => {
@@ -203,8 +206,9 @@ export default function BeatsPage() {
           license_id: selectedLicenseId,
         },
       });
+      setCartBeatIds((current) => (current.includes(licenseModalBeat.id) ? current : [...current, licenseModalBeat.id]));
       await refreshCart();
-      notify("Beat added to cart successfully.");
+      notify("Added to cart.");
       setLicenseModalBeat(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to add beat to cart");
@@ -213,16 +217,19 @@ export default function BeatsPage() {
 
   return (
     <div className="space-y-6 pb-24">
-      <section className="surface-panel rounded-xl p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h1 className="text-2xl font-semibold">Explore Beats</h1>
-          <button type="button" className="chip active">Refresh</button>
+      <section className="surface-panel rounded-[30px] p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="eyebrow">Marketplace</p>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight">Explore Beats</h1>
+          </div>
+          <button type="button" className="chip active">Fresh list</button>
         </div>
         <div className="mt-4 flex flex-wrap gap-2">
           {topFilters.map((item, idx) => <button key={item} type="button" className={`chip ${idx === 0 ? "active" : ""}`}>{item}</button>)}
         </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-[220px_1fr_auto]">
-          <input className="h-10 rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80 outline-none placeholder:text-white/35" placeholder="Search beats" value={query} onChange={(event) => setQuery(event.target.value)} />
+        <div className="mt-5 grid gap-3 xl:grid-cols-[280px_1fr_auto]">
+          <input className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white/80 outline-none placeholder:text-white/35" placeholder="Search beats, producers, moods, tags" value={query} onChange={(event) => setQuery(event.target.value)} />
           <div className="flex flex-wrap gap-2">
             {filters.map((item) => <button key={item} type="button" className="chip">{item}</button>)}
           </div>
@@ -230,41 +237,37 @@ export default function BeatsPage() {
         </div>
       </section>
 
-      {!token ? <section className="surface-panel rounded-xl border border-[#8b28ff]/20 bg-[#141826] p-4 text-sm text-white/75">Login is required to preview beats and use the cart.</section> : null}
+      {!token ? <section className="surface-panel rounded-[26px] border border-[#8b28ff]/20 bg-[#141826] p-4 text-sm text-white/75">Login is required to preview beats, save playlists, and use the cart.</section> : null}
 
-      <section className="surface-panel rounded-xl p-4">
+      <section className="space-y-3">
         {loading ? <p className="text-sm text-white/60">Loading beats...</p> : null}
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         {!loading && !error ? (
-          <div className="space-y-2">
+          <>
             {filtered.map((beat) => {
               const playbackUrl = resolveMediaUrl(beat.preview_audio_obj || beat.audio_file_obj);
               const isCurrent = currentTrack?.id === beat.id;
               return (
-                <article key={beat.id} className="grid grid-cols-1 gap-3 rounded-lg border border-white/10 bg-[#131625] px-3 py-3 lg:grid-cols-[1.3fr_auto_auto]">
-                  <div className="flex items-start gap-3">
-                    <button type="button" onClick={() => handlePlayAttempt(beat, playbackUrl, isCurrent)} title={!token ? "Login to preview beats" : playbackUrl ? "Play preview" : "Preview unavailable"} className={`mt-1 inline-flex h-10 w-10 items-center justify-center rounded-full border text-sm ${isCurrent && isPlaying ? "border-[#8b28ff] bg-[#8b28ff] text-white" : "border-white/20 bg-white/5 text-white/85"} ${!token ? "cursor-pointer border-white/10 text-white/45" : ""}`}>
-                      {isCurrent && isPlaying ? <Pause className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" /> : <Play className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />}
-                    </button>
-                    <div>
-                      <p className="font-semibold">{beat.title}</p>
-                      <p className="text-xs text-white/55"><Link href={`/producers/${beat.producer}`} className="underline-offset-2 hover:underline">{beat.producer_username}</Link> | {beat.bpm} BPM | {beat.key || "N/A"} | {beat.genre}</p>
-                      <div className="mt-2"><Link href={`/beats/${beat.id}`} className="text-xs text-[#b78cff] hover:underline">Open track details</Link></div>
-                    </div>
-                  </div>
-                  <div className="hidden items-center gap-1 md:flex">
-                    {beat.mood ? <span className="rounded-full border border-white/10 px-2 py-1 text-[10px] text-white/65">{beat.mood}</span> : null}
-                    <span className="rounded-full border border-white/10 px-2 py-1 text-[10px] text-white/65">{beat.genre}</span>
-                  </div>
-                  <button type="button" onClick={() => { setLicenseModalBeat(beat); setSelectedLicenseId(beat.licenses?.[0]?.id ?? null); }} className="brand-btn inline-flex h-fit items-center gap-2 px-3 py-2 text-xs">
-                    <ShoppingCart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-                    Rs {beat.base_price}
-                  </button>
-                </article>
+                <BeatListRow
+                  key={beat.id}
+                  beat={beat}
+                  artistHref={`/producers/${beat.producer}`}
+                  detailHref={`/beats/${beat.id}`}
+                  isCurrent={isCurrent}
+                  isPlaying={isCurrent && isPlaying}
+                  onPlay={() => handlePlayAttempt(beat, playbackUrl, isCurrent)}
+                  actionLabel={cartBeatIds.includes(beat.id) ? "Added to cart" : `Rs ${beat.base_price}`}
+                  actionState={cartBeatIds.includes(beat.id) ? "success" : "default"}
+                  onAction={() => {
+                    setLicenseModalBeat(beat);
+                    setSelectedLicenseId(beat.licenses?.[0]?.id ?? null);
+                  }}
+                  message={notify}
+                />
               );
             })}
             {filtered.length === 0 ? <p className="text-sm text-white/60">No beats found.</p> : null}
-          </div>
+          </>
         ) : null}
       </section>
 
@@ -273,7 +276,7 @@ export default function BeatsPage() {
           <section className="w-full max-w-[980px] rounded-2xl border border-white/15 bg-[#1d1f2a] p-5" onClick={(e) => e.stopPropagation()}>
             <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
               <div>
-                <div className="mb-4 flex items-start justify-between"><div><h3 className="text-4xl font-semibold">Select License Type</h3><p className="text-white/65">Understand Licensing here!</p></div></div>
+                <div className="mb-4 flex items-start justify-between"><div><h3 className="text-4xl font-semibold">Select License Type</h3><p className="text-white/65">Choose how you want to license this beat.</p></div></div>
                 <div className="overflow-hidden rounded-xl border border-white/10">
                   {licenseOptions.map((item) => (
                     <button key={item.id} type="button" onClick={() => setSelectedLicenseId(item.id)} className={`block w-full border-b border-white/10 px-4 py-3 text-left text-2xl ${selectedLicenseId === item.id ? "bg-[#8b28ff] text-white" : "bg-transparent text-white/90"}`}>
@@ -310,7 +313,7 @@ export default function BeatsPage() {
         </div>
       ) : null}
 
-      {message ? <div className="fixed bottom-24 right-6 z-[140] rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-200 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">{message}</div> : null}
+      {message ? <div className="fixed right-6 top-24 z-[150] rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">{message}</div> : null}
     </div>
   );
 }

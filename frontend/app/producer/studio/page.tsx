@@ -1,12 +1,13 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useState } from "react";
+import Image from "next/image";
 import Link from "next/link";
 
 import { FeatureTrackList } from "@/components/feature-track-list";
 import { ReferenceScreenGrid } from "@/components/reference-screen-grid";
 import { useAuth } from "@/app/auth-context";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, resolveMediaUrl } from "@/lib/api";
 import { Beat22Summary, fetchBeat22Summary } from "@/lib/reference";
 
 type License = { id: number; name: string; includes_wav?: boolean; includes_stems?: boolean; is_exclusive?: boolean };
@@ -24,11 +25,17 @@ type DashboardSummary = {
   skip_events: number;
   hiring_inquiry_count: number;
 };
+type FeaturedCoverPhoto = {
+  id: number;
+  title: string;
+  image_url: string;
+};
 
 export default function ProducerStudioPage() {
   const { token, user } = useAuth();
   const [summary, setSummary] = useState<Beat22Summary | null>(null);
   const [licenses, setLicenses] = useState<License[]>([]);
+  const [featuredCovers, setFeaturedCovers] = useState<FeaturedCoverPhoto[]>([]);
   const [wallet, setWallet] = useState<Wallet | null>(null);
   const [onboarding, setOnboarding] = useState<Onboarding | null>(null);
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
@@ -38,17 +45,22 @@ export default function ProducerStudioPage() {
   const [genre, setGenre] = useState("HipHop");
   const [bpm, setBpm] = useState("90");
   const [basePrice, setBasePrice] = useState("29.00");
+  const [customCover, setCustomCover] = useState<File | null>(null);
+  const [selectedFeaturedCoverId, setSelectedFeaturedCoverId] = useState<number | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
     const run = async () => {
       try {
-        const [referenceData, licenseData] = await Promise.all([
+        const [referenceData, licenseData, featuredCoverData] = await Promise.all([
           fetchBeat22Summary(),
           apiRequest<License[]>("/beats/licenses/"),
+          apiRequest<FeaturedCoverPhoto[]>("/beats/featured-covers/"),
         ]);
         setSummary(referenceData);
         setLicenses(licenseData);
+        setFeaturedCovers(featuredCoverData);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load producer studio");
       }
@@ -75,27 +87,48 @@ export default function ProducerStudioPage() {
     void run();
   }, [token, user?.id]);
 
+  const handleCustomCoverChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setCustomCover(file);
+    if (file) {
+      setSelectedFeaturedCoverId(null);
+    }
+  };
+
   const onUpload = async (e: FormEvent) => {
     e.preventDefault();
     if (!token) return;
     setError(null);
     setSuccess(null);
+    setUploading(true);
     try {
+      const form = new FormData();
+      form.append("title", title);
+      form.append("genre", genre);
+      form.append("bpm", String(Number(bpm)));
+      form.append("base_price", basePrice);
+      licenses.slice(0, 2).forEach((license) => form.append("license_ids", String(license.id)));
+      if (customCover) {
+        form.append("cover_art_upload", customCover);
+      }
+      if (selectedFeaturedCoverId) {
+        form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
+      }
+
       await apiRequest("/beats/upload/", {
         method: "POST",
         token,
-        body: {
-          title,
-          genre,
-          bpm: Number(bpm),
-          base_price: basePrice,
-          available_licenses: licenses.slice(0, 2).map((license) => license.id),
-        },
+        body: form,
+        isFormData: true,
       });
       setTitle("");
-      setSuccess("Beat uploaded via producer studio flow.");
+      setCustomCover(null);
+      setSelectedFeaturedCoverId(null);
+      setSuccess("Beat uploaded with your selected cover.");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Upload failed");
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -109,7 +142,7 @@ export default function ProducerStudioPage() {
           and custom-single / album-production control room.
         </p>
         <div className="mt-4 flex flex-wrap gap-2">
-          <Link href="/producer/upload-wizard" className="rounded-full border border-white/12 px-4 py-2.5 text-sm text-white/84 hover:bg-white/5">
+          <Link href="/producer/upload-wizard?flow=beat&fresh=1" className="rounded-full border border-white/12 px-4 py-2.5 text-sm text-white/84 hover:bg-white/5">
             Open upload wizard
           </Link>
           <Link href="/producer/settings" className="rounded-full border border-white/12 px-4 py-2.5 text-sm text-white/84 hover:bg-white/5">
@@ -191,12 +224,62 @@ export default function ProducerStudioPage() {
       <section className="grid gap-6 xl:grid-cols-[1fr_420px]">
         <section className="surface-panel rounded-[30px] p-6">
           <p className="eyebrow">Upload now</p>
-          <h2 className="mt-2 text-2xl font-semibold">Keep the fast upload flow, publish into a stronger storefront</h2>
-          <form onSubmit={onUpload} className="mt-4 grid gap-3 md:grid-cols-2">
-            <input className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35 md:col-span-2" placeholder="Beat title" value={title} onChange={(e) => setTitle(e.target.value)} required />
-            <input className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35" placeholder="Genre" value={genre} onChange={(e) => setGenre(e.target.value)} required />
-            <input className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35" placeholder="BPM" value={bpm} onChange={(e) => setBpm(e.target.value)} required />
-            <button className="rounded-full bg-[#77d6c8] px-4 py-3 font-medium text-[#0d1618] md:col-span-2">Upload beat</button>
+          <h2 className="mt-2 text-2xl font-semibold">Upload with your own cover or pick from featured cover photos</h2>
+          <form onSubmit={onUpload} className="mt-4 space-y-4">
+            <div className="grid gap-3 md:grid-cols-2">
+              <input className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35 md:col-span-2" placeholder="Beat title" value={title} onChange={(e) => setTitle(e.target.value)} required />
+              <input className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35" placeholder="Genre" value={genre} onChange={(e) => setGenre(e.target.value)} required />
+              <input className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35" placeholder="BPM" value={bpm} onChange={(e) => setBpm(e.target.value)} required />
+              <input className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35 md:col-span-2" placeholder="Base price" value={basePrice} onChange={(e) => setBasePrice(e.target.value)} required />
+            </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-[#0d1218] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white/90">Upload cover</p>
+                  <p className="text-xs text-white/55">Choose your own image. This clears any featured selection.</p>
+                </div>
+                {customCover ? <span className="rounded-full border border-[#77d6c8]/30 bg-[#77d6c8]/10 px-3 py-1 text-xs text-[#9ee8dc]">{customCover.name}</span> : null}
+              </div>
+              <input type="file" accept="image/png,image/jpeg,image/jpg,image/webp" onChange={handleCustomCoverChange} className="mt-4 block w-full rounded-xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-white/75 file:mr-4 file:rounded-full file:border-0 file:bg-[#77d6c8] file:px-4 file:py-2 file:text-sm file:font-medium file:text-[#0d1618]" />
+            </div>
+
+            <div className="rounded-[24px] border border-white/10 bg-[#0d1218] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-white/90">Featured cover photos</p>
+                  <p className="text-xs text-white/55">Upload these from Django admin and they will appear here automatically.</p>
+                </div>
+                {selectedFeaturedCoverId ? <span className="rounded-full border border-[#77d6c8]/30 bg-[#77d6c8]/10 px-3 py-1 text-xs text-[#9ee8dc]">Featured cover selected</span> : null}
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                {featuredCovers.map((cover) => {
+                  const selected = selectedFeaturedCoverId === cover.id;
+                  return (
+                    <button
+                      key={cover.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedFeaturedCoverId(cover.id);
+                        setCustomCover(null);
+                      }}
+                      className={`overflow-hidden rounded-[20px] border text-left transition ${selected ? "border-[#77d6c8] bg-[#77d6c8]/8" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]"}`}
+                    >
+                      <div className="relative aspect-[4/3] bg-[#17181c]">
+                        <Image src={resolveMediaUrl(cover.image_url)} alt={cover.title} fill sizes="(max-width: 768px) 100vw, 33vw" className="object-cover" />
+                      </div>
+                      <div className="p-3">
+                        <p className="font-medium text-white/88">{cover.title}</p>
+                        <p className="mt-1 text-xs text-white/52">{selected ? "Selected for this upload" : "Click to use this cover"}</p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              {featuredCovers.length === 0 ? <p className="mt-4 text-sm text-white/55">No featured covers uploaded yet. Add them in Django admin first.</p> : null}
+            </div>
+
+            <button disabled={uploading} className="rounded-full bg-[#77d6c8] px-4 py-3 font-medium text-[#0d1618] disabled:opacity-60">{uploading ? "Uploading..." : "Upload beat"}</button>
           </form>
           {success ? <p className="mt-3 text-sm text-[#9ee8dc]">{success}</p> : null}
         </section>
@@ -220,3 +303,5 @@ export default function ProducerStudioPage() {
     </div>
   );
 }
+
+
