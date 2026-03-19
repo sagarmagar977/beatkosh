@@ -35,11 +35,30 @@ class BeatTag(models.Model):
 
 
 class Beat(models.Model):
+    PROTECTION_UNSET = "unset"
+    PROTECTION_MONITORED = "monitored"
+    PROTECTION_PROTECTED = "protected"
+    PROTECTION_CHOICES = (
+        (PROTECTION_UNSET, "Unset"),
+        (PROTECTION_MONITORED, "Monitored"),
+        (PROTECTION_PROTECTED, "Protected"),
+    )
+
+    FINGERPRINT_PENDING = "pending"
+    FINGERPRINT_READY = "ready"
+    FINGERPRINT_FLAGGED = "flagged"
+    FINGERPRINT_CHOICES = (
+        (FINGERPRINT_PENDING, "Pending"),
+        (FINGERPRINT_READY, "Ready"),
+        (FINGERPRINT_FLAGGED, "Flagged"),
+    )
+
     producer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="beats")
     title = models.CharField(max_length=150)
     beat_type = models.CharField(max_length=40, choices=BEAT_TYPE_CHOICES, blank=True)
     genre = models.CharField(max_length=120, choices=GENRE_CHOICES)
     instrument_type = models.CharField(max_length=120, choices=INSTRUMENT_CHOICES, blank=True)
+    instrument_types = models.JSONField(default=list, blank=True)
     bpm = models.PositiveIntegerField()
     key = models.CharField(max_length=30, choices=KEY_CHOICES, blank=True)
     mood = models.CharField(max_length=80, choices=MOOD_CHOICES, blank=True)
@@ -59,6 +78,10 @@ class Beat(models.Model):
     exclusive_publishing_rights = models.CharField(max_length=10, choices=PUBLISHING_RIGHTS_CHOICES, blank=True)
     exclusive_negotiable = models.BooleanField(default=False)
     declaration_accepted = models.BooleanField(default=False)
+    protection_status = models.CharField(max_length=20, choices=PROTECTION_CHOICES, default=PROTECTION_UNSET)
+    fingerprint_status = models.CharField(max_length=20, choices=FINGERPRINT_CHOICES, default=FINGERPRINT_PENDING)
+    proof_of_upload = models.JSONField(default=dict, blank=True)
+    abuse_reports_count = models.PositiveIntegerField(default=0)
     audio_file_obj = models.FileField(upload_to="beats/audio/", blank=True, null=True)
     preview_audio_obj = models.FileField(upload_to="beats/preview/", blank=True, null=True)
     stems_file_obj = models.FileField(upload_to="beats/stems/", blank=True, null=True)
@@ -91,6 +114,7 @@ class BeatUploadDraft(models.Model):
     beat_type = models.CharField(max_length=40, choices=BEAT_TYPE_CHOICES, blank=True)
     genre = models.CharField(max_length=120, choices=GENRE_CHOICES, blank=True)
     instrument_type = models.CharField(max_length=120, choices=INSTRUMENT_CHOICES, blank=True)
+    instrument_types = models.JSONField(default=list, blank=True)
     bpm = models.PositiveIntegerField(null=True, blank=True)
     key = models.CharField(max_length=30, choices=KEY_CHOICES, blank=True)
     mood = models.CharField(max_length=80, choices=MOOD_CHOICES, blank=True)
@@ -110,6 +134,10 @@ class BeatUploadDraft(models.Model):
     exclusive_publishing_rights = models.CharField(max_length=10, choices=PUBLISHING_RIGHTS_CHOICES, blank=True)
     exclusive_negotiable = models.BooleanField(default=False)
     declaration_accepted = models.BooleanField(default=False)
+    protection_status = models.CharField(max_length=20, choices=Beat.PROTECTION_CHOICES, default=Beat.PROTECTION_MONITORED)
+    fingerprint_status = models.CharField(max_length=20, choices=Beat.FINGERPRINT_CHOICES, default=Beat.FINGERPRINT_PENDING)
+    proof_of_upload = models.JSONField(default=dict, blank=True)
+    abuse_reports_count = models.PositiveIntegerField(default=0)
     selected_license_ids = models.JSONField(default=list, blank=True)
     media = models.JSONField(default=dict, blank=True)
     audio_file_obj = models.FileField(upload_to="beats/drafts/audio/", blank=True, null=True)
@@ -128,4 +156,3 @@ class BeatUploadDraft(models.Model):
     def __str__(self) -> str:
         return f"Draft<{self.id}> {self.producer.username}"
 
-# Create your models here.

@@ -1,11 +1,19 @@
 from rest_framework import generics, permissions, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from orders.models import DownloadAccess, Order
-from orders.serializers import DownloadAccessSerializer, OrderCreateSerializer, OrderSerializer
-from orders.services import create_order_for_items
+from beats.models import LicenseType
+from orders.models import CartItem, DownloadAccess, Order
+from orders.serializers import (
+    CartItemInputSerializer,
+    CartItemUpdateSerializer,
+    CartSerializer,
+    DownloadAccessSerializer,
+    OrderCreateSerializer,
+    OrderSerializer,
+)
+from orders.services import add_item_to_cart, checkout_cart, create_order_for_items, get_or_create_cart, update_cart_item
 
 
 class OrderCreateView(generics.GenericAPIView):
@@ -19,6 +27,77 @@ class OrderCreateView(generics.GenericAPIView):
         )
         serializer.is_valid(raise_exception=True)
         order = serializer.save()
+        return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
+
+
+class CartMeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        cart = get_or_create_cart(request.user)
+        return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
+
+
+class CartItemCreateView(generics.GenericAPIView):
+    serializer_class = CartItemInputSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        license_type = None
+        if "license_id" in serializer.validated_data:
+            license_type = LicenseType.objects.get(id=serializer.validated_data["license_id"])
+        item, created = add_item_to_cart(
+            request.user,
+            product_type=serializer.validated_data["product_type"],
+            product_id=serializer.validated_data["product_id"],
+            license_type=license_type,
+        )
+        return Response(
+            {
+                "created": created,
+                "message": "Beat added to cart successfully." if created else "Cart item updated successfully.",
+                "cart": CartSerializer(item.cart).data,
+            },
+            status=status.HTTP_201_CREATED if created else status.HTTP_200_OK,
+        )
+
+
+class CartItemDetailView(generics.GenericAPIView):
+    serializer_class = CartItemUpdateSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_object(self, item_id: int):
+        return CartItem.objects.select_related("cart", "license_type").get(id=item_id, cart__buyer=self.request.user)
+
+    def patch(self, request, item_id: int):
+        item = self.get_object(item_id)
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        license_id = serializer.validated_data.get("license_id")
+        if item.product_type == CartItem.PRODUCT_BEAT and not license_id:
+            raise ValidationError({"license_id": "license_id is required for beat cart items."})
+        license_type = LicenseType.objects.get(id=license_id) if license_id else None
+        update_cart_item(item, license_type=license_type)
+        return Response(CartSerializer(item.cart).data, status=status.HTTP_200_OK)
+
+    def delete(self, request, item_id: int):
+        item = self.get_object(item_id)
+        cart = item.cart
+        item.delete()
+        cart.save(update_fields=["updated_at"])
+        return Response(CartSerializer(cart).data, status=status.HTTP_200_OK)
+
+
+class CartCheckoutView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        try:
+            order = checkout_cart(request.user)
+        except ValueError as exc:
+            raise ValidationError({"detail": str(exc)})
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 

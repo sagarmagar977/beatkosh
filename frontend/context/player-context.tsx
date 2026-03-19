@@ -9,22 +9,29 @@ export type PlayerTrack = {
   title: string;
   artist: string;
   bpm?: number | null;
+  playCount?: number | null;
   key?: string | null;
   genre?: string;
+  mood?: string | null;
   price?: string;
   coverText?: string;
+  coverUrl?: string | null;
+  beatUrl?: string;
+  defaultLicenseId?: number | null;
   audioUrl: string;
 };
 
 type PlayerContextType = {
   currentTrack: PlayerTrack | null;
   isPlaying: boolean;
+  isLooping: boolean;
   currentTime: number;
   duration: number;
   volume: number;
   canPlay: boolean;
   playTrack: (track: PlayerTrack) => Promise<void>;
   togglePlay: () => Promise<void>;
+  toggleLoop: () => void;
   seekTo: (time: number) => void;
   setVolumeLevel: (value: number) => void;
   stopPlayback: (clearTrack?: boolean) => void;
@@ -52,6 +59,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [currentTrack, setCurrentTrack] = useState<PlayerTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLooping, setIsLooping] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
@@ -66,6 +74,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const audio = new Audio();
     audio.preload = "metadata";
     audio.volume = 0.8;
+    audio.loop = false;
     audioRef.current = audio;
 
     const onTimeUpdate = () => setCurrentTime(audio.currentTime || 0);
@@ -98,6 +107,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   }, [volume]);
 
+  useEffect(() => {
+    if (audioRef.current) {
+      audioRef.current.loop = isLooping;
+    }
+  }, [isLooping]);
+
   const stopPlayback = (clearTrack = false) => {
     const audio = audioRef.current;
     if (!audio) {
@@ -119,14 +134,27 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     debugPlayer("canPlay-changed", { canPlay, hasToken: Boolean(token), loading });
-    if (loading) {
+    if (loading || canPlay) {
       return;
     }
-    if (canPlay) {
-      return;
-    }
-    stopPlayback(true);
-  }, [canPlay, loading]);
+
+    const timer = window.setTimeout(() => {
+      const audio = audioRef.current;
+      if (!audio) {
+        return;
+      }
+      debugPlayer("stopPlayback", { clearTrack: true, hadTrack: Boolean(currentTrack) });
+      audio.pause();
+      audio.currentTime = 0;
+      setCurrentTime(0);
+      setIsPlaying(false);
+      audio.src = "";
+      setCurrentTrack(null);
+      setDuration(0);
+    }, 0);
+
+    return () => window.clearTimeout(timer);
+  }, [canPlay, currentTrack, loading, token]);
 
   const playTrack = async (track: PlayerTrack) => {
     if (loading) {
@@ -185,6 +213,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     audio.pause();
   };
 
+  const toggleLoop = () => {
+    setIsLooping((prev) => !prev);
+  };
+
   const seekTo = (time: number) => {
     const audio = audioRef.current;
     if (!audio) {
@@ -206,12 +238,14 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const value = {
     currentTrack,
     isPlaying,
+    isLooping,
     currentTime,
     duration,
     volume,
     canPlay,
     playTrack,
     togglePlay,
+    toggleLoop,
     seekTo,
     setVolumeLevel,
     stopPlayback,
@@ -227,3 +261,5 @@ export function usePlayer() {
   }
   return ctx;
 }
+
+

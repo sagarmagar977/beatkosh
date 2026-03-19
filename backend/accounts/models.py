@@ -45,10 +45,16 @@ class ArtistProfile(models.Model):
 class ProducerProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="producer_profile")
     producer_name = models.CharField(max_length=120, blank=True)
+    headline = models.CharField(max_length=160, blank=True)
     bio = models.TextField(blank=True)
     genres = models.CharField(max_length=255, blank=True)
     experience_years = models.PositiveIntegerField(default=0)
     portfolio_links = models.JSONField(default=dict, blank=True)
+    service_offerings = models.JSONField(default=list, blank=True)
+    featured_beat_ids = models.JSONField(default=list, blank=True)
+    accepts_custom_singles = models.BooleanField(default=True)
+    accepts_album_projects = models.BooleanField(default=False)
+    onboarding_notes = models.TextField(blank=True)
     verified = models.BooleanField(default=False)
     rating = models.DecimalField(max_digits=3, decimal_places=2, default=0)
     total_sales = models.PositiveIntegerField(default=0)
@@ -76,3 +82,31 @@ class BeatLike(models.Model):
     class Meta:
         unique_together = ("user", "beat")
         ordering = ("-created_at",)
+
+
+class UserNotification(models.Model):
+    TYPE_BEAT_LIKED = "beat_liked"
+    TYPE_CHOICES = (
+        (TYPE_BEAT_LIKED, "Beat liked"),
+    )
+
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")
+    actor = models.ForeignKey(User, on_delete=models.CASCADE, related_name="triggered_notifications")
+    beat = models.ForeignKey("beats.Beat", on_delete=models.CASCADE, related_name="notifications", null=True, blank=True)
+    notification_type = models.CharField(max_length=40, choices=TYPE_CHOICES)
+    message = models.CharField(max_length=255)
+    is_read = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at",)
+
+
+class ProducerSellerAgreement(models.Model):
+    producer = models.OneToOneField(User, on_delete=models.CASCADE, related_name="seller_agreement")
+    accepted_version = models.CharField(max_length=40, default="v1")
+    accepted_at = models.DateTimeField(auto_now_add=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+
+    def __str__(self) -> str:
+        return f"SellerAgreement<{self.producer.username}>"

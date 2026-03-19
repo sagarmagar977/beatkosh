@@ -38,7 +38,18 @@ class ProjectProposalCreateView(generics.CreateAPIView):
                 artist=req.artist,
                 producer=req.producer,
                 title=req.title,
-                defaults={"description": req.description, "budget": req.budget},
+                defaults={
+                    "description": req.description,
+                    "project_type": req.project_type,
+                    "expected_track_count": req.expected_track_count,
+                    "target_genre_style": req.target_genre_style,
+                    "reference_links": req.reference_links,
+                    "delivery_timeline_days": req.delivery_timeline_days,
+                    "revision_allowance": req.revision_allowance,
+                    "linked_conversation_hint": f"Discuss revisions for {req.title} in shared chat",
+                    "budget": req.budget,
+                    "workflow_stage": Project.WORKFLOW_PROPOSAL_ACCEPTED,
+                },
             )
 
 
@@ -48,7 +59,12 @@ class ProjectListView(generics.ListAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        return Project.objects.filter(Q(artist=user) | Q(producer=user)).order_by("-created_at")
+        return (
+            Project.objects.filter(Q(artist=user) | Q(producer=user))
+            .select_related("artist", "producer")
+            .prefetch_related("milestones", "milestones__deliverables")
+            .order_by("-created_at")
+        )
 
 
 class MilestoneCreateView(generics.CreateAPIView):
@@ -59,12 +75,16 @@ class MilestoneCreateView(generics.CreateAPIView):
         project = serializer.validated_data["project"]
         if self.request.user.id != project.artist_id:
             raise PermissionDenied("Only the project artist can add milestones.")
-        serializer.save()
+        milestone = serializer.save()
+        if project.workflow_stage in {Project.WORKFLOW_BRIEF_SUBMITTED, Project.WORKFLOW_PROPOSAL_ACCEPTED}:
+            project.workflow_stage = Project.WORKFLOW_MILESTONES_FUNDED
+            project.save(update_fields=["workflow_stage"])
+        return milestone
 
 
 class MilestoneStatusUpdateView(generics.UpdateAPIView):
     serializer_class = MilestoneSerializer
-    queryset = Milestone.objects.select_related("project")
+    queryset = Milestone.objects.select_related("project").prefetch_related("deliverables")
     permission_classes = [permissions.IsAuthenticated]
     http_method_names = ["patch"]
 
@@ -72,7 +92,21 @@ class MilestoneStatusUpdateView(generics.UpdateAPIView):
         milestone = self.get_object()
         if self.request.user.id not in (milestone.project.artist_id, milestone.project.producer_id):
             raise PermissionDenied("Only project participants can update milestone.")
-        serializer.save()
+        updated = serializer.save()
+        project = updated.project
+        if updated.status in {Milestone.STATUS_IN_PROGRESS, Milestone.STATUS_DELIVERED}:
+            project.workflow_stage = Project.WORKFLOW_IN_PROGRESS
+        elif updated.status == Milestone.STATUS_IN_REVIEW:
+            project.workflow_stage = Project.WORKFLOW_DELIVERABLES_REVIEW
+        elif updated.status == Milestone.STATUS_APPROVED:
+            if project.milestones.exclude(status=Milestone.STATUS_APPROVED).exists():
+                project.workflow_stage = Project.WORKFLOW_IN_PROGRESS
+            else:
+                project.workflow_stage = Project.WORKFLOW_COMPLETED
+                project.status = Project.STATUS_COMPLETED
+                project.save(update_fields=["workflow_stage", "status"])
+                return
+        project.save(update_fields=["workflow_stage"])
 
 
 class DeliverableCreateView(generics.CreateAPIView):
@@ -84,6 +118,10 @@ class DeliverableCreateView(generics.CreateAPIView):
         if self.request.user.id != milestone.project.producer_id:
             raise PermissionDenied("Only project producer can submit deliverables.")
         serializer.save(submitted_by=self.request.user)
+        milestone.status = Milestone.STATUS_IN_REVIEW
+        milestone.save(update_fields=["status"])
+        milestone.project.workflow_stage = Project.WORKFLOW_DELIVERABLES_REVIEW
+        milestone.project.save(update_fields=["workflow_stage"])
 
 
 class ProjectMilestoneListView(generics.ListAPIView):
@@ -94,7 +132,7 @@ class ProjectMilestoneListView(generics.ListAPIView):
         project = Project.objects.get(id=self.kwargs["project_id"])
         if self.request.user.id not in (project.artist_id, project.producer_id):
             raise PermissionDenied("Only project participants can view milestones.")
-        return project.milestones.all()
+        return project.milestones.prefetch_related("deliverables").all()
 
 
 class MilestoneDeliverableListView(generics.ListAPIView):
@@ -105,5 +143,4 @@ class MilestoneDeliverableListView(generics.ListAPIView):
         milestone = Milestone.objects.select_related("project").get(id=self.kwargs["milestone_id"])
         if self.request.user.id not in (milestone.project.artist_id, milestone.project.producer_id):
             raise PermissionDenied("Only project participants can view deliverables.")
-        return Deliverable.objects.filter(milestone=milestone)
-
+        return Deliverable.objects.filter(milestone=milestone).select_related("submitted_by")

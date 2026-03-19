@@ -1,7 +1,8 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from accounts.models import ArtistProfile, BeatLike, ProducerFollow, ProducerProfile
+from accounts.models import ArtistProfile, BeatLike, ProducerFollow, ProducerProfile, ProducerSellerAgreement, UserNotification
+from beats.models import Beat
 from beats.serializers import BeatSerializer
 
 User = get_user_model()
@@ -19,10 +20,16 @@ class ProducerProfileSerializer(serializers.ModelSerializer):
         model = ProducerProfile
         fields = (
             "producer_name",
+            "headline",
             "bio",
             "genres",
             "experience_years",
             "portfolio_links",
+            "service_offerings",
+            "featured_beat_ids",
+            "accepts_custom_singles",
+            "accepts_album_projects",
+            "onboarding_notes",
             "verified",
             "rating",
             "total_sales",
@@ -97,3 +104,101 @@ class BeatLikeSerializer(serializers.ModelSerializer):
         model = BeatLike
         fields = ("id", "user", "beat", "created_at")
         read_only_fields = ("user", "created_at")
+
+
+class UserNotificationSerializer(serializers.ModelSerializer):
+    actor_username = serializers.CharField(source="actor.username", read_only=True)
+    beat_id = serializers.IntegerField(source="beat.id", read_only=True, allow_null=True)
+    beat_title = serializers.CharField(source="beat.title", read_only=True, allow_null=True)
+
+    class Meta:
+        model = UserNotification
+        fields = (
+            "id",
+            "notification_type",
+            "message",
+            "is_read",
+            "created_at",
+            "actor_username",
+            "beat_id",
+            "beat_title",
+        )
+        read_only_fields = fields
+
+
+class ProducerSellerAgreementSerializer(serializers.ModelSerializer):
+    accepted = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProducerSellerAgreement
+        fields = ("accepted", "accepted_version", "accepted_at")
+        read_only_fields = ("accepted", "accepted_at")
+
+    def get_accepted(self, obj):
+        return bool(obj and obj.accepted_at)
+
+
+class ProducerTrustSummarySerializer(serializers.Serializer):
+    producer_id = serializers.IntegerField()
+    producer_name = serializers.CharField()
+    verified = serializers.BooleanField()
+    seller_agreement_accepted = serializers.BooleanField()
+    payout_ready = serializers.BooleanField()
+    profile_completion = serializers.IntegerField()
+    trust_score = serializers.IntegerField()
+    badges = serializers.ListField(child=serializers.CharField())
+    featured_beats = BeatSerializer(many=True)
+    service_offerings = serializers.ListField(child=serializers.CharField())
+    availability = serializers.DictField(child=serializers.BooleanField())
+
+
+class ProducerOnboardingStatusSerializer(serializers.Serializer):
+    producer_id = serializers.IntegerField()
+    checklist = serializers.ListField(child=serializers.DictField())
+    progress_percent = serializers.IntegerField()
+    trust_summary = ProducerTrustSummarySerializer()
+
+
+class ProducerDiscoveryCardSerializer(serializers.ModelSerializer):
+    producer_id = serializers.SerializerMethodField()
+    username = serializers.SerializerMethodField()
+    verified = serializers.BooleanField()
+    trust_score = serializers.IntegerField(required=False)
+    badges = serializers.ListField(child=serializers.CharField(), required=False)
+    featured_beats = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ProducerProfile
+        fields = (
+            "producer_id",
+            "username",
+            "producer_name",
+            "headline",
+            "genres",
+            "verified",
+            "rating",
+            "total_sales",
+            "accepts_custom_singles",
+            "accepts_album_projects",
+            "service_offerings",
+            "trust_score",
+            "badges",
+            "featured_beats",
+        )
+
+    def get_producer_id(self, obj):
+        if isinstance(obj, dict):
+            return obj.get("producer_id")
+        return obj.user_id
+
+    def get_username(self, obj):
+        if isinstance(obj, dict):
+            return obj.get("username", "")
+        return obj.user.username
+
+    def get_featured_beats(self, obj):
+        if isinstance(obj, dict):
+            return obj.get("featured_beats", [])
+        beat_ids = obj.featured_beat_ids[:3] if isinstance(obj.featured_beat_ids, list) else []
+        beats = Beat.objects.filter(id__in=beat_ids, producer=obj.user).select_related("producer").prefetch_related("available_licenses")
+        return BeatSerializer(beats, many=True).data

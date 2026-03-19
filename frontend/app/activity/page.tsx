@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { Droplets, Heart, UserPlus, Users } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
@@ -98,11 +99,12 @@ export default function ActivityPage() {
           <p className="eyebrow">Following</p>
           <form onSubmit={onFollow} className="mt-3 flex gap-2">
             <input className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-2.5 text-white outline-none placeholder:text-white/35" placeholder="Producer User ID" value={producerId} onChange={(e) => setProducerId(e.target.value)} />
-            <button className="rounded-full bg-[#f6b067] px-4 py-2.5 text-sm font-medium text-[#20150e]">Follow</button>
+            <button className="inline-flex items-center gap-2 rounded-full bg-[#f6b067] px-4 py-2.5 text-sm font-medium text-[#20150e]"><UserPlus className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />Follow</button>
           </form>
           <div className="mt-4 space-y-2">
             {follows.map((item) => (
-              <div key={item.id} className="rounded-[18px] border border-white/10 bg-[#0d1218] p-3 text-sm">
+              <div key={item.id} className="inline-flex w-full items-center gap-2 rounded-[18px] border border-white/10 bg-[#0d1218] p-3 text-sm">
+                <Users className="h-4 w-4 text-[#a288ff]" strokeWidth={1.8} aria-hidden="true" />
                 {item.producer_username} (#{item.producer})
               </div>
             ))}
@@ -122,8 +124,9 @@ export default function ActivityPage() {
           </div>
           <div className="mt-4 space-y-2">
             {beats.map((beat) => (
-              <button key={beat.id} type="button" onClick={() => void onLike(beat.id)} className="w-full rounded-[18px] border border-white/10 bg-white/5 p-3 text-left text-sm text-white/82 hover:bg-white/7">
-                Like {beat.title} â€¢ {beat.producer_username}
+              <button key={beat.id} type="button" onClick={() => void onLike(beat.id)} className="inline-flex w-full items-center gap-2 rounded-[18px] border border-white/10 bg-white/5 p-3 text-left text-sm text-white/82 hover:bg-white/7">
+                <Heart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                Like {beat.title} by {beat.producer_username}
               </button>
             ))}
           </div>
@@ -134,7 +137,7 @@ export default function ActivityPage() {
           <div className="mt-4 space-y-2">
             {drops.map((drop) => (
               <div key={drop.id} className="rounded-[18px] border border-white/10 bg-[#0d1218] p-3 text-sm">
-                <p className="font-medium">{drop.producer_username}</p>
+                <p className="inline-flex items-center gap-2 font-medium"><Droplets className="h-4 w-4 text-[#9ee8dc]" strokeWidth={1.8} aria-hidden="true" />{drop.producer_username}</p>
                 <p className="mt-1 text-white/70">{drop.message || "New update posted."}</p>
               </div>
             ))}

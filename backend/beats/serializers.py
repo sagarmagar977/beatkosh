@@ -1,5 +1,9 @@
+import json
+
+from django.db.models import Sum
 from rest_framework import serializers
 
+from beats.metadata_choices import INSTRUMENT_VALUES
 from beats.models import Beat, BeatTag, BeatUploadDraft, LicenseType
 
 
@@ -24,7 +28,60 @@ class BeatTagSerializer(serializers.ModelSerializer):
         fields = ("id", "name")
 
 
-class BeatSerializer(serializers.ModelSerializer):
+class InstrumentTypesField(serializers.ListField):
+    child = serializers.ChoiceField(choices=INSTRUMENT_VALUES)
+
+    def get_value(self, dictionary):
+        if hasattr(dictionary, "getlist"):
+            values = dictionary.getlist(self.field_name)
+            if values:
+                if len(values) == 1 and isinstance(values[0], str):
+                    raw = values[0].strip()
+                    if raw.startswith("["):
+                        try:
+                            return json.loads(raw)
+                        except json.JSONDecodeError:
+                            pass
+                return values
+        value = dictionary.get(self.field_name, serializers.empty)
+        if isinstance(value, str):
+            raw = value.strip()
+            if raw.startswith("["):
+                try:
+                    return json.loads(raw)
+                except json.JSONDecodeError:
+                    return value
+        return value
+
+
+class InstrumentTypesSerializerMixin:
+    instrument_types = InstrumentTypesField(required=False)
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        instrument_types = attrs.get("instrument_types")
+        instrument_type = attrs.get("instrument_type")
+
+        if instrument_types is not None:
+            cleaned = []
+            for item in instrument_types:
+                if item not in cleaned:
+                    cleaned.append(item)
+            attrs["instrument_types"] = cleaned
+            attrs["instrument_type"] = cleaned[0] if cleaned else ""
+        elif instrument_type is not None:
+            attrs["instrument_types"] = [instrument_type] if instrument_type else []
+
+        return attrs
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if not data.get("instrument_types"):
+            data["instrument_types"] = [instance.instrument_type] if instance.instrument_type else []
+        return data
+
+
+class BeatSerializer(InstrumentTypesSerializerMixin, serializers.ModelSerializer):
     producer_username = serializers.CharField(source="producer.username", read_only=True)
     licenses = LicenseTypeSerializer(source="available_licenses", many=True, read_only=True)
     tag_names = serializers.SlugRelatedField(
@@ -50,6 +107,10 @@ class BeatSerializer(serializers.ModelSerializer):
     )
     stems_file_upload = serializers.FileField(source="stems_file_obj", required=False, allow_null=True, write_only=True)
     cover_art_upload = serializers.FileField(source="cover_art_obj", required=False, allow_null=True, write_only=True)
+    like_count = serializers.SerializerMethodField()
+    play_count = serializers.SerializerMethodField()
+    is_featured = serializers.SerializerMethodField()
+    storefront_flags = serializers.SerializerMethodField()
 
     class Meta:
         model = Beat
@@ -61,6 +122,7 @@ class BeatSerializer(serializers.ModelSerializer):
             "beat_type",
             "genre",
             "instrument_type",
+            "instrument_types",
             "bpm",
             "key",
             "mood",
@@ -80,6 +142,10 @@ class BeatSerializer(serializers.ModelSerializer):
             "exclusive_publishing_rights",
             "exclusive_negotiable",
             "declaration_accepted",
+            "protection_status",
+            "fingerprint_status",
+            "proof_of_upload",
+            "abuse_reports_count",
             "audio_file_obj",
             "preview_audio_obj",
             "stems_file_obj",
@@ -95,12 +161,40 @@ class BeatSerializer(serializers.ModelSerializer):
             "tag_names",
             "licenses",
             "license_ids",
+            "like_count",
+            "play_count",
+            "is_featured",
+            "storefront_flags",
             "created_at",
         )
         read_only_fields = ("producer", "created_at")
 
+    def get_like_count(self, obj):
+        cache = getattr(obj, "_prefetched_objects_cache", {})
+        if "likes" in cache:
+            return len(cache["likes"])
+        return obj.likes.count()
 
-class BeatUploadDraftSerializer(serializers.ModelSerializer):
+    def get_play_count(self, obj):
+        aggregate = obj.listening_events.aggregate(total=Sum("play_count"))
+        return aggregate["total"] or 0
+
+    def get_is_featured(self, obj):
+        profile = getattr(obj.producer, "producer_profile", None)
+        featured_ids = profile.featured_beat_ids if profile and isinstance(profile.featured_beat_ids, list) else []
+        return obj.id in featured_ids
+
+    def get_storefront_flags(self, obj):
+        licenses = list(obj.available_licenses.all())
+        return {
+            "free_download": obj.enable_free_mp3_download,
+            "stems_available": obj.non_exclusive_stems_enabled or any(license.includes_stems for license in licenses),
+            "exclusive_available": obj.exclusive_enabled or any(license.is_exclusive for license in licenses),
+            "wav_available": obj.non_exclusive_wav_enabled or any(license.includes_wav for license in licenses),
+        }
+
+
+class BeatUploadDraftSerializer(InstrumentTypesSerializerMixin, serializers.ModelSerializer):
     producer_username = serializers.CharField(source="producer.username", read_only=True)
     audio_file_upload = serializers.FileField(source="audio_file_obj", required=False, allow_null=True, write_only=True)
     preview_audio_upload = serializers.FileField(
@@ -122,6 +216,7 @@ class BeatUploadDraftSerializer(serializers.ModelSerializer):
             "beat_type",
             "genre",
             "instrument_type",
+            "instrument_types",
             "bpm",
             "key",
             "mood",
@@ -141,6 +236,10 @@ class BeatUploadDraftSerializer(serializers.ModelSerializer):
             "exclusive_publishing_rights",
             "exclusive_negotiable",
             "declaration_accepted",
+            "protection_status",
+            "fingerprint_status",
+            "proof_of_upload",
+            "abuse_reports_count",
             "selected_license_ids",
             "media",
             "audio_file_obj",

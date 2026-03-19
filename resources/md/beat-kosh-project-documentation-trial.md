@@ -1,7 +1,5 @@
 # BeatKosh Project Documentation Trial
 
-> Trial draft generated from the project documentation template, the Beat Kosh idea document, and the current codebase.  
-> Goal: provide a realistic preview of how the final academic project report can look before we build the polished submission version.
 
 ## Title Page
 

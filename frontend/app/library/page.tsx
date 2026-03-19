@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import { Download, History, Play, ShoppingBag } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
@@ -99,13 +100,14 @@ export default function LibraryPage() {
           <div className="mt-4 space-y-3">
             {downloads.map((item) => (
               <div key={item.id} className="rounded-[20px] border border-white/10 bg-[#0d1218] p-4">
-                <p className="font-medium">{item.beat.title}</p>
+                <p className="inline-flex items-center gap-2 font-medium"><Download className="h-4 w-4 text-[#a288ff]" strokeWidth={1.8} aria-hidden="true" />{item.beat.title}</p>
                 <p className="mt-1 text-sm text-white/62">{item.beat.producer_username} â€¢ {item.beat.genre}</p>
                 <button
                   type="button"
                   onClick={() => void onMarkPlayed(item.beat.id)}
-                  className="mt-3 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/5"
+                  className="mt-3 inline-flex items-center gap-2 rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/80 hover:bg-white/5"
                 >
+                  <Play className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
                   Mark played
                 </button>
               </div>
@@ -120,7 +122,7 @@ export default function LibraryPage() {
           <div className="mt-4 space-y-3">
             {orders.map((order) => (
               <div key={order.id} className="rounded-[20px] border border-white/10 bg-[#0d1218] p-4">
-                <p className="font-medium">Order #{order.id}</p>
+                <p className="inline-flex items-center gap-2 font-medium"><ShoppingBag className="h-4 w-4 text-[#a288ff]" strokeWidth={1.8} aria-hidden="true" />Order #{order.id}</p>
                 <p className="mt-1 text-sm text-white/62">${order.total_price} â€¢ {order.status}</p>
               </div>
             ))}
@@ -134,7 +136,7 @@ export default function LibraryPage() {
           <div className="mt-4 space-y-3">
             {recent.map((item) => (
               <div key={item.id} className="rounded-[20px] border border-white/10 bg-[#0d1218] p-4">
-                <p className="font-medium">{item.beat.title}</p>
+                <p className="inline-flex items-center gap-2 font-medium"><History className="h-4 w-4 text-[#a288ff]" strokeWidth={1.8} aria-hidden="true" />{item.beat.title}</p>
                 <p className="mt-1 text-sm text-white/62">Plays: {item.play_count}</p>
               </div>
             ))}

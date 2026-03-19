@@ -8,13 +8,20 @@ from accounts.views import (
     MeView,
     MyBeatLikesListView,
     MyFollowingListView,
-    ProducerDetailView,
+    MyNotificationsListView,
+    MyNotificationsReadView,
     ProducerDetailByUserView,
+    ProducerDetailView,
+    ProducerDiscoveryListView,
+    ProducerOnboardingStatusMeView,
     ProducerProfileMeView,
+    ProducerSellerAgreementMeView,
+    ProducerTrustPublicView,
     RegisterView,
     StartSellingView,
     SwitchRoleView,
 )
+
 
 def both(route: str, view, name: str):
     route = route.strip("/")
@@ -31,6 +38,10 @@ urlpatterns = [
     *both("me", MeView.as_view(), "me"),
     *both("artist-profile", ArtistProfileMeView.as_view(), "artist-profile-me"),
     *both("producer-profile", ProducerProfileMeView.as_view(), "producer-profile-me"),
+    *both("producer-onboarding/me", ProducerOnboardingStatusMeView.as_view(), "producer-onboarding-me"),
+    *both("producer-seller-agreement/me", ProducerSellerAgreementMeView.as_view(), "producer-seller-agreement-me"),
+    *both("producer-trust/<int:user_id>", ProducerTrustPublicView.as_view(), "producer-trust-public"),
+    *both("producer-discovery", ProducerDiscoveryListView.as_view(), "producer-discovery"),
     *both("switch-role", SwitchRoleView.as_view(), "switch-role"),
     *both("start-selling", StartSellingView.as_view(), "start-selling"),
     *both("producers/<int:pk>", ProducerDetailView.as_view(), "producer-detail"),
@@ -39,4 +50,6 @@ urlpatterns = [
     *both("follows/producers/<int:producer_id>", FollowProducerView.as_view(), "follow-producer"),
     *both("likes/beats/me", MyBeatLikesListView.as_view(), "beat-likes-me"),
     *both("likes/beats/<int:beat_id>", BeatLikeView.as_view(), "beat-like"),
+    *both("notifications/me", MyNotificationsListView.as_view(), "notifications-me"),
+    *both("notifications/read", MyNotificationsReadView.as_view(), "notifications-read"),
 ]

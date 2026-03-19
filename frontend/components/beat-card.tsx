@@ -1,5 +1,7 @@
 "use client";
 
+import { Play, ShoppingCart } from "lucide-react";
+
 type License = {
   id: number;
   name: string;
@@ -71,10 +73,12 @@ export function BeatCard({ beat, compact = false }: BeatCardProps) {
             <p className="text-sm text-white/80">Verification-ready producer profile and transparent licensing</p>
           </div>
           <div className="flex gap-2">
-            <button className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/82 hover:border-white/25 hover:bg-white/5">
+            <button className="inline-flex items-center gap-2 rounded-full border border-white/12 px-4 py-2 text-sm text-white/82 hover:border-white/25 hover:bg-white/5">
+              <Play className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
               Preview
             </button>
-            <button className="rounded-full bg-[#f6b067] px-4 py-2 text-sm font-medium text-[#20150e] hover:bg-[#ffc789]">
+            <button className="inline-flex items-center gap-2 rounded-full bg-[#f6b067] px-4 py-2 text-sm font-medium text-[#20150e] hover:bg-[#ffc789]">
+              <ShoppingCart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
               Add to cart
             </button>
           </div>

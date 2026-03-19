@@ -1,5 +1,6 @@
 from rest_framework import serializers
 
+from accounts.serializers import ProducerDiscoveryCardSerializer
 from beats.serializers import BeatSerializer
 
 from analytics_app.models import ActivityDrop, ListeningHistory
@@ -30,3 +31,23 @@ class ActivityDropSerializer(serializers.ModelSerializer):
 class CreateActivityDropSerializer(serializers.Serializer):
     beat_id = serializers.IntegerField(required=False, min_value=1)
     message = serializers.CharField(required=False, allow_blank=True, max_length=280)
+
+
+class RecommendationFeedSerializer(serializers.Serializer):
+    based_on = serializers.CharField()
+    beats = BeatSerializer(many=True)
+
+
+class ProducerDashboardSummarySerializer(serializers.Serializer):
+    producer_id = serializers.IntegerField()
+    follower_count = serializers.IntegerField()
+    verified = serializers.BooleanField()
+    plays = serializers.IntegerField()
+    likes = serializers.IntegerField()
+    purchases = serializers.IntegerField()
+    conversion_rate = serializers.FloatField()
+    skip_events = serializers.IntegerField()
+    activity_drop_count = serializers.IntegerField()
+    hiring_inquiry_count = serializers.IntegerField()
+    top_beats = BeatSerializer(many=True)
+    audience_fit_producers = ProducerDiscoveryCardSerializer(many=True)

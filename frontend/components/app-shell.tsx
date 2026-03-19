@@ -7,6 +7,7 @@ import { useEffect, useMemo, useState } from "react";
 import { GlobalPlayer } from "@/components/global-player";
 import { RoleSwitcher } from "@/components/role-switcher";
 import { useAuth } from "@/context/auth-context";
+import { useCart } from "@/context/cart-context";
 
 const navLinks = [
   { href: "/", label: "Dashboard" },
@@ -42,6 +43,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, loading, logout, startSelling } = useAuth();
+  const { itemCount } = useCart();
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
@@ -137,8 +139,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           >
             Bell
           </button>
-          <Link href="/orders" className="rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs text-white/75">
+          <Link href="/orders" className="relative rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs text-white/75">
             Cart
+            {itemCount > 0 ? <span className="absolute -right-1 -top-1 min-w-5 rounded-full bg-[#8b28ff] px-1.5 py-0.5 text-[10px] font-semibold text-white">{itemCount}</span> : null}
           </Link>
           {user && user.active_role !== "producer" ? (
             <button

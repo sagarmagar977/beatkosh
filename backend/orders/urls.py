@@ -1,6 +1,17 @@
 from django.urls import path
 
-from orders.views import DownloadBeatHQUrlView, DownloadLibraryView, OrderCreateView, OrderDetailView, OrderHistoryView
+from orders.views import (
+    CartCheckoutView,
+    CartItemCreateView,
+    CartItemDetailView,
+    CartMeView,
+    DownloadBeatHQUrlView,
+    DownloadLibraryView,
+    OrderCreateView,
+    OrderDetailView,
+    OrderHistoryView,
+)
+
 
 def both(route: str, view, name: str):
     route = route.strip("/")
@@ -9,7 +20,12 @@ def both(route: str, view, name: str):
         path(f"{route}/", view, name=name),
     ]
 
+
 urlpatterns = [
+    *both("cart/me", CartMeView.as_view(), "cart-me"),
+    *both("cart/items", CartItemCreateView.as_view(), "cart-item-create"),
+    *both("cart/items/<int:item_id>", CartItemDetailView.as_view(), "cart-item-detail"),
+    *both("cart/checkout", CartCheckoutView.as_view(), "cart-checkout"),
     *both("create", OrderCreateView.as_view(), "order-create"),
     *both("history", OrderHistoryView.as_view(), "order-history"),
     *both("downloads", DownloadLibraryView.as_view(), "order-download-library"),

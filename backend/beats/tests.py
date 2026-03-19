@@ -90,6 +90,37 @@ class BeatsApiTests(APITestCase):
         self.assertEqual(publish_response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(publish_response.data["title"], "Draft Song")
 
+    def test_upload_draft_persists_multiple_instruments(self):
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
+
+        create_draft_response = self.client.post(
+            reverse("beat-upload-draft-list-create"),
+            {
+                "title": "Layered Beat",
+                "genre": "Trap",
+                "bpm": 140,
+                "base_price": "25.00",
+                "instrument_types": ["Piano", "Synthesizer", "Flute"],
+                "media": {"tags": ["ram", "boom bap"]},
+                "current_step": 2,
+            },
+            format="json",
+        )
+        self.assertEqual(create_draft_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(create_draft_response.data["instrument_types"], ["Piano", "Synthesizer", "Flute"])
+        self.assertEqual(create_draft_response.data["instrument_type"], "Piano")
+
+        draft_id = create_draft_response.data["id"]
+        publish_response = self.client.post(
+            reverse("beat-upload-draft-publish", kwargs={"draft_id": draft_id}),
+            {},
+            format="json",
+        )
+        self.assertEqual(publish_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(publish_response.data["instrument_types"], ["Piano", "Synthesizer", "Flute"])
+        self.assertEqual(publish_response.data["instrument_type"], "Piano")
+        self.assertEqual(sorted(publish_response.data["tag_names"]), ["boom bap", "ram"])
+
     def test_upload_draft_media_step(self):
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {self.token}")
         create_draft_response = self.client.post(
@@ -153,3 +184,5 @@ class BeatsApiTests(APITestCase):
         self.assertIn("instrument_types", response.data)
         self.assertIn("moods", response.data)
         self.assertIn("keys", response.data)
+
+

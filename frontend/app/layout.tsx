@@ -1,7 +1,8 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 
 import { AppShell } from "@/app/app-shell";
 import { AuthProvider } from "@/app/auth-context";
+import { CartProvider } from "@/context/cart-context";
 import { PlayerProvider } from "@/context/player-context";
 import "./globals.css";
 
@@ -19,9 +20,11 @@ export default function RootLayout({
     <html lang="en">
       <body className="antialiased">
         <AuthProvider>
-          <PlayerProvider>
-            <AppShell>{children}</AppShell>
-          </PlayerProvider>
+          <CartProvider>
+            <PlayerProvider>
+              <AppShell>{children}</AppShell>
+            </PlayerProvider>
+          </CartProvider>
         </AuthProvider>
       </body>
     </html>

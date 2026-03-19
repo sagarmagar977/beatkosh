@@ -17,15 +17,63 @@ from beats.metadata_choices import (
     MOOD_VALUES,
     PUBLISHING_RIGHTS_VALUES,
 )
-from beats.models import Beat, BeatUploadDraft, LicenseType
+from beats.models import Beat, BeatTag, BeatUploadDraft, LicenseType
 from beats.serializers import BeatSerializer, BeatUploadDraftSerializer, LicenseTypeSerializer
 from common.permissions import IsProducerOrReadOnly
 
 
+def _resolve_default_license_types(draft: BeatUploadDraft):
+    licenses = []
+    if draft.non_exclusive_wav_enabled:
+        wav_license, _ = LicenseType.objects.get_or_create(
+            name="WAV",
+            defaults={
+                "includes_wav": True,
+                "includes_stems": False,
+                "is_exclusive": False,
+            },
+        )
+        licenses.append(wav_license)
+    if draft.non_exclusive_stems_enabled:
+        stems_license, _ = LicenseType.objects.get_or_create(
+            name="WAV + STEMS",
+            defaults={
+                "includes_wav": True,
+                "includes_stems": True,
+                "is_exclusive": False,
+            },
+        )
+        licenses.append(stems_license)
+    if draft.exclusive_enabled:
+        exclusive_license, _ = LicenseType.objects.get_or_create(
+            name="EXCLUSIVE",
+            defaults={
+                "includes_wav": True,
+                "includes_stems": bool(draft.non_exclusive_stems_enabled),
+                "is_exclusive": True,
+                "beat_removed_on_purchase": True,
+            },
+        )
+        licenses.append(exclusive_license)
+    return licenses
+
+
 class BeatListCreateView(generics.ListCreateAPIView):
-    queryset = Beat.objects.select_related("producer").prefetch_related("tags", "available_licenses")
+    queryset = Beat.objects.select_related("producer", "producer__producer_profile").prefetch_related(
+        "tags", "available_licenses", "likes"
+    )
     serializer_class = BeatSerializer
     permission_classes = [IsProducerOrReadOnly]
+
+    def get_queryset(self):
+        queryset = self.queryset.filter(is_active=True)
+        producer_id = self.request.query_params.get("producer")
+        genre = self.request.query_params.get("genre")
+        if producer_id:
+            queryset = queryset.filter(producer_id=producer_id)
+        if genre:
+            queryset = queryset.filter(genre__iexact=genre)
+        return queryset
 
     def perform_create(self, serializer):
         if self.request.user.active_role != "producer":
@@ -34,7 +82,6 @@ class BeatListCreateView(generics.ListCreateAPIView):
         try:
             generate_stream_preview_for_beat(beat)
         except Exception:
-            # Keep upload flow resilient if ffmpeg is unavailable; HQ file remains intact.
             pass
         if self.request.user.is_producer:
             ActivityDrop.objects.create(
@@ -45,12 +92,16 @@ class BeatListCreateView(generics.ListCreateAPIView):
 
 
 class BeatDetailView(generics.RetrieveAPIView):
-    queryset = Beat.objects.select_related("producer").prefetch_related("tags", "available_licenses")
+    queryset = Beat.objects.select_related("producer", "producer__producer_profile").prefetch_related(
+        "tags", "available_licenses", "likes"
+    )
     serializer_class = BeatSerializer
 
 
 class TrendingBeatsView(generics.ListAPIView):
-    queryset = Beat.objects.filter(is_active=True).select_related("producer")[:10]
+    queryset = Beat.objects.filter(is_active=True).select_related("producer", "producer__producer_profile").prefetch_related(
+        "available_licenses", "likes"
+    )[:10]
     serializer_class = BeatSerializer
 
 
@@ -120,6 +171,7 @@ class BeatUploadDraftPublishView(APIView):
             beat_type=draft.beat_type,
             genre=draft.genre,
             instrument_type=draft.instrument_type,
+            instrument_types=draft.instrument_types,
             bpm=draft.bpm,
             key=draft.key,
             mood=draft.mood,
@@ -139,6 +191,10 @@ class BeatUploadDraftPublishView(APIView):
             exclusive_publishing_rights=draft.exclusive_publishing_rights,
             exclusive_negotiable=draft.exclusive_negotiable,
             declaration_accepted=draft.declaration_accepted,
+            protection_status=draft.protection_status,
+            fingerprint_status=draft.fingerprint_status,
+            proof_of_upload=draft.proof_of_upload,
+            abuse_reports_count=draft.abuse_reports_count,
             audio_file_obj=draft.audio_file_obj,
             preview_audio_obj=draft.preview_audio_obj,
             stems_file_obj=draft.stems_file_obj,
@@ -152,6 +208,20 @@ class BeatUploadDraftPublishView(APIView):
         if draft.selected_license_ids:
             licenses = LicenseType.objects.filter(id__in=draft.selected_license_ids)
             beat.available_licenses.set(licenses)
+        else:
+            beat.available_licenses.set(_resolve_default_license_types(draft))
+
+        draft_media = draft.media if isinstance(draft.media, dict) else {}
+        raw_tags = draft_media.get("tags", []) if isinstance(draft_media, dict) else []
+        if isinstance(raw_tags, list):
+            cleaned_tags = []
+            for value in raw_tags:
+                if isinstance(value, str):
+                    name = value.strip()
+                    if name and name not in cleaned_tags:
+                        cleaned_tags.append(name)
+            if cleaned_tags:
+                beat.tags.set([BeatTag.objects.get_or_create(name=name)[0] for name in cleaned_tags])
 
         draft.status = BeatUploadDraft.STATUS_PUBLISHED
         draft.published_beat = beat
@@ -182,3 +252,5 @@ class BeatMetadataOptionsView(APIView):
                 "license_periods": LICENSE_PERIOD_VALUES,
             }
         )
+
+

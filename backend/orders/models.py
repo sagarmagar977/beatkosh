@@ -23,6 +23,40 @@ class Order(models.Model):
         ordering = ("-created_at",)
 
 
+class Cart(models.Model):
+    buyer = models.OneToOneField(User, on_delete=models.CASCADE, related_name="cart")
+    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-updated_at",)
+
+
+class CartItem(models.Model):
+    PRODUCT_BEAT = "beat"
+    PRODUCT_SOUNDKIT = "soundkit"
+    PRODUCT_BUNDLE = "bundle"
+    PRODUCT_TAPE = "tape"
+    PRODUCT_TYPE_CHOICES = (
+        (PRODUCT_BEAT, "Beat"),
+        (PRODUCT_SOUNDKIT, "SoundKit"),
+        (PRODUCT_BUNDLE, "Bundle"),
+        (PRODUCT_TAPE, "BeatTape"),
+    )
+
+    cart = models.ForeignKey(Cart, on_delete=models.CASCADE, related_name="items")
+    product_type = models.CharField(max_length=20, choices=PRODUCT_TYPE_CHOICES)
+    product_id = models.PositiveIntegerField()
+    product_title = models.CharField(max_length=200)
+    license_type = models.ForeignKey(LicenseType, on_delete=models.SET_NULL, null=True, blank=True)
+    price = models.DecimalField(max_digits=10, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("-updated_at",)
+
+
 class OrderItem(models.Model):
     PRODUCT_BEAT = "beat"
     PRODUCT_SOUNDKIT = "soundkit"
@@ -56,5 +90,3 @@ class DownloadAccess(models.Model):
     beat = models.ForeignKey(Beat, on_delete=models.CASCADE, related_name="download_access")
     order_item = models.OneToOneField(OrderItem, on_delete=models.CASCADE, related_name="download_access")
     granted_at = models.DateTimeField(auto_now_add=True)
-
-# Create your models here.

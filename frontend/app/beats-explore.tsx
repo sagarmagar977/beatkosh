@@ -1,5 +1,6 @@
 "use client";
 
+import { Pause, Play, ShoppingCart, X } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -18,6 +19,8 @@ type Beat = {
   key?: string | null;
   mood?: string | null;
   base_price: string;
+  cover_art_obj?: string | null;
+  play_count?: number;
   preview_audio_obj?: string | null;
   audio_file_obj?: string | null;
   non_exclusive_wav_enabled?: boolean;
@@ -150,10 +153,13 @@ export function BeatsExplorePage({
       title: beat.title,
       artist: beat.producer_username,
       bpm: beat.bpm,
+      playCount: beat.play_count,
       key: beat.key,
       genre: beat.genre,
       price: beat.base_price,
       coverText: beat.title,
+      coverUrl: resolveMediaUrl(beat.cover_art_obj),
+      beatUrl: `/beats/${beat.id}`,
       audioUrl: playbackUrl,
     });
   };
@@ -217,11 +223,11 @@ export function BeatsExplorePage({
                     type="button"
                     onClick={() => handlePlayAttempt(beat, playbackUrl, isCurrent)}
                     title={!token ? "Login to preview beats" : playbackUrl ? "Play preview" : "Preview unavailable"}
-                    className={`mt-1 h-10 w-10 rounded-full border text-sm ${
+                    className={`mt-1 inline-flex h-10 w-10 items-center justify-center rounded-full border text-sm ${
                       isCurrent && isPlaying ? "border-[#8b28ff] bg-[#8b28ff] text-white" : "border-white/20 bg-white/5 text-white/85"
                     } ${!token ? "cursor-pointer border-white/10 text-white/45" : ""}`}
                   >
-                    {isCurrent && isPlaying ? "II" : ">"}
+                    {isCurrent && isPlaying ? <Pause className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" /> : <Play className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />}
                   </button>
                   <div>
                     <p className="font-semibold">{beat.title}</p>
@@ -250,8 +256,9 @@ export function BeatsExplorePage({
                     setLicenseModalBeat(beat);
                     setSelectedLicense("wav");
                   }}
-                  className="brand-btn h-fit px-3 py-2 text-xs"
+                  className="brand-btn inline-flex h-fit items-center gap-2 px-3 py-2 text-xs"
                 >
+                  <ShoppingCart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                   Rs {beat.base_price}
                 </button>
               </article>
@@ -302,14 +309,14 @@ export function BeatsExplorePage({
                     onClick={() => setLicenseModalBeat(null)}
                     className="rounded-md border border-white/15 px-2 py-1 text-xs text-white/75 hover:bg-white/5"
                   >
-                    Close
+                    <X className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                   </button>
                 </div>
                 <div className="rounded-2xl border border-white/10 bg-[#131625] p-5">
                   <p className="text-3xl font-semibold">{selectedLicenseInfo?.label}</p>
                   <p className="mt-1 text-sm text-white/60">{selectedLicenseInfo?.nature} | {selectedLicenseInfo?.format}</p>
                   <p className="mt-4 text-4xl font-semibold">Rs {selectedLicenseInfo?.price}</p>
-                  <button type="button" className="brand-btn mt-5 w-full px-4 py-3 text-sm">Add to cart</button>
+                  <button type="button" className="brand-btn mt-5 inline-flex w-full items-center justify-center gap-2 px-4 py-3 text-sm"><ShoppingCart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />Add to cart</button>
                 </div>
               </div>
             </div>
@@ -319,3 +326,5 @@ export function BeatsExplorePage({
     </div>
   );
 }
+
+

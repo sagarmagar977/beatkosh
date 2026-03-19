@@ -1,82 +1,186 @@
-const topChips = ["For You", "Liked", "Your Downloads", "Recently Played", "All Beats", "Trending", "Followed By You", "Follower Drops"];
+"use client";
 
-const cards = [
-  { title: "MENTALITY", artist: "Zack Beats", price: "Rs 1,275" },
-  { title: "2K26", artist: "Ritzraj Music", price: "Rs 1,700" },
-  { title: "DUBA", artist: "Kai SZN", price: "Rs 999" },
-  { title: "RNB BEAT", artist: "Abhay Kumar", price: "Rs 750" },
-];
+import Link from "next/link";
+import { useEffect, useState } from "react";
 
-const latestRows = [
-  { name: "MENTALITY", producer: "NATPRODUCTION", bpm: 136, key: "F Minor", price: "Rs 999" },
-  { name: "2K26", producer: "Ritzraj Music", bpm: 97, key: "Ab Minor", price: "Rs 999" },
-  { name: "DUBA", producer: "Kai SZN", bpm: 98, key: "C Minor", price: "Rs 777" },
-  { name: "AAWARA", producer: "ShravanBeats", bpm: 97, key: "E Minor", price: "Rs 1,700" },
-  { name: "AVATAR", producer: "Pal Beats", bpm: 94, key: "C Minor", price: "Rs 599" },
-];
+import { useAuth } from "@/app/auth-context";
+import { apiRequest } from "@/lib/api";
 
-function CardGrid({ title }: { title: string }) {
-  return (
-    <section className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">{title}</h2>
-        <button type="button" className="text-xs text-white/55">
-          View all
-        </button>
-      </div>
-      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        {cards.map((card) => (
-          <article key={`${title}-${card.title}`} className="app-card p-3">
-            <div className="h-24 rounded-md bg-gradient-to-br from-[#2f1a44] to-[#21131f]" />
-            <p className="mt-3 font-semibold">{card.title}</p>
-            <p className="text-xs text-white/55">{card.artist}</p>
-            <button type="button" className="brand-btn mt-3 w-full px-3 py-2 text-sm">
-              {card.price}
-            </button>
-          </article>
-        ))}
-      </div>
-    </section>
-  );
-}
+type License = { id: number; name: string; is_exclusive?: boolean; includes_stems?: boolean };
+type Beat = {
+  id: number;
+  producer: number;
+  producer_username: string;
+  title: string;
+  genre: string;
+  beat_type?: string;
+  mood?: string;
+  bpm: number;
+  base_price: string;
+  licenses?: License[];
+  storefront_flags?: { free_download?: boolean; stems_available?: boolean; exclusive_available?: boolean };
+};
+type RecommendationFeed = { based_on: string; beats: Beat[] };
+type Producer = {
+  producer_id: number;
+  producer_name: string;
+  username: string;
+  headline?: string;
+  genres?: string;
+  trust_score?: number;
+  badges?: string[];
+  service_offerings?: string[];
+  accepts_album_projects?: boolean;
+  accepts_custom_singles?: boolean;
+};
 
 export default function HomePage() {
+  const { token, user } = useAuth();
+  const [recommendations, setRecommendations] = useState<RecommendationFeed | null>(null);
+  const [producers, setProducers] = useState<Producer[]>([]);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    const run = async () => {
+      try {
+        const [recData, producerData] = await Promise.all([
+          apiRequest<RecommendationFeed>("/analytics/recommendations/beats/", { token }),
+          apiRequest<Producer[]>("/account/producer-discovery/"),
+        ]);
+        setRecommendations(recData);
+        setProducers(producerData);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to load BeatKosh home");
+      }
+    };
+    void run();
+  }, [token]);
+
   return (
     <div className="space-y-6">
-      <section className="surface-panel rounded-xl p-4">
-        <p className="text-sm text-white/65">Welcome, sagar thapa</p>
-        <h1 className="mt-1 text-2xl font-semibold">Your listening dashboard</h1>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {topChips.map((chip, idx) => (
-            <button key={chip} type="button" className={`chip ${idx === 0 ? "active" : ""}`}>
-              {chip}
-            </button>
-          ))}
-        </div>
-      </section>
-
-      <CardGrid title="Super Beats" />
-      <CardGrid title="New Finds" />
-      <CardGrid title="Curated Playlists" />
-
-      <section className="surface-panel rounded-xl p-4">
-        <h2 className="text-lg font-semibold">Latest Beats</h2>
-        <div className="mt-3 space-y-2">
-          {latestRows.map((row) => (
-            <div key={row.name} className="grid grid-cols-[1.2fr_auto] items-center gap-3 rounded-md border border-white/10 bg-[#121522] px-3 py-2">
-              <div>
-                <p className="font-medium">{row.name}</p>
-                <p className="text-xs text-white/55">
-                  {row.producer} • {row.bpm} BPM • {row.key}
-                </p>
-              </div>
-              <button type="button" className="brand-btn px-3 py-2 text-xs">
-                {row.price}
-              </button>
+      <section className="surface-panel rounded-[34px] p-6 md:p-8">
+        <p className="eyebrow">BeatKosh</p>
+        <div className="grid gap-6 xl:grid-cols-[1.25fr_0.95fr] xl:items-end">
+          <div>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight md:text-5xl">
+              Nepal&apos;s beat marketplace and custom production workspace.
+            </h1>
+            <p className="mt-4 max-w-3xl text-white/68">
+              Buy ready-made beats with instant licensing, or hire a producer for a custom single, EP, or full album.
+              The current product stays intact, but the experience now leads with the two journeys BeatKosh is built for.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-3">
+              <Link href="/beats" className="brand-btn px-5 py-3 text-sm">
+                Instant Beat Licensing
+              </Link>
+              <Link href="/projects" className="rounded-full border border-white/12 px-5 py-3 text-sm text-white/84 hover:bg-white/5">
+                Hire for Custom Work
+              </Link>
             </div>
-          ))}
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+            <article className="rounded-[28px] border border-white/10 bg-[#0d1218] p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-white/45">Journey 01</p>
+              <h2 className="mt-3 text-2xl font-semibold">Instant beat licensing</h2>
+              <p className="mt-2 text-sm text-white/62">
+                Browse beats, preview licensing options, compare stems and exclusive rights, and buy without leaving the marketplace flow.
+              </p>
+            </article>
+            <article className="rounded-[28px] border border-white/10 bg-[#0d1218] p-5">
+              <p className="text-xs uppercase tracking-[0.2em] text-white/45">Journey 02</p>
+              <h2 className="mt-3 text-2xl font-semibold">Custom single or full album</h2>
+              <p className="mt-2 text-sm text-white/62">
+                Send structured briefs, agree on milestones, review deliverables, and keep long-form collaboration inside BeatKosh.
+              </p>
+            </article>
+          </div>
         </div>
       </section>
+
+      <section className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
+        <div className="surface-panel rounded-[30px] p-6">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="eyebrow">Recommended beats</p>
+              <h2 className="mt-2 text-2xl font-semibold">Curated from your catalog behavior</h2>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-white/62">
+              {recommendations?.based_on ?? "catalog signals"}
+            </span>
+          </div>
+          <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {(recommendations?.beats ?? []).slice(0, 6).map((beat) => (
+              <article key={beat.id} className="rounded-[24px] border border-white/10 bg-[#0d1218] p-4">
+                <div className="h-24 rounded-2xl bg-gradient-to-br from-[#1c4138] via-[#10262c] to-[#1b1524]" />
+                <Link href={`/beats/${beat.id}`} className="mt-3 block text-lg font-semibold hover:underline">
+                  {beat.title}
+                </Link>
+                <p className="mt-1 text-sm text-white/60">
+                  {beat.producer_username} | {beat.genre} | {beat.bpm} BPM
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/60">
+                  {beat.storefront_flags?.stems_available ? <span className="rounded-full border border-white/10 px-2 py-1">Stems</span> : null}
+                  {beat.storefront_flags?.exclusive_available ? <span className="rounded-full border border-white/10 px-2 py-1">Exclusive</span> : null}
+                  {beat.storefront_flags?.free_download ? <span className="rounded-full border border-white/10 px-2 py-1">Free MP3</span> : null}
+                </div>
+                <div className="mt-4 flex items-center justify-between">
+                  <span className="text-sm text-white/70">Rs {beat.base_price}</span>
+                  <Link href={`/beats/${beat.id}`} className="rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/84 hover:bg-white/5">
+                    View details
+                  </Link>
+                </div>
+              </article>
+            ))}
+          </div>
+        </div>
+
+        <aside className="surface-panel rounded-[30px] p-6">
+          <p className="eyebrow">Producers ready to hire</p>
+          <h2 className="mt-2 text-2xl font-semibold">Trust-first discovery</h2>
+          <div className="mt-5 space-y-3">
+            {producers.slice(0, 5).map((producer) => (
+              <article key={producer.producer_id} className="rounded-[22px] border border-white/10 bg-[#0d1218] p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <Link href={`/producers/${producer.producer_id}`} className="font-semibold hover:underline">
+                      {producer.producer_name || producer.username}
+                    </Link>
+                    <p className="mt-1 text-sm text-white/60">{producer.headline || producer.genres || "BeatKosh producer"}</p>
+                  </div>
+                  <span className="rounded-full border border-[#77d6c8]/25 bg-[#77d6c8]/10 px-3 py-1 text-xs text-[#9ee8dc]">
+                    Trust {producer.trust_score ?? 0}
+                  </span>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2 text-xs text-white/60">
+                  {(producer.badges ?? []).slice(0, 3).map((badge) => (
+                    <span key={badge} className="rounded-full border border-white/10 px-2 py-1">{badge}</span>
+                  ))}
+                </div>
+                <p className="mt-3 text-sm text-white/62">
+                  {(producer.service_offerings ?? []).slice(0, 2).join(" | ") || "Custom production available"}
+                </p>
+              </article>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <section className="surface-panel rounded-[30px] p-6">
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <p className="eyebrow">Execution-ready collaboration</p>
+            <h2 className="mt-2 text-2xl font-semibold">BeatKosh keeps the marketplace and adds deeper studio work</h2>
+          </div>
+          <div className="flex gap-3 text-sm text-white/62">
+            <span className="rounded-full border border-white/10 px-3 py-1.5">Milestone projects</span>
+            <span className="rounded-full border border-white/10 px-3 py-1.5">Producer trust</span>
+            <span className="rounded-full border border-white/10 px-3 py-1.5">Smart discovery</span>
+          </div>
+        </div>
+        {user ? <p className="mt-4 text-sm text-white/58">Signed in as {user.username}. Your recommendations and trust-aware discovery are active.</p> : null}
+      </section>
+
+      {error ? <p className="text-sm text-[#ffb4a9]">{error}</p> : null}
     </div>
   );
 }

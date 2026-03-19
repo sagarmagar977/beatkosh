@@ -4,6 +4,8 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 from beats.models import Beat
+from payments.models import ProducerPayoutProfile
+from verification.models import VerificationRequest
 
 
 class AccountsFlowTests(APITestCase):
@@ -71,10 +73,16 @@ class AccountsFlowTests(APITestCase):
         self.client.post(reverse("start-selling"), {}, format="json")
         producer_response = self.client.patch(
             reverse("producer-profile-me"),
-            {"producer_name": "Sagar Producer"},
+            {
+                "producer_name": "Sagar Producer",
+                "headline": "Album-ready NepHop producer",
+                "service_offerings": ["Custom single", "Album production"],
+                "accepts_album_projects": True,
+            },
             format="json",
         )
         self.assertEqual(producer_response.status_code, status.HTTP_200_OK)
+        self.assertTrue(producer_response.data["accepts_album_projects"])
 
     def test_follow_and_like_flow(self):
         producer = User.objects.create_user(
@@ -133,3 +141,58 @@ class AccountsFlowTests(APITestCase):
         )
         response = self.client.get(reverse("producer-detail-by-user", kwargs={"user_id": producer.id}))
         self.assertEqual(response.status_code, status.HTTP_200_OK)
+
+    def test_onboarding_and_public_trust_endpoints(self):
+        producer = User.objects.create_user(
+            username="trustproducer",
+            email="trustproducer@example.com",
+            password="strong-pass-123",
+            is_artist=False,
+            is_producer=True,
+            active_role="producer",
+        )
+        login_response = self.client.post(
+            self.login_url,
+            {"username": "trustproducer", "password": "strong-pass-123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
+        self.client.patch(
+            reverse("producer-profile-me"),
+            {
+                "producer_name": "Trust Producer",
+                "bio": "Detailed bio",
+                "genres": "HipHop, Drill",
+                "experience_years": 4,
+                "service_offerings": ["Custom single", "Album production"],
+                "accepts_album_projects": True,
+            },
+            format="json",
+        )
+        ProducerPayoutProfile.objects.create(
+            producer=producer,
+            method="bank",
+            account_number="1234",
+            account_holder="Trust Producer",
+        )
+        VerificationRequest.objects.create(
+            user=producer,
+            verification_type=VerificationRequest.TYPE_PRODUCER,
+            status=VerificationRequest.STATUS_APPROVED,
+        )
+
+        agreement_response = self.client.post(reverse("producer-seller-agreement-me"), {"accepted_version": "v1"}, format="json")
+        self.assertEqual(agreement_response.status_code, status.HTTP_200_OK)
+
+        onboarding_response = self.client.get(reverse("producer-onboarding-me"))
+        self.assertEqual(onboarding_response.status_code, status.HTTP_200_OK)
+        self.assertGreater(onboarding_response.data["progress_percent"], 0)
+        self.assertTrue(onboarding_response.data["trust_summary"]["seller_agreement_accepted"])
+
+        public_trust = self.client.get(reverse("producer-trust-public", kwargs={"user_id": producer.id}))
+        self.assertEqual(public_trust.status_code, status.HTTP_200_OK)
+        self.assertIn("trust_score", public_trust.data)
+
+        discovery_response = self.client.get(reverse("producer-discovery"))
+        self.assertEqual(discovery_response.status_code, status.HTTP_200_OK)
+        self.assertGreaterEqual(len(discovery_response.data), 1)

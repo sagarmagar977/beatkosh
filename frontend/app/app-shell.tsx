@@ -1,5 +1,24 @@
 "use client";
 
+import {
+  BookOpen,
+  CircleDollarSign,
+  CircleHelp,
+  Clock3,
+  Download,
+  Droplets,
+  Headphones,
+  Headset,
+  Heart,
+  History,
+  MessageSquareMore,
+  Music4,
+  Newspaper,
+  ShoppingCart,
+  SlidersHorizontal,
+  TrendingUp,
+  Users,
+} from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -7,6 +26,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
 import { GlobalPlayer } from "@/components/global-player";
+import { apiRequest } from "@/lib/api";
 
 type MenuIconKind =
   | "headphones"
@@ -34,182 +54,54 @@ type MenuItem = {
 };
 
 type NavLink = { href: string; label: string; menu?: MenuItem[] };
+type AppNotification = {
+  id: number;
+  notification_type: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+  actor_username: string;
+  beat_id?: number | null;
+  beat_title?: string | null;
+};
 
 function MenuIcon({ kind }: { kind: MenuIconKind }) {
   const common = "h-5 w-5 flex-none text-[#8f5cff]";
   switch (kind) {
     case "headphones":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M4 13a8 8 0 0 1 16 0v6a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h3"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-          <path
-            d="M20 13v6a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h3"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-          <path
-            d="M4 13h3a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2v-6Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-        </svg>
-      );
+      return <Headphones className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "cash":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M4 7h16v10H4V7Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinejoin="round"
-          />
-          <path
-            d="M7 10h.01M17 14h.01"
-            stroke="currentColor"
-            strokeWidth="2.2"
-            strokeLinecap="round"
-          />
-          <path
-            d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-          />
-        </svg>
-      );
+      return <CircleDollarSign className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "beat":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M9 18a3 3 0 1 0 0-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M9 12V6l12-2v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M21 14a3 3 0 1 0 0-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M21 8v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <Music4 className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "trend":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M4 16l6-6 4 4 6-6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M14 8h6v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <TrendingUp className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "clock":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 8v5l3 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" stroke="currentColor" strokeWidth="1.8" />
-        </svg>
-      );
+      return <Clock3 className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "cart":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M6 7h15l-2 9H7L6 7Z" stroke="currentColor" strokeWidth="1.8" strokeLinejoin="round" />
-          <path d="M6 7 5 4H3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M9 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2ZM18 20a1 1 0 1 0 0-2 1 1 0 0 0 0 2Z" fill="currentColor" />
-        </svg>
-      );
+      return <ShoppingCart className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "heart":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path
-            d="M12 20s-7-4.6-9-9.2C1.8 7.2 3.8 4.5 7 4.5c1.8 0 3.1 1 4 2.1.9-1.1 2.2-2.1 4-2.1 3.2 0 5.2 2.7 4 6.3-2 4.6-9 9.2-9 9.2Z"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinejoin="round"
-          />
-        </svg>
-      );
+      return <Heart className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "history":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M4 4v6h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M4.5 10A8 8 0 1 0 6 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M12 8v5l3 2" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <History className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "download":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 3v10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M8 10l4 4 4-4" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M5 21h14" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <Download className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "studio":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M4 7h16v10H4V7Z" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M7 10h3v4H7v-4Z" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M14 10h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M14 14h3" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <SlidersHorizontal className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "negotiation":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M6 7h12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M6 12h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M6 17h10" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <MessageSquareMore className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "group":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M16 11a3 3 0 1 0-6 0 3 3 0 0 0 6 0Z" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M4 20c1.2-4 4-6 8-6s6.8 2 8 6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <Users className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "drop":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 2s6 6.2 6 12a6 6 0 0 1-12 0c0-5.8 6-12 6-12Z" stroke="currentColor" strokeWidth="1.8" />
-        </svg>
-      );
+      return <Droplets className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "tutorial":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M4 5h16v14H4V5Z" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M10 9h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M10 13h6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <BookOpen className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "help":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M12 18h.01" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" />
-          <path
-            d="M9.5 9.5a2.6 2.6 0 1 1 4.1 2.1c-.9.6-1.6 1.2-1.6 2.4v.5"
-            stroke="currentColor"
-            strokeWidth="1.8"
-            strokeLinecap="round"
-          />
-          <path d="M21 12a9 9 0 1 1-18 0 9 9 0 0 1 18 0Z" stroke="currentColor" strokeWidth="1.8" />
-        </svg>
-      );
+      return <CircleHelp className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "blog":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M5 4h14v16H5V4Z" stroke="currentColor" strokeWidth="1.8" />
-          <path d="M8 8h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M8 12h8" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M8 16h5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <Newspaper className={common} strokeWidth={1.8} aria-hidden="true" />;
     case "support":
-      return (
-        <svg className={common} viewBox="0 0 24 24" fill="none" aria-hidden="true">
-          <path d="M7 18c0 1.7 1.8 3 5 3s5-1.3 5-3v-5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M4 13a8 8 0 1 1 16 0" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M6 13v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-          <path d="M18 13v6" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" />
-        </svg>
-      );
+      return <Headset className={common} strokeWidth={1.8} aria-hidden="true" />;
     default:
       return null;
   }
@@ -262,6 +154,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [hoverMenuOpen, setHoverMenuOpen] = useState<string | null>(null);
   const [pinnedMenuOpen, setPinnedMenuOpen] = useState<string | null>(null);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [notifications, setNotifications] = useState<AppNotification[]>([]);
+  const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [startSellingBusy, setStartSellingBusy] = useState(false);
   const [startSellingError, setStartSellingError] = useState<string | null>(null);
@@ -273,6 +167,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const navRef = useRef<HTMLDivElement | null>(null);
 
   const hasSession = Boolean(token);
+  const profileHref = user?.is_producer ? `/producers/${user.id}` : null;
 
   const normalizedPath = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   const publicAuthRoutes = ["/auth/login", "/auth/register"];
@@ -321,6 +216,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       window.removeEventListener("pointerdown", onPointerDown);
     };
   }, []);
+
+  useEffect(() => {
+    if (!token || !notificationsOpen) {
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      setNotificationsLoading(true);
+      try {
+        const data = await apiRequest<AppNotification[]>("/account/notifications/me/", { token });
+        if (!cancelled) {
+          setNotifications(data);
+        }
+        await apiRequest("/account/notifications/read/", { method: "POST", token, body: {} });
+        if (!cancelled) {
+          setNotifications((current) => current.map((item) => ({ ...item, is_read: true })));
+        }
+      } catch {
+      } finally {
+        if (!cancelled) {
+          setNotificationsLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [notificationsOpen, token]);
 
   const openMenuKey = pinnedMenuOpen ?? hoverMenuOpen;
   const activeMenuItems = useMemo(() => {
@@ -431,7 +357,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={() => setNotificationsOpen((s) => !s)}
-            className="rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs text-white/75"
+            className="relative rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs text-white/75"
           >
             Bell
           </button>
@@ -566,6 +492,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <div className="absolute right-0 top-[46px] z-50 w-[240px] rounded-2xl border border-white/10 bg-[#0b0c13]/95 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
                 <p className="px-2 pb-2 text-xs text-white/50">Signed in as {user?.username ?? ""}</p>
                 <div className="grid gap-2">
+                  {profileHref ? (
+                    <Link
+                      href={profileHref}
+                      className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-white/80 hover:bg-white/5"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      My Profile
+                    </Link>
+                  ) : null}
                   <Link
                     href="/dashboard/listening"
                     className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-white/80 hover:bg-white/5"
@@ -602,9 +537,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
 
             {notificationsOpen ? (
-              <div className="absolute right-0 top-[46px] z-50 w-[280px] rounded-2xl border border-white/10 bg-[#0b0c13]/95 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+              <div className="absolute right-0 top-[46px] z-50 w-[340px] rounded-2xl border border-white/10 bg-[#0b0c13]/95 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
                 <p className="text-sm font-semibold text-white">Notifications</p>
-                <p className="mt-1 text-xs text-white/60">No new notifications.</p>
+                {notificationsLoading ? <p className="mt-3 text-xs text-white/60">Loading notifications...</p> : null}
+                {!notificationsLoading && notifications.length === 0 ? <p className="mt-3 text-xs text-white/60">No new notifications.</p> : null}
+                {!notificationsLoading ? (
+                  <div className="mt-3 space-y-2">
+                    {notifications.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => {
+                          setNotificationsOpen(false);
+                          if (item.beat_id) {
+                            router.push(`/beats/${item.beat_id}`);
+                          }
+                        }}
+                        className="block w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-left hover:bg-white/[0.05]"
+                      >
+                        <p className="text-sm text-white/85">{item.message}</p>
+                        <p className="mt-1 text-[11px] text-white/45">
+                          {new Date(item.created_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
+                        </p>
+                      </button>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             ) : null}
           </nav>
