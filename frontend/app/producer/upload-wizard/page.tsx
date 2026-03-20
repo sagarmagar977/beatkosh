@@ -728,6 +728,19 @@ export default function ProducerUploadWizardPage() {
     upload_card_state: uploadCardState,
   });
 
+  const appendBeatMediaFiles = (form: FormData) => {
+    if (taggedMp3) form.append("preview_audio_upload", taggedMp3);
+    if (wavFile) {
+      form.append("audio_file_upload", wavFile);
+      return;
+    }
+    // Preserve older user behavior where only the MP3 picker was used by
+    // storing that file as the main beat audio when no source file exists yet.
+    if (!beatDraft?.audio_file_obj && taggedMp3) {
+      form.append("audio_file_upload", taggedMp3);
+    }
+  };
+
   const clearBeatWizardSession = () => {
     if (typeof window !== "undefined") {
       window.sessionStorage.removeItem(beatWizardSessionKey);
@@ -1025,9 +1038,10 @@ export default function ProducerUploadWizardPage() {
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
                     <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
-                      <p className="text-sm text-white/80">Upload tagged MP3 file (.mp3)</p>
+                      <p className="text-sm text-white/80">Optional tagged preview MP3 (.mp3)</p>
                       <input type="file" accept=".mp3,audio/mpeg" onChange={(e) => { const file = e.target.files?.[0] ?? null; setTaggedMp3(file); updateUploadCard("tagged_mp3", file); }} className="mt-3 h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
-                      <UploadAssetCard icon={<Music2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Tagged MP3" status={taggedMp3 ? "Selected in this browser session" : beatDraft?.preview_audio_obj ? "Saved to draft" : uploadCardState?.tagged_mp3 ? "Remembered for this tab" : ""} fileName={taggedMp3?.name ?? uploadCardState?.tagged_mp3 ?? fileNameFromUrl(beatDraft?.preview_audio_obj)} href={resolveMediaUrl(beatDraft?.preview_audio_obj)} />
+                      <p className="mt-2 text-xs text-white/45">This is the preview artists hear before purchase. If you do not upload a separate beat file, this MP3 will also be used as the main audio.</p>
+                      <UploadAssetCard icon={<Music2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Preview MP3" status={taggedMp3 ? "Selected in this browser session" : beatDraft?.preview_audio_obj ? "Saved to draft" : uploadCardState?.tagged_mp3 ? "Remembered for this tab" : ""} fileName={taggedMp3?.name ?? uploadCardState?.tagged_mp3 ?? fileNameFromUrl(beatDraft?.preview_audio_obj)} href={resolveMediaUrl(beatDraft?.preview_audio_obj)} />
                     </label>
                     <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
                       <p className="text-sm text-white/80">Cover art</p>
@@ -1036,9 +1050,10 @@ export default function ProducerUploadWizardPage() {
                       <UploadAssetCard icon={<ImageIcon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Cover Art" status={coverArt ? "Custom cover cropped to square and ready" : selectedFeaturedCover ? "Featured cover selected" : beatDraft?.cover_art_obj ? "Saved to draft" : uploadCardState?.cover_art ? "Remembered for this tab" : ""} fileName={coverArt?.name ?? (selectedFeaturedCover ? "Featured cover" : uploadCardState?.cover_art ?? fileNameFromUrl(beatDraft?.cover_art_obj))} href={selectedFeaturedCoverUrl ?? resolveMediaUrl(beatDraft?.cover_art_obj)} previewUrl={customCoverPreviewUrl ?? selectedFeaturedCoverUrl ?? resolveMediaUrl(beatDraft?.cover_art_obj)} compactPreview />
                     </label>
                     <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
-                      <p className="text-sm text-white/80">Upload untagged WAV file (.wav)</p>
-                      <input type="file" accept=".wav,audio/wav" onChange={(e) => { const file = e.target.files?.[0] ?? null; setWavFile(file); updateUploadCard("wav", file); }} className="mt-3 h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
-                      <UploadAssetCard icon={<FileAudio className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="WAV File" status={wavFile ? "Selected in this browser session" : beatDraft?.audio_file_obj ? "Saved to draft" : uploadCardState?.wav ? "Remembered for this tab" : ""} fileName={wavFile?.name ?? uploadCardState?.wav ?? fileNameFromUrl(beatDraft?.audio_file_obj)} href={resolveMediaUrl(beatDraft?.audio_file_obj)} />
+                      <p className="text-sm text-white/80">Upload main beat file (.wav or .mp3)</p>
+                      <input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" onChange={(e) => { const file = e.target.files?.[0] ?? null; setWavFile(file); updateUploadCard("wav", file); }} className="mt-3 h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
+                      <p className="mt-2 text-xs text-white/45">Required before publish. This is the audio saved to the beat record.</p>
+                      <UploadAssetCard icon={<FileAudio className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Beat File" status={wavFile ? "Selected in this browser session" : beatDraft?.audio_file_obj ? "Saved to draft" : uploadCardState?.wav ? "Remembered for this tab" : ""} fileName={wavFile?.name ?? uploadCardState?.wav ?? fileNameFromUrl(beatDraft?.audio_file_obj)} href={resolveMediaUrl(beatDraft?.audio_file_obj)} />
                     </label>
                     <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
                       <p className="text-sm text-white/80">Upload STEM files (.zip, .rar)</p>
@@ -1061,8 +1076,7 @@ export default function ProducerUploadWizardPage() {
                           const form = new FormData();
                           form.append("current_step", "2");
                           form.append("media", buildBeatDraftMedia());
-                          if (taggedMp3) form.append("preview_audio_upload", taggedMp3);
-                          if (wavFile) form.append("audio_file_upload", wavFile);
+                          appendBeatMediaFiles(form);
                           if (coverArt) form.append("cover_art_upload", coverArt);
                           if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
                           if (stemsFile) form.append("stems_file_upload", stemsFile);
@@ -1080,8 +1094,7 @@ export default function ProducerUploadWizardPage() {
                           const form = new FormData();
                           form.append("current_step", "3");
                           form.append("media", buildBeatDraftMedia());
-                          if (taggedMp3) form.append("preview_audio_upload", taggedMp3);
-                          if (wavFile) form.append("audio_file_upload", wavFile);
+                          appendBeatMediaFiles(form);
                           if (coverArt) form.append("cover_art_upload", coverArt);
                           if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
                           if (stemsFile) form.append("stems_file_upload", stemsFile);
@@ -1216,8 +1229,8 @@ export default function ProducerUploadWizardPage() {
                           const refreshedDraft = await apiRequest<BeatDraft>(`/beats/upload-drafts/${currentDraft.id}/`, { token });
                           setBeatDraft(refreshedDraft);
                           syncBeatFromDraft(refreshedDraft);
-                          if (!refreshedDraft.preview_audio_obj && !refreshedDraft.audio_file_obj) {
-                            setError("Upload audio in Media Upload step so the beat is playable before submitting.");
+                          if (!refreshedDraft.audio_file_obj) {
+                            setError("Upload the main beat file in Media Upload before submitting.");
                             setStep(1);
                             return;
                           }

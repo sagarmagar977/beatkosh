@@ -9,6 +9,18 @@ function resolveApiBase() {
 export const API_BASE = resolveApiBase();
 const BACKEND_ORIGIN = (process.env.NEXT_PUBLIC_BACKEND_ORIGIN ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 
+function resolveProxyApiBase() {
+  if (API_BASE.startsWith("/backend/")) {
+    return API_BASE;
+  }
+  if (API_BASE.startsWith("/api/")) {
+    return `/backend${API_BASE}`;
+  }
+  return API_BASE;
+}
+
+const PROXY_API_BASE = resolveProxyApiBase();
+
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
 type ApiOptions = {
@@ -22,6 +34,7 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
   const { method = "GET", token, body, isFormData = false } = options;
   const normalizedPath =
     path.endsWith("/") || path.includes("?") || path.includes("#") ? path : `${path}/`;
+  const requestBase = isFormData ? PROXY_API_BASE : API_BASE;
   const headers: HeadersInit = {};
   if (!isFormData) {
     headers["Content-Type"] = "application/json";
@@ -30,7 +43,7 @@ export async function apiRequest<T>(path: string, options: ApiOptions = {}): Pro
     headers.Authorization = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE}${normalizedPath}`, {
+  const response = await fetch(`${requestBase}${normalizedPath}`, {
     method,
     headers,
     body: body ? (isFormData ? (body as FormData) : JSON.stringify(body)) : undefined,
@@ -65,3 +78,4 @@ export function resolveMediaUrl(raw?: string | null) {
   }
   return `${BACKEND_ORIGIN}/${raw}`;
 }
+

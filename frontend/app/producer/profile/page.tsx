@@ -2,7 +2,7 @@
 
 import { BadgeCheck, Camera, Heart, PencilLine, Play, ShieldAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
 import { BeatListRow } from "@/components/beat-list-row";
@@ -40,6 +40,10 @@ type DashboardSummary = {
   likes: number;
 };
 
+type BeatMetadataOptions = {
+  genres: string[];
+};
+
 type ListeningHistoryItem = {
   id: number;
   beat: Beat;
@@ -71,6 +75,7 @@ export default function ProducerPrivateProfilePage() {
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
   const library = useBeatLibrary(user?.id);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const filterCardRef = useRef<HTMLElement | null>(null);
   const [profile, setProfile] = useState<ProducerProfile | null>(null);
   const [beats, setBeats] = useState<Beat[]>([]);
   const [trust, setTrust] = useState<TrustSummary | null>(null);
@@ -79,13 +84,16 @@ export default function ProducerPrivateProfilePage() {
   const [tab, setTab] = useState<PrivateTab>("beats");
   const [trackView, setTrackView] = useState<TrackView>("recent");
   const [profileName, setProfileName] = useState("");
-  const [profileHeadline, setProfileHeadline] = useState("");
+  const [profileBio, setProfileBio] = useState("");
+  const [genreOptions, setGenreOptions] = useState<string[]>([]);
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([]);
   const [selectedAvatar, setSelectedAvatar] = useState<File | null>(null);
   const [avatarPreview, setAvatarPreview] = useState("");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [filterCardHeight, setFilterCardHeight] = useState(0);
 
   useEffect(() => {
     if (!token || !user?.is_producer) {
@@ -94,22 +102,29 @@ export default function ProducerPrivateProfilePage() {
 
     const run = async () => {
       try {
-        const [profileResult, beatsResult, trustResult, dashboardResult, historyResult] = await Promise.all([
+        const [profileResult, beatsResult, trustResult, dashboardResult, historyResult, metadataOptions] = await Promise.all([
           apiRequest<ProducerProfile>("/account/producer-profile/", { token }),
           apiRequest<Beat[]>(`/beats/?producer=${user.id}`),
           apiRequest<TrustSummary>(`/account/producer-trust/${user.id}/`),
           apiRequest<DashboardSummary>(`/analytics/producer/${user.id}/dashboard-summary/`),
           apiRequest<ListeningHistoryItem[]>("/analytics/listening/recent/", { token }),
+          apiRequest<BeatMetadataOptions>("/beats/metadata-options/"),
         ]);
         setProfile(profileResult);
         setProfileName(profileResult.producer_name || "");
-        setProfileHeadline(profileResult.headline || "");
+        setProfileBio(profileResult.bio || "");
+        setSelectedGenres(
+          profileResult.genres
+            ? profileResult.genres.split(",").map((item) => item.trim()).filter(Boolean)
+            : [],
+        );
         setSelectedAvatar(null);
         setAvatarPreview(resolveMediaUrl(profileResult.avatar_obj));
         setBeats(beatsResult);
         setTrust(trustResult);
         setDashboard(dashboardResult);
         setHistory(historyResult);
+        setGenreOptions(metadataOptions.genres);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load your producer profile");
@@ -118,6 +133,28 @@ export default function ProducerPrivateProfilePage() {
 
     void run();
   }, [token, user]);
+
+  useLayoutEffect(() => {
+    const node = filterCardRef.current;
+    if (!node || typeof window === "undefined") {
+      return;
+    }
+
+    const updateHeight = () => {
+      setFilterCardHeight(node.getBoundingClientRect().height);
+    };
+
+    updateHeight();
+
+    const resizeObserver = new ResizeObserver(() => updateHeight());
+    resizeObserver.observe(node);
+    window.addEventListener("resize", updateHeight);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateHeight);
+    };
+  }, [tab]);
 
   const notify = (text: string) => {
     setMessage(text);
@@ -169,7 +206,8 @@ export default function ProducerPrivateProfilePage() {
     try {
       const form = new FormData();
       form.append("producer_name", profileName.trim());
-      form.append("headline", profileHeadline.trim());
+      form.append("bio", profileBio.trim());
+      form.append("genres", selectedGenres.join(", "));
       if (selectedAvatar) {
         form.append("avatar_upload", selectedAvatar);
       }
@@ -181,7 +219,12 @@ export default function ProducerPrivateProfilePage() {
       });
       setProfile(updatedProfile);
       setProfileName(updatedProfile.producer_name || "");
-      setProfileHeadline(updatedProfile.headline || "");
+      setProfileBio(updatedProfile.bio || "");
+      setSelectedGenres(
+        updatedProfile.genres
+          ? updatedProfile.genres.split(",").map((item) => item.trim()).filter(Boolean)
+          : [],
+      );
       setSelectedAvatar(null);
       setAvatarPreview(resolveMediaUrl(updatedProfile.avatar_obj));
       notify("Profile updated.");
@@ -374,6 +417,7 @@ export default function ProducerPrivateProfilePage() {
   const avatarImageUrl = avatarPreview || resolveMediaUrl(profile?.avatar_obj);
   const profileDisplayName = profile?.producer_name || user.username;
   const profileInitial = profileDisplayName.slice(0, 1).toUpperCase() || "P";
+  const profileGenres = profile?.genres ? profile.genres.split(",").map((item) => item.trim()).filter(Boolean) : [];
 
   return (
     <>
@@ -405,14 +449,40 @@ export default function ProducerPrivateProfilePage() {
                 />
               </label>
               <label className="block text-sm text-white/72">
-                <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-white/42">Headline</span>
-                <input
-                  value={profileHeadline}
-                  onChange={(event) => setProfileHeadline(event.target.value)}
-                  placeholder="Album-ready producer"
-                  className="h-11 w-full rounded-2xl border border-white/10 bg-[#11131a] px-4 text-sm text-white outline-none placeholder:text-white/28"
+                <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-white/42">Description</span>
+                <textarea
+                  value={profileBio}
+                  onChange={(event) => setProfileBio(event.target.value)}
+                  placeholder="Describe your sound, style, and what artists can expect from you."
+                  className="min-h-[120px] w-full rounded-2xl border border-white/10 bg-[#11131a] px-4 py-3 text-sm text-white outline-none placeholder:text-white/28"
                 />
               </label>
+              <div className="rounded-2xl border border-white/10 bg-[#11131a] p-4">
+                <span className="block text-xs uppercase tracking-[0.18em] text-white/42">Genres</span>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {genreOptions.map((genre) => {
+                    const selected = selectedGenres.includes(genre);
+                    return (
+                      <button
+                        key={genre}
+                        type="button"
+                        onClick={() =>
+                          setSelectedGenres((current) =>
+                            selected ? current.filter((item) => item !== genre) : [...current, genre],
+                          )
+                        }
+                        className={`rounded-full border px-3 py-1.5 text-xs transition ${
+                          selected
+                            ? "border-[#8b4dff]/80 bg-[#8b4dff]/18 text-white"
+                            : "border-white/10 bg-white/[0.02] text-white/58 hover:bg-white/[0.05]"
+                        }`}
+                      >
+                        {genre}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
@@ -473,7 +543,17 @@ export default function ProducerPrivateProfilePage() {
 
             <div className="mt-4 text-center">
               <h2 className="text-[2rem] font-semibold leading-none text-white">{profileDisplayName}</h2>
-              <p className="mt-2 text-sm text-[#b39bff]">{profile?.headline || "Private producer view"}</p>
+              <div className="mt-3 flex flex-wrap justify-center gap-2">
+                {profileGenres.length > 0 ? (
+                  profileGenres.map((genre) => (
+                    <span key={genre} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/66">
+                      {genre}
+                    </span>
+                  ))
+                ) : (
+                  <p className="text-sm text-white/52">Genre not set</p>
+                )}
+              </div>
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
@@ -495,13 +575,11 @@ export default function ProducerPrivateProfilePage() {
             </div>
 
             <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-white/42">Genre</p>
-              <p className="mt-1.5 text-base text-white/82">{profile?.genres || "Genre not set"}</p>
+              <p className="text-xs uppercase tracking-[0.18em] text-white/42">Bio</p>
+              <p className="mt-1.5 text-sm leading-6 text-white/68">{profile?.bio || "No producer bio yet."}</p>
             </div>
 
-            <button type="button" onClick={() => router.push(`/producers/${user.id}`)} className="mt-4 w-full rounded-full border border-white/12 bg-white/[0.03] px-4 py-2 text-sm text-white/80 hover:bg-white/[0.06]">
-              Open public profile
-            </button>
+            
             <button
               type="button"
               onClick={() => setIsEditModalOpen(true)}
@@ -513,9 +591,24 @@ export default function ProducerPrivateProfilePage() {
           </section>
         </aside>
 
-        <section className="space-y-5 lg:pt-[18.5rem]">
-        <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[#1c1f29] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.22)] lg:fixed lg:top-36 lg:left-[calc(max(1.5rem,calc((100vw-1200px)/2))+365px)] lg:right-[max(1.5rem,calc((100vw-1200px)/2))] lg:z-30 lg:bg-[#1c1f29]/98 lg:backdrop-blur">
-          <div className="flex flex-wrap gap-2">
+        <section className="space-y-5 lg:pt-[calc(var(--profile-filter-height,0px)+1.5rem)]" style={{ ["--profile-filter-height" as string]: `${filterCardHeight}px` }}>
+        <section ref={filterCardRef} className="overflow-hidden rounded-[30px] border border-white/10 bg-[#141720] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.22)] lg:fixed lg:top-[6.8rem] lg:left-[calc(max(1.5rem,calc((100vw-1200px)/2))+365px)] lg:right-[max(1.5rem,calc((100vw-1200px)/2))] lg:z-30 lg:rounded-[24px] lg:rounded-t-none lg:border-x-0 lg:border-t-0 lg:border-b lg:border-white/8 lg:bg-[#0d0f16] lg:px-0 lg:pb-4 lg:pt-3 lg:shadow-none">
+          <div className="lg:px-1">
+          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-3">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/34">Producer catalog</p>
+              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">{profileDisplayName}</h1>
+            </div>
+            <button
+              type="button"
+              onClick={() => router.push(`/producers/${user.id}`)}
+              className="rounded-full border border-white/12 bg-white/[0.03] px-4 py-2 text-sm text-white/75 hover:bg-white/[0.06]"
+            >
+              Open public profile
+            </button>
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
             {[
               { key: "beats", label: "Beats" },
               { key: "playlists", label: "Playlists" },
@@ -561,6 +654,7 @@ export default function ProducerPrivateProfilePage() {
               </div>
             </div>
           ) : null}
+          </div>
         </section>
 
         <div className="relative z-0">

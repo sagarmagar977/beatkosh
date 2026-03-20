@@ -3,7 +3,7 @@
 import { BadgeCheck, Clock3, Heart, Play, ShieldAlert } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
 import { BeatListRow } from "@/components/beat-list-row";
@@ -77,6 +77,7 @@ export default function ProducerProfilePage() {
   const router = useRouter();
   const { token } = useAuth();
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
+  const filterCardRef = useRef<HTMLElement | null>(null);
   const userId = Number(params.id);
   const [profile, setProfile] = useState<ProducerProfile | null>(null);
   const [beats, setBeats] = useState<Beat[]>([]);
@@ -85,6 +86,7 @@ export default function ProducerProfilePage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [trackView, setTrackView] = useState<TrackView>("recent");
+  const [filterCardHeight, setFilterCardHeight] = useState(0);
 
   useEffect(() => {
     const run = async () => {
@@ -114,10 +116,33 @@ export default function ProducerProfilePage() {
     void run();
   }, [userId]);
 
+  useLayoutEffect(() => {
+    const node = filterCardRef.current;
+    if (!node || typeof window === "undefined") {
+      return;
+    }
+
+    const updateHeight = () => {
+      setFilterCardHeight(node.getBoundingClientRect().height);
+    };
+
+    updateHeight();
+
+    const resizeObserver = new ResizeObserver(() => updateHeight());
+    resizeObserver.observe(node);
+    window.addEventListener("resize", updateHeight);
+
+    return () => {
+      resizeObserver.disconnect();
+      window.removeEventListener("resize", updateHeight);
+    };
+  }, []);
+
   const producerName = profile?.producer_name || "Producer";
   const profileInitial = producerName.slice(0, 1).toUpperCase() || "P";
   const profileAvatarUrl = resolveMediaUrl(profile?.avatar_obj);
-  const serviceOfferings = trust?.service_offerings ?? profile?.service_offerings ?? [];
+  const isVerified = Boolean(dashboard?.verified || profile?.verified);
+  const profileGenres = profile?.genres ? profile.genres.split(",").map((item) => item.trim()).filter(Boolean) : [];
 
   const sortedBeats = useMemo(() => {
     const next = [...beats];
@@ -189,8 +214,8 @@ export default function ProducerProfilePage() {
 
   return (
     <div className="relative pb-20 lg:pl-[365px]">
-      <aside className="lg:fixed lg:top-36 lg:left-[max(1.5rem,calc((100vw-1200px)/2))] lg:w-[340px]">
-        <section className="rounded-[30px] border border-white/10 bg-[#1c1f29] px-5 py-4 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+      <aside className="lg:fixed lg:bottom-5 lg:left-[max(1.5rem,calc((100vw-1200px)/2))] lg:top-[6.8rem] lg:flex lg:w-[340px] lg:items-center">
+        <section className="rounded-[30px] border border-white/10 bg-[#1c1f29] px-5 py-4 shadow-[0_24px_70px_rgba(0,0,0,0.22)] lg:max-h-[calc(100vh-9.3rem)] lg:overflow-y-auto lg:px-4 lg:py-3">
           <div className="flex justify-center">
             {profileAvatarUrl ? (
               <img src={profileAvatarUrl} alt={producerName} className="h-32 w-32 rounded-full border border-white/10 object-cover" />
@@ -201,12 +226,22 @@ export default function ProducerProfilePage() {
             )}
           </div>
 
-          <div className="mt-4 text-center">
+          <div className="mt-3 text-center">
             <h2 className="text-[2rem] font-semibold leading-none text-white">{producerName}</h2>
-            <p className="mt-2 text-sm text-[#b39bff]">{profile?.headline || "Producer profile"}</p>
+            <div className="mt-3 flex flex-wrap justify-center gap-2">
+              {profileGenres.length > 0 ? (
+                profileGenres.map((genre) => (
+                  <span key={genre} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/66">
+                    {genre}
+                  </span>
+                ))
+              ) : (
+                <p className="text-sm text-white/52">Genre not set</p>
+              )}
+            </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-3 gap-2">
+          <div className="mt-3 grid grid-cols-3 gap-2">
             <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-center">
               <Play className="mx-auto h-4 w-4 text-[#a288ff]" strokeWidth={1.8} aria-hidden="true" />
               <p className="mt-1.5 text-lg font-semibold text-white">{formatCompact(dashboard?.plays ?? 0)}</p>
@@ -217,41 +252,29 @@ export default function ProducerProfilePage() {
               <p className="mt-1.5 text-lg font-semibold text-white">{formatCompact(dashboard?.likes ?? 0)}</p>
               <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Likes</p>
             </div>
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-center">
-              {dashboard?.verified || profile?.verified ? <BadgeCheck className="mx-auto h-4 w-4 text-[#9ee8dc]" strokeWidth={1.8} aria-hidden="true" /> : <ShieldAlert className="mx-auto h-4 w-4 text-[#f4c784]" strokeWidth={1.8} aria-hidden="true" />}
-              <p className="mt-1.5 text-sm font-semibold text-white">{dashboard?.verified || profile?.verified ? "Verified" : "Not verified"}</p>
-              <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Status</p>
+            <div className={`rounded-2xl border px-3 py-2.5 text-center ${isVerified ? "border-white/10 bg-white/[0.03]" : "border-white/6 bg-black/20"}`}>
+              {isVerified ? (
+                <BadgeCheck className="mx-auto h-4 w-4 text-[#9ee8dc]" strokeWidth={1.8} aria-hidden="true" />
+              ) : (
+                <ShieldAlert className="mx-auto h-4 w-4 text-white/28" strokeWidth={1.8} aria-hidden="true" />
+              )}
+              <p className={`mt-1.5 text-sm font-semibold ${isVerified ? "text-white" : "text-white/48"}`}>Verified</p>
+              <p className={`text-[11px] uppercase tracking-[0.16em] ${isVerified ? "text-white/45" : "text-white/24"}`}>Status</p>
             </div>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Genre</p>
-            <p className="mt-1.5 text-base text-white/82">{profile?.genres || "Genre not set"}</p>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+          <div className="mt-3 rounded-2xl border border-white/10 bg-white/[0.03] p-4 lg:p-3.5">
             <p className="text-xs uppercase tracking-[0.18em] text-white/42">Bio</p>
             <p className="mt-1.5 text-sm leading-6 text-white/68">{profile?.bio || "No producer bio yet."}</p>
           </div>
 
-          <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Services</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {serviceOfferings.map((service) => (
-                <span key={service} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/66">
-                  {service}
-                </span>
-              ))}
-              {serviceOfferings.length === 0 ? <p className="text-sm text-white/52">Services coming soon.</p> : null}
-            </div>
-          </div>
-
-          {error ? <p className="mt-4 text-sm text-rose-300">{error}</p> : null}
+          {error ? <p className="mt-3 text-sm text-rose-300">{error}</p> : null}
         </section>
       </aside>
 
-      <section className="space-y-5 lg:pt-[12.5rem]">
-        <section className="overflow-hidden rounded-[30px] border border-white/10 bg-[#1c1f29] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.22)] lg:fixed lg:top-36 lg:left-[calc(max(1.5rem,calc((100vw-1200px)/2))+365px)] lg:right-[max(1.5rem,calc((100vw-1200px)/2))] lg:z-30 lg:bg-[#1c1f29]/98 lg:backdrop-blur">
+      <section className="space-y-5 lg:pt-[calc(var(--profile-filter-height,0px)+1.5rem)]" style={{ ["--profile-filter-height" as string]: `${filterCardHeight}px` }}>
+        <section ref={filterCardRef} className="overflow-hidden rounded-[30px] border border-white/10 bg-[#1c1f29] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.22)] lg:fixed lg:top-[6.8rem] lg:left-[calc(max(1.5rem,calc((100vw-1200px)/2))+365px)] lg:right-[max(1.5rem,calc((100vw-1200px)/2))] lg:z-30 lg:rounded-[24px] lg:rounded-t-none lg:border-x-0 lg:border-t-0 lg:border-b lg:border-white/8 lg:bg-[#0d0f16]/96 lg:px-0 lg:pb-4 lg:pt-3 lg:shadow-none lg:backdrop-blur-xl">
+          <div className="lg:px-1">
           <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-3">
             <div>
               <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/34">Producer catalog</p>
@@ -285,9 +308,10 @@ export default function ProducerProfilePage() {
               ))}
             </div>
           </div>
+          </div>
         </section>
 
-        <div className="relative z-0 space-y-2 lg:pt-2">
+        <div className="relative z-0 pt-1">
           {sortedBeats.map((beat) => {
             const isCurrent = currentTrack?.id === beat.id;
             return (
