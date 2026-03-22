@@ -6,6 +6,7 @@ from projects.views import (
     MilestoneCreateView,
     MilestoneStatusUpdateView,
     ProjectListView,
+    ProjectMetadataOptionsView,
     ProjectMilestoneListView,
     ProjectProposalCreateView,
     ProjectRequestCreateView,
@@ -21,6 +22,7 @@ def both(route: str, view, name: str):
     ]
 
 urlpatterns = [
+    *both("metadata-options", ProjectMetadataOptionsView.as_view(), "project-metadata-options"),
     *both("request", ProjectRequestCreateView.as_view(), "project-request-create"),
     *both("proposal", ProjectProposalCreateView.as_view(), "project-proposal-create"),
     *both("", ProjectListView.as_view(), "project-list"),

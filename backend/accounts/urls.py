@@ -4,6 +4,7 @@ from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 from accounts.views import (
     ArtistProfileMeView,
     BeatLikeView,
+    FeaturedProducerCandidatesView,
     FollowProducerView,
     MeView,
     MyBeatLikesListView,
@@ -47,6 +48,7 @@ urlpatterns = [
     *both("producers/<int:pk>", ProducerDetailView.as_view(), "producer-detail"),
     *both("producers/by-user/<int:user_id>", ProducerDetailByUserView.as_view(), "producer-detail-by-user"),
     *both("follows/me", MyFollowingListView.as_view(), "follows-me"),
+    *both("featured-producers/candidates", FeaturedProducerCandidatesView.as_view(), "featured-producer-candidates"),
     *both("follows/producers/<int:producer_id>", FollowProducerView.as_view(), "follow-producer"),
     *both("likes/beats/me", MyBeatLikesListView.as_view(), "beat-likes-me"),
     *both("likes/beats/<int:beat_id>", BeatLikeView.as_view(), "beat-like"),

@@ -351,10 +351,17 @@ export default function BeatDetailPage() {
                   <div className="rounded-xl border border-white/10 bg-black/10 p-3 text-sm text-white/72">Album work: {trust?.availability.album ? "Open" : "Off"}</div>
                   <div className="rounded-xl border border-white/10 bg-black/10 p-3 text-sm text-white/72">Badges: {(trust?.badges ?? []).slice(0, 2).join(" | ") || "No badges yet"}</div>
                 </div>
-                <Link href="/projects" className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/12 px-4 py-2 text-sm text-white/84 hover:bg-white/5">
-                  <BadgeCheck className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-                  Start project brief
-                </Link>
+                {beat ? (
+                  <Link href={`/projects?producer=${beat.producer}`} className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/12 px-4 py-2 text-sm text-white/84 hover:bg-white/5">
+                    <BadgeCheck className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                    Start project brief
+                  </Link>
+                ) : (
+                  <span className="mt-4 inline-flex items-center gap-2 rounded-full border border-white/12 px-4 py-2 text-sm text-white/45">
+                    <BadgeCheck className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                    Start project brief
+                  </span>
+                )}
               </div>
             </div>
           </section>
@@ -419,6 +426,7 @@ export default function BeatDetailPage() {
     </div>
   );
 }
+
 
 
 

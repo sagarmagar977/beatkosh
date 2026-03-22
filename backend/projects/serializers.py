@@ -5,6 +5,8 @@ from projects.models import Deliverable, Milestone, Project, ProjectRequest, Pro
 
 class ProjectRequestSerializer(serializers.ModelSerializer):
     workflow_label = serializers.SerializerMethodField()
+    instrument_types = serializers.ListField(child=serializers.CharField(max_length=120), required=False)
+    mood_types = serializers.ListField(child=serializers.CharField(max_length=80), required=False)
 
     class Meta:
         model = ProjectRequest
@@ -16,11 +18,15 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
             "description",
             "project_type",
             "expected_track_count",
+            "preferred_genre",
+            "instrument_types",
+            "mood_types",
             "target_genre_style",
             "reference_links",
             "delivery_timeline_days",
             "revision_allowance",
             "budget",
+            "offer_price",
             "status",
             "workflow_label",
             "created_at",
@@ -31,6 +37,22 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
         if not value.is_producer:
             raise serializers.ValidationError("Selected user is not a producer.")
         return value
+
+    def validate_instrument_types(self, value):
+        cleaned = []
+        for item in value:
+            name = item.strip()
+            if name and name not in cleaned:
+                cleaned.append(name)
+        return cleaned
+
+    def validate_mood_types(self, value):
+        cleaned = []
+        for item in value:
+            name = item.strip()
+            if name and name not in cleaned:
+                cleaned.append(name)
+        return cleaned
 
     def get_workflow_label(self, obj):
         return "Brief submitted" if obj.status == ProjectRequest.STATUS_PENDING else obj.get_status_display()
@@ -88,12 +110,16 @@ class ProjectSerializer(serializers.ModelSerializer):
             "description",
             "project_type",
             "expected_track_count",
+            "preferred_genre",
+            "instrument_types",
+            "mood_types",
             "target_genre_style",
             "reference_links",
             "delivery_timeline_days",
             "revision_allowance",
             "linked_conversation_hint",
             "budget",
+            "offer_price",
             "status",
             "workflow_stage",
             "workflow_summary",

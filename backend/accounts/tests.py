@@ -153,6 +153,68 @@ class AccountsFlowTests(APITestCase):
         self.assertEqual(likes_response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(likes_response.data), 1)
 
+    def test_featured_producer_candidates_for_mutual_and_one_way_follows(self):
+        main = User.objects.create_user(
+            username="mainproducer",
+            email="mainproducer@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=True,
+            active_role="producer",
+        )
+        mutual = User.objects.create_user(
+            username="mutualproducer",
+            email="mutualproducer@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=True,
+            active_role="producer",
+        )
+        following = User.objects.create_user(
+            username="followingproducer",
+            email="followingproducer@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=True,
+            active_role="producer",
+        )
+        follows_you = User.objects.create_user(
+            username="followsyouproducer",
+            email="followsyouproducer@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=True,
+            active_role="producer",
+        )
+
+        self.client.post(self.login_url, {"username": "mainproducer", "password": "strong-pass-123"}, format="json")
+        login_response = self.client.post(
+            self.login_url,
+            {"username": "mainproducer", "password": "strong-pass-123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
+
+        self.client.post(reverse("follow-producer", kwargs={"producer_id": mutual.id}), {}, format="json")
+        self.client.post(reverse("follow-producer", kwargs={"producer_id": following.id}), {}, format="json")
+
+        self.client.credentials()
+        mutual_login = self.client.post(self.login_url, {"username": "mutualproducer", "password": "strong-pass-123"}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {mutual_login.data['access']}")
+        self.client.post(reverse("follow-producer", kwargs={"producer_id": main.id}), {}, format="json")
+
+        follows_you_login = self.client.post(self.login_url, {"username": "followsyouproducer", "password": "strong-pass-123"}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {follows_you_login.data['access']}")
+        self.client.post(reverse("follow-producer", kwargs={"producer_id": main.id}), {}, format="json")
+
+        self.client.credentials()
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
+        response = self.client.get(reverse("featured-producer-candidates"))
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual([item["relation"] for item in response.data], ["mutual", "following", "follows_you"])
+        self.assertEqual({item["username"] for item in response.data}, {"mutualproducer", "followingproducer", "followsyouproducer"})
+
     def test_producer_profile_lookup_by_user(self):
         producer = User.objects.create_user(
             username="profileproducer",

@@ -11,6 +11,7 @@ from beats.models import Beat
 from accounts.serializers import (
     ArtistProfileSerializer,
     BeatLikeSerializer,
+    FeaturedProducerCandidateSerializer,
     ProducerDiscoveryCardSerializer,
     ProducerFollowSerializer,
     ProducerOnboardingStatusSerializer,
@@ -32,6 +33,45 @@ def _normalize_service_offerings(profile: ProducerProfile):
     offerings = profile.service_offerings if isinstance(profile.service_offerings, list) else []
     return [str(item).strip() for item in offerings if str(item).strip()]
 
+
+
+def _build_featured_producer_candidates(user: User):
+    sent_ids = set(
+        ProducerFollow.objects.filter(artist=user, producer__is_producer=True)
+        .exclude(producer=user)
+        .values_list("producer_id", flat=True)
+    )
+    received_ids = set(
+        ProducerFollow.objects.filter(producer=user, artist__is_producer=True)
+        .exclude(artist=user)
+        .values_list("artist_id", flat=True)
+    )
+    ordered_ids = list(sent_ids.union(received_ids))
+    if not ordered_ids:
+        return []
+
+    producers = {
+        producer.id: producer
+        for producer in User.objects.filter(id__in=ordered_ids, is_producer=True).select_related("producer_profile")
+    }
+    payload = []
+    for producer_id in ordered_ids:
+        producer = producers.get(producer_id)
+        if not producer:
+            continue
+        profile = getattr(producer, "producer_profile", None)
+        relation = "mutual" if producer_id in sent_ids and producer_id in received_ids else ("following" if producer_id in sent_ids else "follows_you")
+        payload.append({
+            "producer_id": producer.id,
+            "username": producer.username,
+            "producer_name": (profile.producer_name if profile and profile.producer_name else producer.username),
+            "headline": profile.headline if profile else "",
+            "avatar_obj": profile.avatar_obj.url if profile and profile.avatar_obj else None,
+            "relation": relation,
+        })
+    relation_rank = {"mutual": 0, "following": 1, "follows_you": 2}
+    payload.sort(key=lambda item: (relation_rank[item["relation"]], item["producer_name"].lower()))
+    return payload
 
 
 def build_producer_trust_summary(user: User):
@@ -225,6 +265,16 @@ class MyFollowingListView(generics.ListAPIView):
 
     def get_queryset(self):
         return ProducerFollow.objects.filter(artist=self.request.user).select_related("artist", "producer")
+
+
+class FeaturedProducerCandidatesView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        if not request.user.is_producer:
+            raise PermissionDenied("Producer role required.")
+        payload = _build_featured_producer_candidates(request.user)
+        return Response(FeaturedProducerCandidateSerializer(payload, many=True).data)
 
 
 class BeatLikeView(APIView):

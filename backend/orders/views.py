@@ -26,7 +26,10 @@ class OrderCreateView(generics.GenericAPIView):
             context={"request": request, "create_order": create_order_for_items},
         )
         serializer.is_valid(raise_exception=True)
-        order = serializer.save()
+        try:
+            order = serializer.save()
+        except ValueError as exc:
+            raise ValidationError({"detail": str(exc)})
         return Response(OrderSerializer(order).data, status=status.HTTP_201_CREATED)
 
 
@@ -48,12 +51,15 @@ class CartItemCreateView(generics.GenericAPIView):
         license_type = None
         if "license_id" in serializer.validated_data:
             license_type = LicenseType.objects.get(id=serializer.validated_data["license_id"])
-        item, created = add_item_to_cart(
-            request.user,
-            product_type=serializer.validated_data["product_type"],
-            product_id=serializer.validated_data["product_id"],
-            license_type=license_type,
-        )
+        try:
+            item, created = add_item_to_cart(
+                request.user,
+                product_type=serializer.validated_data["product_type"],
+                product_id=serializer.validated_data["product_id"],
+                license_type=license_type,
+            )
+        except ValueError as exc:
+            raise ValidationError({"detail": str(exc)})
         return Response(
             {
                 "created": created,
@@ -79,7 +85,10 @@ class CartItemDetailView(generics.GenericAPIView):
         if item.product_type == CartItem.PRODUCT_BEAT and not license_id:
             raise ValidationError({"license_id": "license_id is required for beat cart items."})
         license_type = LicenseType.objects.get(id=license_id) if license_id else None
-        update_cart_item(item, license_type=license_type)
+        try:
+            update_cart_item(item, license_type=license_type)
+        except ValueError as exc:
+            raise ValidationError({"detail": str(exc)})
         return Response(CartSerializer(item.cart).data, status=status.HTTP_200_OK)
 
     def delete(self, request, item_id: int):
@@ -128,7 +137,7 @@ class DownloadLibraryView(generics.ListAPIView):
     def get_queryset(self):
         return (
             DownloadAccess.objects.filter(buyer=self.request.user, order_item__order__status=Order.STATUS_PAID)
-            .select_related("beat", "beat__producer", "order_item", "order_item__order")
+            .select_related("beat", "beat__producer", "order_item", "order_item__order", "order_item__license_type")
             .prefetch_related("beat__available_licenses")
             .order_by("-granted_at")
         )

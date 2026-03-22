@@ -1,6 +1,7 @@
 from django.db import models
 
 from accounts.models import User
+from beats.metadata_choices import GENRE_CHOICES
 
 
 class ProjectRequest(models.Model):
@@ -32,11 +33,15 @@ class ProjectRequest(models.Model):
     description = models.TextField()
     project_type = models.CharField(max_length=30, choices=TYPE_CHOICES, default=TYPE_CUSTOM_SINGLE)
     expected_track_count = models.PositiveIntegerField(default=1)
+    preferred_genre = models.CharField(max_length=120, choices=GENRE_CHOICES, blank=True)
+    instrument_types = models.JSONField(default=list, blank=True)
+    mood_types = models.JSONField(default=list, blank=True)
     target_genre_style = models.CharField(max_length=160, blank=True)
     reference_links = models.JSONField(default=list, blank=True)
     delivery_timeline_days = models.PositiveIntegerField(null=True, blank=True)
     revision_allowance = models.PositiveIntegerField(default=0)
     budget = models.DecimalField(max_digits=10, decimal_places=2)
+    offer_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_PENDING)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -82,12 +87,16 @@ class Project(models.Model):
     description = models.TextField()
     project_type = models.CharField(max_length=30, choices=ProjectRequest.TYPE_CHOICES, default=ProjectRequest.TYPE_CUSTOM_SINGLE)
     expected_track_count = models.PositiveIntegerField(default=1)
+    preferred_genre = models.CharField(max_length=120, choices=GENRE_CHOICES, blank=True)
+    instrument_types = models.JSONField(default=list, blank=True)
+    mood_types = models.JSONField(default=list, blank=True)
     target_genre_style = models.CharField(max_length=160, blank=True)
     reference_links = models.JSONField(default=list, blank=True)
     delivery_timeline_days = models.PositiveIntegerField(null=True, blank=True)
     revision_allowance = models.PositiveIntegerField(default=0)
     linked_conversation_hint = models.CharField(max_length=160, blank=True)
     budget = models.DecimalField(max_digits=10, decimal_places=2)
+    offer_price = models.DecimalField(max_digits=10, decimal_places=2, null=True, blank=True)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_ACTIVE)
     workflow_stage = models.CharField(max_length=30, choices=WORKFLOW_CHOICES, default=WORKFLOW_BRIEF_SUBMITTED)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -134,3 +143,4 @@ class Deliverable(models.Model):
     version_label = models.CharField(max_length=40, blank=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=STATUS_SUBMITTED)
     created_at = models.DateTimeField(auto_now_add=True)
+

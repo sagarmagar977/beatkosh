@@ -127,6 +127,7 @@ class Beat(models.Model):
         blank=True,
         related_name="beats",
     )
+    featured_producer_ids = models.JSONField(default=list, blank=True)
     cover_art = models.URLField(blank=True)
     preview_audio = models.URLField(blank=True)
     audio_file = models.URLField(blank=True)
@@ -193,6 +194,7 @@ class BeatUploadDraft(models.Model):
         blank=True,
         related_name="drafts",
     )
+    featured_producer_ids = models.JSONField(default=list, blank=True)
     current_step = models.PositiveIntegerField(default=1)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default=STATUS_DRAFT)
     published_beat = models.OneToOneField(Beat, null=True, blank=True, on_delete=models.SET_NULL)
@@ -204,3 +206,4 @@ class BeatUploadDraft(models.Model):
 
     def __str__(self) -> str:
         return f"Draft<{self.id}> {self.producer.username}"
+

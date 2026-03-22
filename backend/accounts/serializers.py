@@ -101,6 +101,15 @@ class ProducerFollowSerializer(serializers.ModelSerializer):
         read_only_fields = ("artist", "created_at")
 
 
+class FeaturedProducerCandidateSerializer(serializers.Serializer):
+    producer_id = serializers.IntegerField()
+    username = serializers.CharField()
+    producer_name = serializers.CharField()
+    headline = serializers.CharField(allow_blank=True)
+    avatar_obj = serializers.CharField(allow_null=True)
+    relation = serializers.ChoiceField(choices=("mutual", "following", "follows_you"))
+
+
 class BeatLikeSerializer(serializers.ModelSerializer):
     beat = BeatSerializer(read_only=True)
 

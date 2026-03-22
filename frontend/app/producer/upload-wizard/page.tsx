@@ -54,12 +54,22 @@ type BeatDraft = {
   stems_file_obj?: string | null;
   cover_art_obj?: string | null;
   featured_cover_photo?: number | null;
+  featured_producer_ids?: number[];
 };
 
 type FeaturedCoverPhoto = {
   id: number;
   title: string;
   image_url: string;
+};
+
+type FeaturedProducerCandidate = {
+  producer_id: number;
+  username: string;
+  producer_name: string;
+  headline: string;
+  avatar_obj?: string | null;
+  relation: "mutual" | "following" | "follows_you";
 };
 
 type SoundKitDraft = {
@@ -315,6 +325,8 @@ export default function ProducerUploadWizardPage() {
   const [coverPickerOpen, setCoverPickerOpen] = useState(false);
   const [featuredCovers, setFeaturedCovers] = useState<FeaturedCoverPhoto[]>([]);
   const [selectedFeaturedCoverId, setSelectedFeaturedCoverId] = useState<number | null>(null);
+  const [featuredProducerCandidates, setFeaturedProducerCandidates] = useState<FeaturedProducerCandidate[]>([]);
+  const [featuredProducerIds, setFeaturedProducerIds] = useState<number[]>([]);
 
   const [kitType, setKitType] = useState("");
   const [kitTitle, setKitTitle] = useState("");
@@ -353,6 +365,7 @@ export default function ProducerUploadWizardPage() {
     setMoodTypes(item.mood_types?.length ? item.mood_types : item.mood ? [item.mood] : []);
     setDescription(item.description ?? "");
     setSelectedFeaturedCoverId(item.featured_cover_photo ?? null);
+    setFeaturedProducerIds(Array.isArray(item.featured_producer_ids) ? item.featured_producer_ids.map((value) => Number(value)).filter((value) => Number.isFinite(value)) : []);
     setBeatTags((prev) => ((item.media?.tags ?? []).length ? item.media?.tags ?? [] : prev));
     setUploadCardState((prev) => ({ ...prev, ...(item.media?.upload_card_state ?? {}) }));
     setBasePrice(item.base_price ?? "0.00");
@@ -420,6 +433,7 @@ export default function ProducerUploadWizardPage() {
     setStemsFile(null);
     setCoverArt(null);
     setSelectedFeaturedCoverId(null);
+    setFeaturedProducerIds([]);
     setCoverPickerOpen(false);
     setMetaErrors({});
     setMessage(null);
@@ -540,14 +554,16 @@ export default function ProducerUploadWizardPage() {
         return;
       }
       try {
-        const [beatDrafts, soundKitDrafts, metadataOptions, featuredCoverData] = await Promise.all([
+        const [beatDrafts, soundKitDrafts, metadataOptions, featuredCoverData, collaboratorData] = await Promise.all([
           apiRequest<BeatDraft[]>("/beats/upload-drafts/", { token }),
           apiRequest<SoundKitDraft[]>("/soundkits/upload-drafts/", { token }),
           apiRequest<BeatMetadataOptions>("/beats/metadata-options/"),
           apiRequest<FeaturedCoverPhoto[]>("/beats/featured-covers/"),
+          producerModeReady ? apiRequest<FeaturedProducerCandidate[]>("/account/featured-producers/candidates/", { token }) : Promise.resolve([]),
         ]);
         setBeatMetadataOptions(metadataOptions);
         setFeaturedCovers(featuredCoverData);
+        setFeaturedProducerCandidates(collaboratorData);
 
         const flowParam = searchParams.get("flow");
         const draftId = draftParam ? Number(draftParam) : null;
@@ -592,7 +608,7 @@ export default function ProducerUploadWizardPage() {
       }
     };
     void run();
-  }, [beatWizardSessionKey, draftParam, freshParam, kitWizardSessionKey, token]);
+  }, [beatWizardSessionKey, draftParam, freshParam, kitWizardSessionKey, producerModeReady, searchParams, token]);
 
   useEffect(() => {
     const flowParam = searchParams.get("flow");
@@ -720,6 +736,10 @@ export default function ProducerUploadWizardPage() {
     setCoverArt(null);
     setUploadCardState((prev) => ({ ...prev, cover_art: cover.title }));
     setCoverPickerOpen(false);
+  };
+
+  const toggleFeaturedProducer = (producerId: number) => {
+    setFeaturedProducerIds((current) => (current.includes(producerId) ? current.filter((item) => item !== producerId) : [...current, producerId]));
   };
 
   const buildBeatDraftMedia = () => JSON.stringify({
@@ -995,6 +1015,43 @@ export default function ProducerUploadWizardPage() {
                       </div>
                     ) : null}
                   </div>
+                  <div className="rounded-[20px] border border-white/10 bg-[#17191f] p-4 md:col-span-2">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-white/86">Featured producers</p>
+                        <p className="mt-1 text-xs text-white/45">Pick collaborators from producers you follow, producers who follow you, or mutual follow-backs.</p>
+                      </div>
+                      <p className="text-xs uppercase tracking-[0.16em] text-white/38">{featuredProducerIds.length} selected</p>
+                    </div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      {featuredProducerCandidates.map((producer) => {
+                        const active = featuredProducerIds.includes(producer.producer_id);
+                        const avatarUrl = resolveMediaUrl(producer.avatar_obj);
+                        return (
+                          <button
+                            key={producer.producer_id}
+                            type="button"
+                            onClick={() => toggleFeaturedProducer(producer.producer_id)}
+                            className={`flex items-start gap-3 rounded-2xl border px-3 py-3 text-left transition ${active ? "border-[#8b28ff] bg-[#8b28ff]/12" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]"}`}
+                          >
+                            {avatarUrl ? (
+                              <img src={avatarUrl} alt={producer.producer_name} className="h-12 w-12 rounded-full object-cover" />
+                            ) : (
+                              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white/80">
+                                {producer.producer_name.slice(0, 1).toUpperCase()}
+                              </div>
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <p className="line-clamp-1 text-sm font-medium text-white/88">{producer.producer_name}</p>
+                              <p className="mt-1 line-clamp-2 text-xs text-white/48">{producer.headline || `@${producer.username}`}</p>
+                              <span className="mt-2 inline-flex rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white/48">{producer.relation.replace("_", " ")}</span>
+                            </div>
+                          </button>
+                        );
+                      })}
+                      {featuredProducerCandidates.length === 0 ? <p className="sm:col-span-2 text-sm text-white/55">No eligible producer collaborators yet. Follow other producers or wait for follow-backs to see candidates here.</p> : null}
+                    </div>
+                  </div>
                   <textarea className="min-h-24 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm md:col-span-2" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
                   <button
                     type="button"
@@ -1016,6 +1073,7 @@ export default function ProducerUploadWizardPage() {
                       form.append("mood_types", JSON.stringify(moodTypes));
                       form.append("mood", moodTypes[0] ?? "");
                       form.append("description", description);
+                      form.append("featured_producer_ids", JSON.stringify(featuredProducerIds));
                       form.append("media", buildBeatDraftMedia());
                       form.append("base_price", basePrice || "0.00");
                       form.append("current_step", "2");
@@ -1079,6 +1137,7 @@ export default function ProducerUploadWizardPage() {
                           appendBeatMediaFiles(form);
                           if (coverArt) form.append("cover_art_upload", coverArt);
                           if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
+                          form.append("featured_producer_ids", JSON.stringify(featuredProducerIds));
                           if (stemsFile) form.append("stems_file_upload", stemsFile);
                           await patchBeatDraft(form, true);
                           setMessage("Beat media saved as draft.");
@@ -1097,6 +1156,7 @@ export default function ProducerUploadWizardPage() {
                           appendBeatMediaFiles(form);
                           if (coverArt) form.append("cover_art_upload", coverArt);
                           if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
+                          form.append("featured_producer_ids", JSON.stringify(featuredProducerIds));
                           if (stemsFile) form.append("stems_file_upload", stemsFile);
                           await patchBeatDraft(form, true);
                           setMessage("Beat media uploaded.");
@@ -1260,6 +1320,7 @@ export default function ProducerUploadWizardPage() {
                           form.append("declaration_accepted", declarationAccepted ? "true" : "false");
                           form.append("media", buildBeatDraftMedia());
                           if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
+                          form.append("featured_producer_ids", JSON.stringify(featuredProducerIds));
                           await patchBeatDraft(form, true);
                           setMessage("License details saved as draft.");
                         })}
@@ -1289,6 +1350,7 @@ export default function ProducerUploadWizardPage() {
                           form.append("declaration_accepted", declarationAccepted ? "true" : "false");
                           form.append("media", buildBeatDraftMedia());
                           if (selectedFeaturedCoverId) form.append("featured_cover_photo_id", String(selectedFeaturedCoverId));
+                          form.append("featured_producer_ids", JSON.stringify(featuredProducerIds));
                           await patchBeatDraft(form, true);
                           const draft = await ensureBeatDraft();
                           const beat = await apiRequest<PublishedBeat>(`/beats/upload-drafts/${draft.id}/publish/`, { method: "POST", token, body: {} });

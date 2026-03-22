@@ -204,6 +204,19 @@ PAYMENT_WEBHOOK_SECRETS = {
     "payu": os.getenv("PAYMENT_WEBHOOK_SECRET_PAYU", "local-payu-secret"),
 }
 
+PAYMENT_FRONTEND_BASE_URL = os.getenv("PAYMENT_FRONTEND_BASE_URL", "http://127.0.0.1:3000").rstrip("/")
+ESEWA_UAT_MODE = env_bool("ESEWA_UAT_MODE", True)
+ESEWA_PRODUCT_CODE = os.getenv("ESEWA_PRODUCT_CODE", "EPAYTEST")
+ESEWA_SECRET_KEY = os.getenv("ESEWA_SECRET_KEY", "8gBm/:&EnhH.1/q")
+ESEWA_FORM_URL = os.getenv(
+    "ESEWA_FORM_URL",
+    "https://rc-epay.esewa.com.np/api/epay/main/v2/form" if ESEWA_UAT_MODE else "https://epay.esewa.com.np/api/epay/main/v2/form",
+)
+ESEWA_STATUS_CHECK_URL = os.getenv(
+    "ESEWA_STATUS_CHECK_URL",
+    "https://rc.esewa.com.np/api/epay/transaction/status/" if ESEWA_UAT_MODE else "https://esewa.com.np/api/epay/transaction/status/",
+)
+
 FFMPEG_BINARY = os.getenv("FFMPEG_BINARY", "ffmpeg")
 AUDIO_PREVIEW_MAX_SECONDS = int(os.getenv("AUDIO_PREVIEW_MAX_SECONDS", "45"))
 AUDIO_PREVIEW_BITRATE = os.getenv("AUDIO_PREVIEW_BITRATE", "128k")

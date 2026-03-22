@@ -1,7 +1,10 @@
 from django.db.models import Q
 from rest_framework import generics, permissions
 from rest_framework.exceptions import PermissionDenied
+from rest_framework.response import Response
+from rest_framework.views import APIView
 
+from beats.metadata_choices import GENRE_VALUES, INSTRUMENT_VALUES, MOOD_VALUES
 from projects.models import Deliverable, Milestone, Project, ProjectRequest, Proposal
 from projects.serializers import (
     DeliverableSerializer,
@@ -10,6 +13,61 @@ from projects.serializers import (
     ProjectSerializer,
     ProposalSerializer,
 )
+
+
+class ProjectMetadataOptionsView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def get(self, request):
+        return Response(
+            {
+                "project_types": [
+                    {
+                        "value": ProjectRequest.TYPE_CUSTOM_SINGLE,
+                        "label": "Single Production",
+                        "description": "Full custom track production from scratch.",
+                        "accent": "violet",
+                        "base_price": "3000.00",
+                    },
+                    {
+                        "value": ProjectRequest.TYPE_EP,
+                        "label": "EP Production",
+                        "description": "Multi-track cohesion and creative direction.",
+                        "accent": "rose",
+                        "base_price": "8500.00",
+                    },
+                    {
+                        "value": ProjectRequest.TYPE_ALBUM,
+                        "label": "Album Production",
+                        "description": "Long-form production for a complete release.",
+                        "accent": "indigo",
+                        "base_price": "3000.00",
+                    },
+                    {
+                        "value": ProjectRequest.TYPE_MIX_MASTER,
+                        "label": "Post-Production",
+                        "description": "Mixing, mastering, and vocal polishing.",
+                        "accent": "amber",
+                        "base_price": "2500.00",
+                    },
+                    {
+                        "value": ProjectRequest.TYPE_SOUND_DESIGN,
+                        "label": "Soundkit Production",
+                        "description": "Custom samples, loops, and sound design packs.",
+                        "accent": "emerald",
+                        "base_price": "2200.00",
+                    },
+                ],
+                "genres": GENRE_VALUES,
+                "instrument_types": INSTRUMENT_VALUES,
+                "moods": MOOD_VALUES,
+                "negotiation": {
+                    "bulk_discount_threshold": 10,
+                    "bulk_discount_factor": "0.90",
+                    "max_negotiation_discount_factor": "0.80",
+                },
+            }
+        )
 
 
 class ProjectRequestCreateView(generics.CreateAPIView):
@@ -42,12 +100,16 @@ class ProjectProposalCreateView(generics.CreateAPIView):
                     "description": req.description,
                     "project_type": req.project_type,
                     "expected_track_count": req.expected_track_count,
+                    "preferred_genre": req.preferred_genre,
+                    "instrument_types": req.instrument_types,
+                    "mood_types": req.mood_types,
                     "target_genre_style": req.target_genre_style,
                     "reference_links": req.reference_links,
                     "delivery_timeline_days": req.delivery_timeline_days,
                     "revision_allowance": req.revision_allowance,
                     "linked_conversation_hint": f"Discuss revisions for {req.title} in shared chat",
                     "budget": req.budget,
+                    "offer_price": req.offer_price,
                     "workflow_stage": Project.WORKFLOW_PROPOSAL_ACCEPTED,
                 },
             )

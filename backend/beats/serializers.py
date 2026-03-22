@@ -1,10 +1,15 @@
 import json
 
+from django.contrib.auth import get_user_model
 from django.db.models import Sum
 from rest_framework import serializers
 
 from beats.metadata_choices import INSTRUMENT_VALUES, MOOD_VALUES
 from beats.models import Beat, BeatTag, BeatUploadDraft, FeaturedCoverPhoto, LicenseType
+
+from accounts.models import ProducerProfile
+
+User = get_user_model()
 
 
 class LicenseTypeSerializer(serializers.ModelSerializer):
@@ -182,6 +187,7 @@ class BeatSerializer(MoodTypesSerializerMixin, InstrumentTypesSerializerMixin, s
     play_count = serializers.SerializerMethodField()
     is_featured = serializers.SerializerMethodField()
     storefront_flags = serializers.SerializerMethodField()
+    featured_producers = serializers.SerializerMethodField()
 
     class Meta:
         model = Beat
@@ -224,6 +230,7 @@ class BeatSerializer(MoodTypesSerializerMixin, InstrumentTypesSerializerMixin, s
             "cover_art_obj",
             "featured_cover_photo",
             "featured_cover_photo_id",
+            "featured_producer_ids",
             "audio_file_upload",
             "preview_audio_upload",
             "stems_file_upload",
@@ -239,6 +246,7 @@ class BeatSerializer(MoodTypesSerializerMixin, InstrumentTypesSerializerMixin, s
             "play_count",
             "is_featured",
             "storefront_flags",
+            "featured_producers",
             "created_at",
         )
         read_only_fields = ("producer", "created_at")
@@ -266,6 +274,39 @@ class BeatSerializer(MoodTypesSerializerMixin, InstrumentTypesSerializerMixin, s
             "exclusive_available": obj.exclusive_enabled or any(license.is_exclusive for license in licenses),
             "wav_available": obj.non_exclusive_wav_enabled or any(license.includes_wav for license in licenses),
         }
+
+    def get_featured_producers(self, obj):
+        producer_ids = obj.featured_producer_ids if isinstance(obj.featured_producer_ids, list) else []
+        cleaned_ids = []
+        for item in producer_ids:
+            try:
+                producer_id = int(item)
+            except (TypeError, ValueError):
+                continue
+            if producer_id == obj.producer_id or producer_id in cleaned_ids:
+                continue
+            cleaned_ids.append(producer_id)
+        if not cleaned_ids:
+            return []
+
+        producers = {
+            producer.id: producer
+            for producer in User.objects.filter(id__in=cleaned_ids, is_producer=True).select_related("producer_profile")
+        }
+        payload = []
+        for producer_id in cleaned_ids:
+            producer = producers.get(producer_id)
+            if not producer:
+                continue
+            profile = getattr(producer, "producer_profile", None)
+            payload.append({
+                "producer_id": producer.id,
+                "username": producer.username,
+                "producer_name": (profile.producer_name if profile and profile.producer_name else producer.username),
+                "headline": profile.headline if profile else "",
+                "avatar_obj": profile.avatar_obj.url if profile and profile.avatar_obj else None,
+            })
+        return payload
 
     def create(self, validated_data):
         featured_cover_photo = validated_data.get("featured_cover_photo")
@@ -345,6 +386,7 @@ class BeatUploadDraftSerializer(MoodTypesSerializerMixin, InstrumentTypesSeriali
             "cover_art_obj",
             "featured_cover_photo",
             "featured_cover_photo_id",
+            "featured_producer_ids",
             "audio_file_upload",
             "preview_audio_upload",
             "stems_file_upload",
@@ -373,3 +415,7 @@ class BeatUploadDraftSerializer(MoodTypesSerializerMixin, InstrumentTypesSeriali
             draft.cover_art_obj = draft.featured_cover_photo.image.name
             draft.save(update_fields=["cover_art_obj"])
         return draft
+
+
+
+

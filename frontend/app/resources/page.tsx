@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { apiRequest } from "@/lib/api";
 
@@ -30,17 +30,18 @@ export default function ResourcesPage() {
   const [faq, setFaq] = useState<FaqItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  const selectedCategory = useMemo(() => {
     const fromUrl = searchParams.get("category");
     if (fromUrl === "blog" || fromUrl === "tutorial" || fromUrl === "help") {
-      setCategory(fromUrl);
+      return fromUrl;
     }
-  }, [searchParams]);
+    return category;
+  }, [category, searchParams]);
   useEffect(() => {
     const run = async () => {
       try {
         const [articleData, faqData] = await Promise.all([
-          apiRequest<ResourceArticle[]>(`/resources/articles/?category=${category}`),
+          apiRequest<ResourceArticle[]>(`/resources/articles/?category=${selectedCategory}`),
           apiRequest<FaqItem[]>("/resources/faq/"),
         ]);
         setArticles(articleData);
@@ -50,7 +51,7 @@ export default function ResourcesPage() {
       }
     };
     void run();
-  }, [category]);
+  }, [selectedCategory]);
 
   return (
     <div className="space-y-6">
@@ -59,7 +60,7 @@ export default function ResourcesPage() {
         <p className="mt-1 text-sm text-white/60">Live resources feed from backend CMS endpoints.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           {categories.map((item) => (
-            <button key={item} type="button" onClick={() => setCategory(item)} className={`chip ${item === category ? "active" : ""}`}>
+            <button key={item} type="button" onClick={() => setCategory(item)} className={`chip ${item === selectedCategory ? "active" : ""}`}>
               {item}
             </button>
           ))}
@@ -68,7 +69,7 @@ export default function ResourcesPage() {
 
       <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
         <div className="surface-panel rounded-xl p-4">
-          <h2 className="text-lg font-semibold capitalize">{category} Articles</h2>
+          <h2 className="text-lg font-semibold capitalize">{selectedCategory} Articles</h2>
           <div className="mt-3 space-y-3">
             {articles.map((article) => (
               <article key={article.id} className="app-card p-3">

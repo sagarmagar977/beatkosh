@@ -22,6 +22,11 @@ class PaymentInitiateSerializer(serializers.Serializer):
         return value
 
 
+class EsewaCompleteSerializer(serializers.Serializer):
+    payment_id = serializers.IntegerField(min_value=1)
+    data = serializers.CharField()
+
+
 class PaymentSerializer(serializers.ModelSerializer):
     class Meta:
         model = Payment

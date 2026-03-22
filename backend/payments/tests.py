@@ -1,6 +1,8 @@
+import base64
 import hashlib
 import hmac
 import json
+from unittest.mock import patch
 
 from django.conf import settings
 from django.urls import reverse
@@ -9,7 +11,9 @@ from rest_framework.test import APITestCase
 
 from accounts.models import User
 from beats.models import Beat, LicenseType
+from orders.models import CartItem, DownloadAccess, PurchaseLicense
 from payments.models import ProducerPlan, ProducerWallet
+from payments.services import build_esewa_signature
 
 
 class PaymentsApiTests(APITestCase):
@@ -67,19 +71,16 @@ class PaymentsApiTests(APITestCase):
         )
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
 
-        order_response = self.client.post(
-            reverse("order-create"),
+        self.client.post(
+            reverse("cart-item-create"),
             {
-                "items": [
-                    {
-                        "product_type": "beat",
-                        "product_id": self.beat.id,
-                        "license_id": self.license.id,
-                    }
-                ]
+                "product_type": "beat",
+                "product_id": self.beat.id,
+                "license_id": self.license.id,
             },
             format="json",
         )
+        order_response = self.client.post(reverse("cart-checkout"), {}, format="json")
         self.order_id = order_response.data["id"]
 
     def test_payment_success_updates_wallet(self):
@@ -106,6 +107,24 @@ class PaymentsApiTests(APITestCase):
 
         wallet = ProducerWallet.objects.get(producer=self.producer)
         self.assertEqual(str(wallet.balance), "45.00")
+        self.assertEqual(CartItem.objects.filter(cart__buyer=self.artist).count(), 0)
+
+    def test_payment_failure_keeps_cart_items(self):
+        payment_response = self.client.post(
+            reverse("payment-initiate"),
+            {"order_id": self.order_id, "gateway": "khalti"},
+            format="json",
+        )
+        payment_id = payment_response.data["id"]
+
+        fail_response = self.client.post(
+            reverse("payment-confirm"),
+            {"payment_id": payment_id, "outcome": "failed"},
+            format="json",
+        )
+        self.assertEqual(fail_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(fail_response.data["status"], "failed")
+        self.assertEqual(CartItem.objects.filter(cart__buyer=self.artist).count(), 1)
 
     def test_payment_webhook_rejects_invalid_signature(self):
         payment_response = self.client.post(
@@ -203,3 +222,52 @@ class PaymentsApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(second.status_code, status.HTTP_400_BAD_REQUEST)
+
+    @patch("payments.views.check_esewa_transaction_status")
+    def test_esewa_complete_accepts_amount_with_single_decimal_place(self, mock_status_check):
+        payment_response = self.client.post(
+            reverse("payment-initiate"),
+            {"order_id": self.order_id, "gateway": "esewa"},
+            format="json",
+        )
+        self.assertEqual(payment_response.status_code, status.HTTP_201_CREATED)
+        payment_id = payment_response.data["id"]
+        payment_data = payment_response.data
+
+        transaction_uuid = payment_data["external_ref"]
+        callback_payload = {
+            "transaction_code": "000TEST",
+            "status": "COMPLETE",
+            "total_amount": "50.0",
+            "transaction_uuid": transaction_uuid,
+            "product_code": settings.ESEWA_PRODUCT_CODE,
+            "signed_field_names": "transaction_code,status,total_amount,transaction_uuid,product_code,signed_field_names",
+        }
+        message = ",".join(
+            f"{field}={callback_payload[field]}"
+            for field in callback_payload["signed_field_names"].split(",")
+        )
+        callback_payload["signature"] = build_esewa_signature(message, settings.ESEWA_SECRET_KEY)
+        encoded_payload = base64.b64encode(json.dumps(callback_payload).encode("utf-8")).decode("utf-8")
+
+        mock_status_check.return_value = {
+            "product_code": settings.ESEWA_PRODUCT_CODE,
+            "transaction_uuid": transaction_uuid,
+            "total_amount": 50.0,
+            "status": "COMPLETE",
+            "ref_id": "0001TS9",
+        }
+
+        complete_response = self.client.post(
+            reverse("payment-esewa-complete"),
+            {"payment_id": payment_id, "data": encoded_payload},
+            format="json",
+        )
+        self.assertEqual(complete_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(complete_response.data["status"], "success")
+        self.assertEqual(PurchaseLicense.objects.filter(order_item__order_id=self.order_id).count(), 1)
+        self.assertEqual(DownloadAccess.objects.filter(order_item__order_id=self.order_id).count(), 1)
+        self.assertEqual(CartItem.objects.filter(cart__buyer=self.artist).count(), 0)
+
+        wallet = ProducerWallet.objects.get(producer=self.producer)
+        self.assertEqual(str(wallet.balance), "45.00")

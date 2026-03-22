@@ -21,17 +21,28 @@ export type PlayerTrack = {
   audioUrl: string;
 };
 
+type PlayTrackOptions = {
+  queue?: PlayerTrack[];
+  startIndex?: number;
+};
+
 type PlayerContextType = {
   currentTrack: PlayerTrack | null;
   isPlaying: boolean;
   isLooping: boolean;
+  isShuffling: boolean;
   currentTime: number;
   duration: number;
   volume: number;
   canPlay: boolean;
-  playTrack: (track: PlayerTrack) => Promise<void>;
+  hasNext: boolean;
+  hasPrevious: boolean;
+  playTrack: (track: PlayerTrack, options?: PlayTrackOptions) => Promise<void>;
   togglePlay: () => Promise<void>;
   toggleLoop: () => void;
+  toggleShuffle: () => void;
+  playNext: () => Promise<void>;
+  playPrevious: () => Promise<void>;
   seekTo: (time: number) => void;
   setVolumeLevel: (value: number) => void;
   stopPlayback: (clearTrack?: boolean) => void;
@@ -39,36 +50,43 @@ type PlayerContextType = {
 
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
-function debugPlayer(event: string, detail?: unknown) {
-  if (process.env.NODE_ENV !== "development") {
-    return;
-  }
-  if (detail === undefined) {
-    console.log(`[player-debug] ${event}`);
-    return;
-  }
-  console.log(`[player-debug] ${event}`, detail);
-}
-
 function clamp(num: number, min: number, max: number) {
   return Math.max(min, Math.min(num, max));
+}
+
+function buildQueueStartIndex(track: PlayerTrack, queue: PlayerTrack[]) {
+  const directIndex = queue.findIndex((item) => item.id === track.id);
+  return directIndex >= 0 ? directIndex : 0;
 }
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const queueRef = useRef<PlayerTrack[]>([]);
+  const queueIndexRef = useRef(-1);
+  const isShufflingRef = useRef(false);
   const [currentTrack, setCurrentTrack] = useState<PlayerTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
+  const [isShuffling, setIsShuffling] = useState(false);
+  const [queue, setQueue] = useState<PlayerTrack[]>([]);
+  const [queueIndex, setQueueIndex] = useState(-1);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const canPlay = Boolean(token);
 
   useEffect(() => {
-    debugPlayer("provider-mounted");
-    return () => debugPlayer("provider-unmounted");
-  }, []);
+    queueRef.current = queue;
+  }, [queue]);
+
+  useEffect(() => {
+    queueIndexRef.current = queueIndex;
+  }, [queueIndex]);
+
+  useEffect(() => {
+    isShufflingRef.current = isShuffling;
+  }, [isShuffling]);
 
   useEffect(() => {
     const audio = new Audio();
@@ -119,7 +137,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
-    debugPlayer("stopPlayback", { clearTrack, hadTrack: Boolean(currentTrack) });
     audio.pause();
     audio.currentTime = 0;
     setCurrentTime(0);
@@ -129,11 +146,12 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       audio.src = "";
       setCurrentTrack(null);
       setDuration(0);
+      setQueue([]);
+      setQueueIndex(-1);
     }
   };
 
   useEffect(() => {
-    debugPlayer("canPlay-changed", { canPlay, hasToken: Boolean(token), loading });
     if (loading || canPlay) {
       return;
     }
@@ -143,7 +161,6 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       if (!audio) {
         return;
       }
-      debugPlayer("stopPlayback", { clearTrack: true, hadTrack: Boolean(currentTrack) });
       audio.pause();
       audio.currentTime = 0;
       setCurrentTime(0);
@@ -151,18 +168,18 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       audio.src = "";
       setCurrentTrack(null);
       setDuration(0);
+      setQueue([]);
+      setQueueIndex(-1);
     }, 0);
 
     return () => window.clearTimeout(timer);
-  }, [canPlay, currentTrack, loading, token]);
+  }, [canPlay, loading]);
 
-  const playTrack = async (track: PlayerTrack) => {
+  const playTrack = async (track: PlayerTrack, options?: PlayTrackOptions) => {
     if (loading) {
-      debugPlayer("play-blocked-auth-loading", { trackId: track.id });
       return;
     }
     if (!canPlay) {
-      debugPlayer("play-blocked-no-session", { trackId: track.id });
       stopPlayback(true);
       return;
     }
@@ -171,15 +188,26 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     if (!audio) {
       return;
     }
+
+    if (options?.queue && options.queue.length > 0) {
+      const nextQueue = options.queue;
+      const startIndex = typeof options.startIndex === "number" ? options.startIndex : buildQueueStartIndex(track, nextQueue);
+      setQueue(nextQueue);
+      setQueueIndex(startIndex);
+    } else if (queueRef.current.length === 0 || !queueRef.current.some((item) => item.id === track.id)) {
+      setQueue([track]);
+      setQueueIndex(0);
+    }
+
     const switchingTrack = currentTrack?.id !== track.id || audio.src !== track.audioUrl;
     if (switchingTrack) {
-      debugPlayer("playTrack-switch", { trackId: track.id, title: track.title });
       setCurrentTrack(track);
       setCurrentTime(0);
       setDuration(0);
       audio.src = track.audioUrl;
       audio.currentTime = 0;
     }
+
     try {
       await audio.play();
     } catch {
@@ -187,13 +215,46 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const playByIndex = async (nextIndex: number) => {
+    const nextTrack = queueRef.current[nextIndex];
+    if (!nextTrack) {
+      return;
+    }
+    setQueueIndex(nextIndex);
+    await playTrack(nextTrack, { queue: queueRef.current, startIndex: nextIndex });
+  };
+
+  const playNext = async () => {
+    const currentQueue = queueRef.current;
+    if (currentQueue.length === 0) {
+      return;
+    }
+    if (isShufflingRef.current && currentQueue.length > 1) {
+      const candidates = currentQueue.map((_, index) => index).filter((index) => index !== queueIndexRef.current);
+      const randomIndex = candidates[Math.floor(Math.random() * candidates.length)];
+      await playByIndex(randomIndex);
+      return;
+    }
+    const nextIndex = queueIndexRef.current + 1;
+    if (nextIndex >= currentQueue.length) {
+      return;
+    }
+    await playByIndex(nextIndex);
+  };
+
+  const playPrevious = async () => {
+    const previousIndex = queueIndexRef.current - 1;
+    if (previousIndex < 0) {
+      return;
+    }
+    await playByIndex(previousIndex);
+  };
+
   const togglePlay = async () => {
     if (loading) {
-      debugPlayer("toggle-blocked-auth-loading");
       return;
     }
     if (!canPlay) {
-      debugPlayer("toggle-blocked-no-session");
       stopPlayback(true);
       return;
     }
@@ -215,6 +276,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const toggleLoop = () => {
     setIsLooping((prev) => !prev);
+  };
+
+  const toggleShuffle = () => {
+    setIsShuffling((prev) => !prev);
   };
 
   const seekTo = (time: number) => {
@@ -239,13 +304,19 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     currentTrack,
     isPlaying,
     isLooping,
+    isShuffling,
     currentTime,
     duration,
     volume,
     canPlay,
+    hasNext: queueIndex >= 0 && queueIndex < queue.length - 1,
+    hasPrevious: queueIndex > 0,
     playTrack,
     togglePlay,
     toggleLoop,
+    toggleShuffle,
+    playNext,
+    playPrevious,
     seekTo,
     setVolumeLevel,
     stopPlayback,
@@ -261,5 +332,3 @@ export function usePlayer() {
   }
   return ctx;
 }
-
-

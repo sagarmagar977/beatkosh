@@ -2,6 +2,7 @@
 
 import {
   BookOpen,
+  Compass,
   CircleDollarSign,
   CircleHelp,
   Clock3,
@@ -11,20 +12,24 @@ import {
   Headset,
   Heart,
   History,
+  Home,
   MessageSquareMore,
   Music4,
   Newspaper,
+  Search,
   ShoppingCart,
   SlidersHorizontal,
   TrendingUp,
   Users,
 } from "lucide-react";
+import { SunMoon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
+import { useTheme } from "@/app/providers";
 import { GlobalPlayer } from "@/components/global-player";
 import { apiRequest } from "@/lib/api";
 
@@ -53,7 +58,7 @@ type MenuItem = {
   icon: MenuIconKind;
 };
 
-type NavLink = { href: string; label: string; menu?: MenuItem[] };
+type NavLink = { href: string; label: string; menuKey?: string; menu?: MenuItem[] };
 const GLOBAL_FLASH_SESSION_KEY = "beatkosh-global-flash";
 
 type AppNotification = {
@@ -122,16 +127,10 @@ const beatsMenu: MenuItem[] = [
   { label: "For Pop Artists", href: "/beats-pop", icon: "beat" },
 ];
 
-const browseMenu: MenuItem[] = [
-  { label: "Cart", href: "/orders", icon: "cart" },
-  { label: "Liked", href: "/library", icon: "heart" },
-  { label: "Play History", href: "/projects", icon: "history" },
-  { label: "Download History", href: "/wallet", icon: "download" },
-  { label: "Studio", href: "/producer/studio", icon: "studio" },
-  { label: "Media Uploads", href: "/producer/media-uploads", icon: "studio" },
-  { label: "Negotiations", href: "/projects", icon: "negotiation" },
-  { label: "Follower Drops", href: "/activity", icon: "drop" },
-  { label: "Followed By You", href: "/activity", icon: "group" },
+const hiringMenu: MenuItem[] = [
+  { label: "Hiring Workspace", href: "/projects", icon: "negotiation" },
+  { label: "Open Briefs", href: "/projects", icon: "clock" },
+  { label: "Project Pipeline", href: "/projects", icon: "group" },
 ];
 
 const resourcesMenu: MenuItem[] = [
@@ -142,10 +141,10 @@ const resourcesMenu: MenuItem[] = [
 ];
 
 const navLinks: NavLink[] = [
-  { href: "/dashboard/listening", label: "Dashboard", menu: dashboardMenu },
   { href: "/beats", label: "Beats", menu: beatsMenu },
+  { href: "/dashboard/listening", label: "Dashboard", menu: dashboardMenu },
   { href: "/catalog", label: "Sound Kits" },
-  { href: "/activity", label: "Browse", menu: browseMenu },
+  { href: "/projects", label: "Hiring", menu: hiringMenu },
   { href: "/resources", label: "Resources", menu: resourcesMenu },
 ];
 
@@ -153,6 +152,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { user, token, loading, logout, startSelling, refreshMe, meError } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const [hoverMenuOpen, setHoverMenuOpen] = useState<string | null>(null);
   const [pinnedMenuOpen, setPinnedMenuOpen] = useState<string | null>(null);
@@ -166,6 +166,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [allowDegradedSession, setAllowDegradedSession] = useState(false);
   const [uploadPickerOpen, setUploadPickerOpen] = useState(false);
   const [globalFlash, setGlobalFlash] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const menuCloseTimeout = useRef<number | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
@@ -267,8 +268,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [notificationsOpen, token]);
 
   const openMenuKey = pinnedMenuOpen ?? hoverMenuOpen;
+  const isBrowseActive = normalizedPath === "/activity";
+  const isHomeActive =
+    normalizedPath === "/" || normalizedPath === "/dashboard/listening" || normalizedPath === "/dashboard/selling";
   const activeMenuItems = useMemo(() => {
-    const match = navLinks.find((link) => link.label === openMenuKey);
+    const match = navLinks.find((link) => (link.menuKey ?? link.label) === openMenuKey);
     return match?.menu ?? [];
   }, [openMenuKey]);
 
@@ -283,14 +287,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }, 120);
   };
 
+  const runSearch = () => {
+    const next = searchQuery.trim();
+    setPinnedMenuOpen(null);
+    setHoverMenuOpen(null);
+    router.push(next ? `/beats?query=${encodeURIComponent(next)}` : "/beats");
+  };
+
   if (isPublicAuthRoute) {
     return <AuthScreen mode={normalizedPath === "/auth/register" ? "register" : "login"} />;
   }
 
   if (loading) {
     return (
-      <div className="mx-auto flex min-h-screen max-w-[520px] flex-col items-center justify-center gap-3 px-6 text-center text-white">
-        <p className="text-sm text-white/70">Loading session...</p>
+      <div className="mx-auto flex min-h-screen max-w-[520px] flex-col items-center justify-center gap-3 px-6 text-center theme-text-main">
+        <p className="text-sm theme-text-muted">Loading session...</p>
       </div>
     );
   }
@@ -298,8 +309,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   if (hasSession && !user && !allowDegradedSession) {
     const isNetworkFailure = meError?.status === 0;
     return (
-      <div className="mx-auto flex min-h-screen max-w-[520px] flex-col items-center justify-center gap-4 px-6 text-center text-white">
-        <p className="text-sm text-white/70">Signed in, but we could not load your profile.</p>
+      <div className="mx-auto flex min-h-screen max-w-[520px] flex-col items-center justify-center gap-4 px-6 text-center theme-text-main">
+        <p className="text-sm theme-text-muted">Signed in, but we could not load your profile.</p>
         <div className="flex flex-wrap items-center justify-center gap-3">
           <button
             type="button"
@@ -311,7 +322,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               }
 
             }}
-            className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs text-white/80"
+            className="theme-soft rounded-full px-4 py-2 text-xs theme-text-soft"
           >
             Retry
           </button>
@@ -319,7 +330,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={() => setAllowDegradedSession(true)}
-              className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs text-white/80"
+              className="theme-soft rounded-full px-4 py-2 text-xs theme-text-soft"
             >
               Continue
             </button>
@@ -330,17 +341,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               logout();
               router.replace("/auth/login");
             }}
-            className="rounded-full border border-white/15 bg-white/5 px-4 py-2 text-xs text-white/80"
+            className="theme-soft rounded-full px-4 py-2 text-xs theme-text-soft"
           >
             Logout
           </button>
         </div>
-        <div className="mt-1 w-full max-w-[520px] rounded-2xl border border-white/10 bg-white/[0.03] p-4 text-left">
-          <p className="text-xs text-white/60">/account/me failed{meError ? ` (status ${meError.status})` : ""}:</p>
-          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/30 p-3 text-[11px] text-white/70">{meError?.bodyText ?? "No details"}</pre>
+        <div className="theme-surface-muted mt-1 w-full max-w-[520px] rounded-2xl p-4 text-left">
+          <p className="text-xs theme-text-muted">/account/me failed{meError ? ` (status ${meError.status})` : ""}:</p>
+          <pre className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words rounded-xl bg-black/20 p-3 text-[11px] theme-text-soft">{meError?.bodyText ?? "No details"}</pre>
         </div>
         {isNetworkFailure ? (
-          <p className="text-xs text-white/45">
+          <p className="text-xs theme-text-faint">
             You can continue while the backend is unreachable, but some features may fail.
           </p>
         ) : null}
@@ -352,37 +363,118 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Legacy-route guard removed now that auth context is unified.
 
   return (
-    <div className="min-h-screen pb-28 text-white">
-      <header className="sticky top-0 z-40 border-b border-white/10 bg-[#0b0c13]/94 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1240px] items-center gap-3 px-4 py-3 lg:px-6">
-          <Link href="/" className="text-3xl font-black tracking-[-0.07em] text-[#8f5cff]">
+    <div className="app-theme min-h-screen pb-28">
+      <header className="theme-header sticky top-0 z-40 border-b backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1380px] items-center gap-3 px-4 py-3 lg:px-6">
+          <Link href="/" className="text-3xl font-black tracking-[-0.07em] md:mr-2" style={{ color: "var(--brand)" }}>
             B
           </Link>
 
-          <div className="hidden min-w-[320px] flex-1 items-center gap-2 md:flex">
-            <input
-              className="h-10 flex-1 rounded-md border border-white/15 bg-white/5 px-3 text-sm text-white/80 outline-none placeholder:text-white/35"
-              placeholder="Search top beats"
-            />
-            <select className="h-10 rounded-md border border-white/15 bg-white/5 px-3 text-sm text-white/80 outline-none">
-              <option>General</option>
-              <option>Beats</option>
-              <option>Sound Kits</option>
-              <option>Resources</option>
-            </select>
+          <div className="hidden flex-1 items-center justify-center md:flex">
+            <div className="flex w-full max-w-[760px] items-center gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setPinnedMenuOpen(null);
+                  setHoverMenuOpen(null);
+                  router.push("/");
+                }}
+                className={`inline-flex h-12 w-12 items-center justify-center rounded-full border transition ${
+                  isHomeActive
+                    ? "border-white/18 bg-white/12 text-white"
+                    : "border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08]"
+                }`}
+                aria-label="Go home"
+                title="Home"
+              >
+                <Home className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+              </button>
+
+              <form
+                className="flex h-14 flex-1 items-center rounded-full border border-white/10 bg-white/[0.05] px-4 shadow-[0_12px_34px_rgba(0,0,0,0.2)]"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  runSearch();
+                }}
+              >
+                <button
+                  type="submit"
+                  className="mr-3 inline-flex h-9 w-9 items-center justify-center rounded-full text-white/58 transition hover:text-white"
+                  aria-label="Search"
+                >
+                  <Search className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+                </button>
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  onFocus={() => {
+                    setPinnedMenuOpen("Browse");
+                    setHoverMenuOpen("Browse");
+                  }}
+                  className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                  placeholder="What do you want to play?"
+                />
+                <div className="mx-4 h-7 w-px bg-white/10" />
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPinnedMenuOpen("Browse");
+                    setHoverMenuOpen("Browse");
+                    router.push("/activity");
+                  }}
+                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/58 transition hover:bg-white/8 hover:text-white"
+                  aria-label="Open browse"
+                  title="Browse"
+                >
+                  <Compass className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+                </button>
+              </form>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setPinnedMenuOpen("Browse");
+                  setHoverMenuOpen("Browse");
+                  router.push("/activity");
+                }}
+                className={`inline-flex h-12 items-center gap-2 rounded-full border px-4 text-sm font-medium transition ${
+                  isBrowseActive || openMenuKey === "Browse"
+                    ? "border-[#1ed760]/35 bg-[#1ed760]/12 text-white"
+                    : "border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08]"
+                }`}
+              >
+                <Compass className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+                Browse
+              </button>
+            </div>
           </div>
 
           <button
             type="button"
             onClick={() => setNotificationsOpen((s) => !s)}
-            className="relative rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs text-white/75"
+            className="theme-soft relative inline-flex h-10 w-10 items-center justify-center rounded-full px-0 text-xs theme-text-soft"
+            aria-label="Notifications"
           >
-            Bell
+            <span className="sr-only">Notifications</span>
+            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+              <path d="M10 21a2 2 0 0 0 4 0" />
+            </svg>
           </button>
 
-          <Link href="/orders" className="rounded-full border border-white/12 bg-white/5 px-3 py-2 text-xs text-white/75">
+          <Link href="/orders" className="theme-soft hidden rounded-full px-3 py-2 text-xs theme-text-soft md:inline-flex">
             Cart
           </Link>
+
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="theme-toggle hidden h-10 w-10 items-center justify-center rounded-full transition md:inline-flex"
+            aria-label="Toggle color mode"
+            title="Toggle color mode"
+          >
+            <SunMoon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+          </button>
 
           {user && user.active_role !== "producer" ? (
             <button
@@ -417,22 +509,69 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <button
             type="button"
             onClick={() => setUserMenuOpen((s) => !s)}
-            className="flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/5 text-xs font-semibold text-white/85"
+            className="theme-avatar flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold"
           >
             {user?.username?.slice(0, 1).toUpperCase() ?? "U"}
           </button>
         </div>
 
-        <div className="mx-auto max-w-[1240px] px-4 pb-3 lg:px-6">
-          <nav ref={navRef} className="relative flex items-center gap-6 text-sm text-white/70">
+        <div className="mx-auto max-w-[1380px] px-4 pb-3 lg:px-6">
+          <nav ref={navRef} className="relative flex items-center gap-6 text-sm theme-text-muted">
+            <div className="flex w-full items-center gap-2 md:hidden">
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition ${
+                  isHomeActive
+                    ? "border-white/18 bg-white/12 text-white"
+                    : "border-white/10 bg-white/[0.04] text-white/72"
+                }`}
+              >
+                <Home className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+              </button>
+              <form
+                className="flex h-11 flex-1 items-center rounded-full border border-white/10 bg-white/[0.05] px-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  runSearch();
+                }}
+              >
+                <Search className="h-4 w-4 text-white/52" strokeWidth={2} aria-hidden="true" />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="ml-2 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                  placeholder="Search beats"
+                />
+              </form>
+              <button
+                type="button"
+                onClick={() => {
+                  setPinnedMenuOpen("Browse");
+                  setHoverMenuOpen("Browse");
+                  router.push("/activity");
+                }}
+                className={`inline-flex h-11 items-center gap-2 rounded-full border px-3 text-sm transition ${
+                  isBrowseActive || openMenuKey === "Browse"
+                    ? "border-[#1ed760]/35 bg-[#1ed760]/12 text-white"
+                    : "border-white/10 bg-white/[0.04] text-white/72"
+                }`}
+              >
+                <Compass className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+                Browse
+              </button>
+            </div>
+
             {navLinks.map((link) => {
               const hasMenu = Boolean(link.menu && link.menu.length);
-              const isActive = normalizedPath === link.href;
-              const isOpen = openMenuKey === link.label;
+              const menuKey = link.menuKey ?? link.label;
+              // Route-based active state is reserved for destination tabs like Browse.
+              const isActive = !hasMenu && normalizedPath === link.href;
+              const isOpen = openMenuKey === menuKey;
               return (
                 <div
                   key={link.label}
-                  className="relative"
+                  className="relative hidden md:block"
                   onMouseEnter={() => {
                     if (!hasMenu) {
                       return;
@@ -440,7 +579,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     if (menuCloseTimeout.current) {
                       window.clearTimeout(menuCloseTimeout.current);
                     }
-                    setHoverMenuOpen(link.label);
+                    setHoverMenuOpen(menuKey);
                   }}
                   onMouseLeave={() => {
                     if (!hasMenu) {
@@ -456,12 +595,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         router.push(link.href);
                         return;
                       }
-                      setPinnedMenuOpen((prev) => (prev === link.label ? null : link.label));
-                      setHoverMenuOpen(link.label);
+                      setPinnedMenuOpen((prev) => (prev === menuKey ? null : menuKey));
+                      setHoverMenuOpen(menuKey);
                     }}
                     className={
                       "rounded-full px-3 py-2 transition " +
-                      (isActive || isOpen ? "bg-white/8 text-white" : "hover:bg-white/5 hover:text-white")
+                      (isActive || isOpen ? "theme-soft-strong theme-text-main" : "theme-text-muted")
                     }
                   >
                     {link.label}
@@ -482,7 +621,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   closeMenuSoon();
                 }}
               >
-                <div className="rounded-2xl border border-white/10 bg-[#0b0c13]/95 p-6 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
+                <div className="theme-menu rounded-2xl p-6 backdrop-blur-xl">
                   <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
                     {activeMenuItems.map((item) => (
                       <button
@@ -493,10 +632,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           setHoverMenuOpen(null);
                           router.push(item.href);
                         }}
-                        className="flex items-center gap-3 rounded-xl border border-white/10 bg-white/[0.02] px-4 py-3 text-left transition hover:border-[#8f5cff]/40 hover:bg-[#8f5cff]/10"
+                        className="theme-soft flex items-center gap-3 rounded-xl px-4 py-3 text-left transition"
                       >
                         <MenuIcon kind={item.icon} />
-                        <span className="text-sm font-medium text-white/85">{item.label}</span>
+                        <span className="text-sm font-medium theme-text-soft">{item.label}</span>
                       </button>
                     ))}
                   </div>
@@ -504,16 +643,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </div>
             ) : null}
 
-            {startSellingError ? <p className="ml-auto text-xs text-[#ffb4a9]">{startSellingError}</p> : null}
+            {startSellingError ? <p className="ml-auto text-xs text-[#ff8f7d]">{startSellingError}</p> : null}
 
             {userMenuOpen ? (
-              <div className="absolute right-0 top-[46px] z-50 w-[240px] rounded-2xl border border-white/10 bg-[#0b0c13]/95 p-3 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
-                <p className="px-2 pb-2 text-xs text-white/50">Signed in as {user?.username ?? ""}</p>
+              <div className="theme-menu absolute right-0 top-[46px] z-50 w-[240px] rounded-2xl p-3 backdrop-blur-xl">
+                <p className="px-2 pb-2 text-xs theme-text-faint">Signed in as {user?.username ?? ""}</p>
                 <div className="grid gap-2">
                   {profileHref ? (
                     <Link
                       href={profileHref}
-                      className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-white/80 hover:bg-white/5"
+                      className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
                       onClick={() => setUserMenuOpen(false)}
                     >
                       My Profile
@@ -521,18 +660,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   ) : null}
                   <Link
                     href="/dashboard/listening"
-                    className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-white/80 hover:bg-white/5"
+                    className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
                     onClick={() => setUserMenuOpen(false)}
                   >
                     Dashboard
                   </Link>
                   <Link
                     href="/producer/studio"
-                    className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-sm text-white/80 hover:bg-white/5"
+                    className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
                     onClick={() => setUserMenuOpen(false)}
                   >
                     Studio
                   </Link>
+                  <button
+                    type="button"
+                    onClick={toggleTheme}
+                    className="theme-soft rounded-xl px-3 py-2 text-left text-sm theme-text-soft"
+                  >
+                    Toggle {theme === "dark" ? "light" : "dark"} mode
+                  </button>
                   <button
                     type="button"
                     disabled={logoutBusy}
@@ -546,7 +692,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                         router.replace("/auth/login");
                       }
                     }}
-                    className="rounded-xl border border-white/10 bg-white/[0.02] px-3 py-2 text-left text-sm text-white/80 hover:bg-white/5 disabled:opacity-60"
+                    className="theme-soft rounded-xl px-3 py-2 text-left text-sm theme-text-soft disabled:opacity-60"
                   >
                     {logoutBusy ? "Logging out..." : "Logout"}
                   </button>
@@ -555,10 +701,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             ) : null}
 
             {notificationsOpen ? (
-              <div className="absolute right-0 top-[46px] z-50 w-[340px] rounded-2xl border border-white/10 bg-[#0b0c13]/95 p-4 shadow-[0_20px_60px_rgba(0,0,0,0.55)] backdrop-blur-xl">
-                <p className="text-sm font-semibold text-white">Notifications</p>
-                {notificationsLoading ? <p className="mt-3 text-xs text-white/60">Loading notifications...</p> : null}
-                {!notificationsLoading && notifications.length === 0 ? <p className="mt-3 text-xs text-white/60">No new notifications.</p> : null}
+              <div className="theme-menu absolute right-0 top-[46px] z-50 w-[340px] rounded-2xl p-4 backdrop-blur-xl">
+                <p className="text-sm font-semibold theme-text-main">Notifications</p>
+                {notificationsLoading ? <p className="mt-3 text-xs theme-text-muted">Loading notifications...</p> : null}
+                {!notificationsLoading && notifications.length === 0 ? <p className="mt-3 text-xs theme-text-muted">No new notifications.</p> : null}
                 {!notificationsLoading ? (
                   <div className="mt-3 space-y-2">
                     {notifications.map((item) => (
@@ -571,10 +717,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             router.push(`/beats/${item.beat_id}`);
                           }
                         }}
-                        className="block w-full rounded-xl border border-white/10 bg-white/[0.03] px-3 py-3 text-left hover:bg-white/[0.05]"
+                        className="theme-soft block w-full rounded-xl px-3 py-3 text-left"
                       >
-                        <p className="text-sm text-white/85">{item.message}</p>
-                        <p className="mt-1 text-[11px] text-white/45">
+                        <p className="text-sm theme-text-soft">{item.message}</p>
+                        <p className="mt-1 text-[11px] theme-text-faint">
                           {new Date(item.created_at).toLocaleString("en-GB", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}
                         </p>
                       </button>
@@ -589,19 +735,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {uploadPickerOpen ? (
         <div
-          className="fixed inset-0 z-[120] flex items-start justify-center bg-black/70 px-4 pt-28 backdrop-blur-sm"
+          className="theme-overlay fixed inset-0 z-[120] flex items-start justify-center px-4 pt-28 backdrop-blur-sm"
           onClick={() => setUploadPickerOpen(false)}
         >
           <section
-            className="w-full max-w-[860px] rounded-2xl border border-white/15 bg-[#181a24] p-5 shadow-[0_30px_90px_rgba(0,0,0,0.5)]"
+            className="theme-floating w-full max-w-[860px] rounded-2xl p-5"
             onClick={(event) => event.stopPropagation()}
           >
             <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-xl font-semibold text-white">Upload</h2>
+              <h2 className="text-xl font-semibold theme-text-main">Upload</h2>
               <button
                 type="button"
                 onClick={() => setUploadPickerOpen(false)}
-                className="rounded-md border border-white/15 px-2 py-1 text-xs text-white/75 hover:bg-white/5"
+                className="theme-soft rounded-md px-2 py-1 text-xs theme-text-soft"
               >
                 Close
               </button>
@@ -613,13 +759,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setUploadPickerOpen(false);
                   router.push("/producer/upload-wizard?flow=beat&fresh=1");
                 }}
-                className="rounded-2xl border border-white/20 bg-gradient-to-b from-white/8 to-white/[0.03] p-6 text-left transition hover:border-[#8b28ff]/60 hover:bg-[#8b28ff]/10"
+                className="theme-soft rounded-2xl p-6 text-left transition"
               >
                 <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-[#8b28ff] to-[#601dff] text-2xl">
                   B
                 </div>
-                <h3 className="text-3xl font-semibold leading-none tracking-tight text-white">Upload Beat</h3>
-                <p className="mt-3 text-sm text-white/70">Get paid by selling beats to 100K+ artists worldwide.</p>
+                <h3 className="text-3xl font-semibold leading-none tracking-tight theme-text-main">Upload Beat</h3>
+                <p className="mt-3 text-sm theme-text-muted">Get paid by selling beats to 100K+ artists worldwide.</p>
               </button>
 
               <button
@@ -628,18 +774,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setUploadPickerOpen(false);
                   router.push("/producer/upload-wizard?flow=kit&fresh=1");
                 }}
-                className="rounded-2xl border border-white/20 bg-gradient-to-b from-white/8 to-white/[0.03] p-6 text-left transition hover:border-[#1f77ff]/60 hover:bg-[#1f77ff]/10"
+                className="theme-soft rounded-2xl p-6 text-left transition"
               >
                 <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-[#1f77ff] to-[#1550ff] text-2xl">
                   K
                 </div>
                 <div className="flex items-center gap-2">
-                  <h3 className="text-3xl font-semibold leading-none tracking-tight text-white">Upload Sound</h3>
+                  <h3 className="text-3xl font-semibold leading-none tracking-tight theme-text-main">Upload Sound</h3>
                   <span className="rounded-full border border-[#ffcf7a]/40 bg-[#ff9f1c]/18 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-[#ffd58c]">
                     New
                   </span>
                 </div>
-                <p className="mt-3 text-sm text-white/70">
+                <p className="mt-3 text-sm theme-text-muted">
                   Get paid by selling sound kits to musicians across the globe.
                 </p>
               </button>
@@ -650,11 +796,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setUploadPickerOpen(false);
                   router.push("/producer/media-uploads");
                 }}
-                className="rounded-2xl border border-white/20 bg-gradient-to-b from-white/8 to-white/[0.03] p-6 text-left transition hover:border-[#f6b067]/60 hover:bg-[#f6b067]/10"
+                className="theme-soft rounded-2xl p-6 text-left transition"
               >
                 <div className="mb-4 inline-flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-b from-[#f6b067] to-[#ff8a38] text-2xl text-[#20150e]">M</div>
-                <h3 className="text-3xl font-semibold leading-none tracking-tight text-white">Media Uploads</h3>
-                <p className="mt-3 text-sm text-white/70">Open saved drafts, continue editing, or remove old uploads.</p>
+                <h3 className="text-3xl font-semibold leading-none tracking-tight theme-text-main">Media Uploads</h3>
+                <p className="mt-3 text-sm theme-text-muted">Open saved drafts, continue editing, or remove old uploads.</p>
               </button>
             </div>
           </section>

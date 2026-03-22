@@ -2,7 +2,7 @@
 
 import { BadgeCheck, Camera, Heart, PencilLine, Play, ShieldAlert, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ChangeEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
 import { BeatListRow } from "@/components/beat-list-row";
@@ -19,12 +19,21 @@ type ProducerProfile = {
   verified: boolean;
 };
 
+type FeaturedProducer = {
+  producer_id: number;
+  username: string;
+  producer_name: string;
+  headline?: string | null;
+  avatar_obj?: string | null;
+};
+
 type Beat = SavedBeatEntry & {
   play_count?: number;
   like_count?: number;
   created_at?: string;
   preview_audio_obj?: string | null;
   audio_file_obj?: string | null;
+  featured_producers?: FeaturedProducer[];
 };
 
 type TrustSummary = {
@@ -51,8 +60,22 @@ type ListeningHistoryItem = {
   last_played_at: string;
 };
 
+
 type PrivateTab = "beats" | "playlists" | "history";
 type TrackView = "recent" | "mostPlayed" | "topLiked";
+
+function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="spotify-display text-[1.55rem] leading-none text-white">{title}</h2>
+      {action && onAction ? (
+        <button type="button" onClick={onAction} className="text-sm font-medium text-white/65 transition hover:text-white">
+          {action}
+        </button>
+      ) : null}
+    </div>
+  );
+}
 
 function formatCompact(value: number) {
   if (value >= 1000) {
@@ -61,12 +84,11 @@ function formatCompact(value: number) {
   return String(value);
 }
 
-function formatDateTime(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return "Unknown time";
-  }
-  return date.toLocaleString("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+function formatReleaseYear(raw?: string) {
+  if (!raw) return "New release";
+  const parsed = new Date(raw);
+  if (Number.isNaN(parsed.getTime())) return "New release";
+  return parsed.getFullYear().toString();
 }
 
 export default function ProducerPrivateProfilePage() {
@@ -75,7 +97,6 @@ export default function ProducerPrivateProfilePage() {
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
   const library = useBeatLibrary(user?.id);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const filterCardRef = useRef<HTMLElement | null>(null);
   const [profile, setProfile] = useState<ProducerProfile | null>(null);
   const [beats, setBeats] = useState<Beat[]>([]);
   const [trust, setTrust] = useState<TrustSummary | null>(null);
@@ -93,7 +114,6 @@ export default function ProducerPrivateProfilePage() {
   const [savingProfile, setSavingProfile] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [filterCardHeight, setFilterCardHeight] = useState(0);
 
   useEffect(() => {
     if (!token || !user?.is_producer) {
@@ -133,28 +153,6 @@ export default function ProducerPrivateProfilePage() {
 
     void run();
   }, [token, user]);
-
-  useLayoutEffect(() => {
-    const node = filterCardRef.current;
-    if (!node || typeof window === "undefined") {
-      return;
-    }
-
-    const updateHeight = () => {
-      setFilterCardHeight(node.getBoundingClientRect().height);
-    };
-
-    updateHeight();
-
-    const resizeObserver = new ResizeObserver(() => updateHeight());
-    resizeObserver.observe(node);
-    window.addEventListener("resize", updateHeight);
-
-    return () => {
-      resizeObserver.disconnect();
-      window.removeEventListener("resize", updateHeight);
-    };
-  }, [tab]);
 
   const notify = (text: string) => {
     setMessage(text);
@@ -280,29 +278,211 @@ export default function ProducerPrivateProfilePage() {
     }
   };
 
-  const renderBeatTab = () => (
-    <section className="space-y-3">
-      {sortedBeats.map((beat) => {
-        const isCurrent = currentTrack?.id === beat.id;
-        return (
-          <BeatListRow
-            key={beat.id}
-            beat={beat}
-            detailHref={`/beats/${beat.id}`}
-            artistHref={`/producers/${beat.producer}`}
-            isCurrent={isCurrent}
-            isPlaying={isCurrent && isPlaying}
-            onPlay={() => void handlePlay(beat, "producer-private-profile")}
-            actionLabel={`Open Track - Rs ${beat.base_price}`}
-            actionTone="neutral"
-            onAction={() => router.push(`/beats/${beat.id}`)}
-            message={notify}
-          />
-        );
-      })}
-      {sortedBeats.length === 0 ? <p className="text-sm text-white/55">No beats uploaded yet.</p> : null}
-    </section>
-  );
+  const featuredProducers = useMemo(() => {
+    const seen = new Set<number>();
+    const collection: FeaturedProducer[] = [];
+    beats.forEach((beat) => {
+      (beat.featured_producers ?? []).forEach((producer) => {
+        if (!seen.has(producer.producer_id)) {
+          seen.add(producer.producer_id);
+          collection.push(producer);
+        }
+      });
+    });
+    return collection;
+  }, [beats]);
+
+  const topTags = useMemo(() => {
+    const counts = new Map<string, number>();
+    beats.forEach((beat) => {
+      (beat.tag_names ?? []).forEach((tag) => counts.set(tag, (counts.get(tag) ?? 0) + 1));
+      if (beat.mood) counts.set(beat.mood, (counts.get(beat.mood) ?? 0) + 1);
+    });
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([tag]) => ({
+        tag,
+        beats: beats.filter((beat) => (beat.tag_names ?? []).includes(tag) || beat.mood === tag).slice(0, 10),
+      }))
+      .filter((entry) => entry.beats.length > 0);
+  }, [beats]);
+
+  const renderBeatTab = () => {
+    const heroBeat = sortedBeats[0] || beats[0] || null;
+
+    return (
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
+        <div className="space-y-6">
+          <section className="overflow-hidden rounded-[34px] border border-white/10 bg-[#121314]">
+            <div
+              className="relative p-6 sm:p-8"
+              style={{
+                background: heroBeat?.cover_art_obj
+                  ? `linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(18,19,20,0.9) 72%), url(${resolveMediaUrl(heroBeat.cover_art_obj)}) center/cover`
+                  : "linear-gradient(135deg, #ef3f23 0%, #7c1016 45%, #121314 100%)",
+              }}
+            >
+              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/55">Your producer space</p>
+              <h2 className="spotify-display mt-4 max-w-[720px] text-[3rem] leading-[0.9] text-white sm:text-[4.2rem]">{profileDisplayName}</h2>
+              <p className="mt-3 max-w-[640px] text-sm leading-6 text-white/72">{profile?.headline || "Manage your top beats, recent drops, playlists, and listening worlds from one profile hub."}</p>
+              <div className="mt-6 flex flex-wrap items-center gap-3">
+                {heroBeat ? (
+                  <button
+                    type="button"
+                    onClick={() => void handlePlay(heroBeat, "producer-private-hero")}
+                    className="inline-flex items-center gap-2 rounded-full bg-[#1ed760] px-5 py-3 text-sm font-semibold text-black"
+                  >
+                    <Play className="h-4 w-4 fill-current" strokeWidth={1.8} aria-hidden="true" />
+                    Play top beat
+                  </button>
+                ) : null}
+                <button type="button" onClick={() => router.push("/producer/upload-wizard")} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-3 text-sm text-white/85">
+                  Upload new beat
+                </button>
+              </div>
+            </div>
+          </section>
+
+          <section className="theme-surface rounded-[30px] p-6">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <SectionHeader title={trackView === "recent" ? "Latest Drops" : trackView === "mostPlayed" ? "Popular" : "Top Liked"} />
+              <div className="flex flex-wrap gap-2">
+                {[
+                  { key: "recent", label: "Latest" },
+                  { key: "mostPlayed", label: "Popular" },
+                  { key: "topLiked", label: "Top liked" },
+                ].map((option) => (
+                  <button
+                    key={option.key}
+                    type="button"
+                    onClick={() => setTrackView(option.key as TrackView)}
+                    className={`rounded-full px-4 py-2 text-sm transition ${trackView === option.key ? "bg-white text-black" : "bg-white/[0.04] text-white/70 hover:bg-white/[0.08]"}`}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="mt-5 space-y-2">
+              {sortedBeats.slice(0, 5).map((beat, index) => {
+                const isCurrent = currentTrack?.id === beat.id;
+                return (
+                  <button
+                    key={beat.id}
+                    type="button"
+                    onClick={() => void handlePlay(beat, "producer-private-profile")}
+                    className="flex w-full items-center gap-4 rounded-[22px] px-3 py-3 text-left transition hover:bg-white/[0.04]"
+                  >
+                    <span className="w-6 text-sm text-white/40">{index + 1}</span>
+                    <div className="h-11 w-11 overflow-hidden rounded-xl bg-white/[0.05]">
+                      {beat.cover_art_obj ? <img src={resolveMediaUrl(beat.cover_art_obj)} alt={beat.title} className="h-full w-full object-cover" /> : null}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`line-clamp-1 text-sm font-semibold ${isCurrent ? "text-[#1ed760]" : "text-white"}`}>{beat.title}</p>
+                      <p className="mt-1 text-xs text-white/50">{beat.genre} ? {beat.bpm} BPM ? {beat.key || "Key N/A"}</p>
+                    </div>
+                    <span className="rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black">Rs {beat.base_price}</span>
+                  </button>
+                );
+              })}
+              {sortedBeats.length === 0 ? <p className="text-sm text-white/55">No beats uploaded yet.</p> : null}
+            </div>
+          </section>
+
+          <section className="theme-surface rounded-[30px] p-6">
+            <SectionHeader title="Discography" />
+            <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
+              {beats.slice(0, 10).map((beat) => (
+                <button key={beat.id} type="button" onClick={() => router.push(`/beats/${beat.id}`)} className="group w-[180px] flex-none text-left">
+                  <div className="overflow-hidden rounded-[22px] bg-white/[0.04]">
+                    {beat.cover_art_obj ? <img src={resolveMediaUrl(beat.cover_art_obj)} alt={beat.title} className="aspect-square w-full object-cover transition duration-300 group-hover:scale-[1.04]" /> : <div className="aspect-square w-full bg-[radial-gradient(circle_at_top,_rgba(255,95,31,0.42),_rgba(19,20,23,0.95)_62%)]" />}
+                  </div>
+                  <p className="mt-3 line-clamp-1 text-sm font-semibold text-white">{beat.title}</p>
+                  <p className="mt-1 text-xs text-white/55">{formatReleaseYear(beat.created_at)} ? {beat.genre}</p>
+                </button>
+              ))}
+            </div>
+          </section>
+
+          {featuredProducers.length > 0 ? (
+            <section className="theme-surface rounded-[30px] p-6">
+              <SectionHeader title="Featuring Other Producers" />
+              <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
+                {featuredProducers.map((producer) => (
+                  <button key={producer.producer_id} type="button" onClick={() => router.push(`/producers/${producer.producer_id}`)} className="w-[210px] flex-none rounded-[26px] bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.07]">
+                    {producer.avatar_obj ? <img src={resolveMediaUrl(producer.avatar_obj)} alt={producer.producer_name} className="h-20 w-20 rounded-full object-cover" /> : <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[linear-gradient(135deg,#24423a,#0d1115)] text-2xl font-black text-white/85">{producer.producer_name.slice(0, 1).toUpperCase()}</div>}
+                    <p className="mt-4 line-clamp-1 text-base font-semibold text-white">{producer.producer_name}</p>
+                    <p className="mt-1 line-clamp-2 text-sm text-white/58">{producer.headline || `@${producer.username}`}</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ) : null}
+
+          {topTags.map((entry) => (
+            <section key={entry.tag} className="theme-surface rounded-[30px] p-6">
+              <SectionHeader title={`${entry.tag} beats`} />
+              <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
+                {entry.beats.map((beat) => (
+                  <button key={beat.id} type="button" onClick={() => router.push(`/beats/${beat.id}`)} className="group w-[180px] flex-none text-left">
+                    <div className="overflow-hidden rounded-[22px] bg-white/[0.04]">
+                      {beat.cover_art_obj ? <img src={resolveMediaUrl(beat.cover_art_obj)} alt={beat.title} className="aspect-square w-full object-cover transition duration-300 group-hover:scale-[1.04]" /> : <div className="aspect-square w-full bg-[radial-gradient(circle_at_top,_rgba(255,95,31,0.42),_rgba(19,20,23,0.95)_62%)]" />}
+                    </div>
+                    <p className="mt-3 line-clamp-1 text-sm font-semibold text-white">{beat.title}</p>
+                    <p className="mt-1 text-xs text-white/55">{beat.genre} ? {beat.bpm} BPM</p>
+                  </button>
+                ))}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+          <section className="theme-surface rounded-[28px] p-5">
+            <p className="text-sm font-semibold text-white">Quick beat list</p>
+            <p className="mt-1 text-xs text-white/46">Your current top 5 for this filter.</p>
+            <div className="mt-4 space-y-2">
+              {sortedBeats.slice(0, 5).map((beat) => {
+                const isCurrent = currentTrack?.id === beat.id;
+                return (
+                  <button key={beat.id} type="button" onClick={() => void handlePlay(beat, "producer-private-sidebar")} className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.04] px-3 py-3 text-left transition hover:bg-white/[0.08]">
+                    <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black">
+                      <Play className="h-4 w-4 fill-current" strokeWidth={1.8} aria-hidden="true" />
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className={`line-clamp-1 text-sm font-semibold ${isCurrent && isPlaying ? "text-[#1ed760]" : "text-white"}`}>{beat.title}</p>
+                      <p className="mt-1 text-xs text-white/45">{formatCompact(beat.play_count ?? 0)} plays</p>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </section>
+
+          <section className="theme-surface rounded-[28px] p-5">
+            <p className="text-sm font-semibold text-white">Collection tabs</p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {[
+                { key: "beats", label: "Beats" },
+                { key: "playlists", label: "Playlists" },
+                { key: "history", label: "History" },
+              ].map((option) => (
+                <button
+                  key={option.key}
+                  type="button"
+                  onClick={() => setTab(option.key as PrivateTab)}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${tab === option.key ? "border-[#8b4dff] bg-[#8b4dff] text-white" : "theme-soft theme-text-muted"}`}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </section>
+        </aside>
+      </div>
+    );
+  };
 
   const renderPlaylistsTab = () => (
     <section className="grid gap-4 xl:grid-cols-2">
@@ -410,8 +590,9 @@ export default function ProducerPrivateProfilePage() {
     </section>
   );
 
+
   if (!user?.is_producer) {
-    return <div className="rounded-[28px] border border-white/10 bg-[#171a22] p-6 text-sm text-white/70">Producer mode is required to use this page.</div>;
+    return <div className="theme-surface rounded-[28px] p-6 text-sm theme-text-muted">Producer mode is required to use this page.</div>;
   }
 
   const avatarImageUrl = avatarPreview || resolveMediaUrl(profile?.avatar_obj);
@@ -422,43 +603,43 @@ export default function ProducerPrivateProfilePage() {
   return (
     <>
       {isEditModalOpen ? (
-        <div className="fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto bg-[#06070c]/78 px-4 py-8 backdrop-blur-sm">
-          <section className="w-full max-w-2xl rounded-[30px] border border-white/10 bg-[#1c1f29] p-5 shadow-[0_24px_70px_rgba(0,0,0,0.4)] sm:p-6">
+        <div className="theme-overlay fixed inset-0 z-[120] flex items-start justify-center overflow-y-auto px-4 py-8 backdrop-blur-sm">
+          <section className="theme-floating w-full max-w-2xl rounded-[30px] p-5 sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-xs uppercase tracking-[0.18em] text-white/42">Profile editor</p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">Edit profile</h3>
+                <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Profile editor</p>
+                <h3 className="theme-text-main mt-2 text-2xl font-semibold">Edit profile</h3>
               </div>
               <button
                 type="button"
                 onClick={() => setIsEditModalOpen(false)}
-                className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.03] text-white/72 hover:bg-white/[0.06]"
+                className="theme-soft inline-flex h-10 w-10 items-center justify-center rounded-full theme-text-soft"
                 aria-label="Close profile editor"
               >
                 <X className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
               </button>
             </div>
             <div className="mt-5 space-y-4">
-              <label className="block text-sm text-white/72">
-                <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-white/42">Producer name</span>
+              <label className="theme-text-soft block text-sm">
+                <span className="theme-text-faint mb-2 block text-xs uppercase tracking-[0.18em]">Producer name</span>
                 <input
                   value={profileName}
                   onChange={(event) => setProfileName(event.target.value)}
                   placeholder="Your producer name"
-                  className="h-11 w-full rounded-2xl border border-white/10 bg-[#11131a] px-4 text-sm text-white outline-none placeholder:text-white/28"
+                  className="theme-input h-11 w-full rounded-2xl px-4 text-sm outline-none"
                 />
               </label>
-              <label className="block text-sm text-white/72">
-                <span className="mb-2 block text-xs uppercase tracking-[0.18em] text-white/42">Description</span>
+              <label className="theme-text-soft block text-sm">
+                <span className="theme-text-faint mb-2 block text-xs uppercase tracking-[0.18em]">Description</span>
                 <textarea
                   value={profileBio}
                   onChange={(event) => setProfileBio(event.target.value)}
                   placeholder="Describe your sound, style, and what artists can expect from you."
-                  className="min-h-[120px] w-full rounded-2xl border border-white/10 bg-[#11131a] px-4 py-3 text-sm text-white outline-none placeholder:text-white/28"
+                  className="theme-input min-h-[120px] w-full rounded-2xl px-4 py-3 text-sm outline-none"
                 />
               </label>
-              <div className="rounded-2xl border border-white/10 bg-[#11131a] p-4">
-                <span className="block text-xs uppercase tracking-[0.18em] text-white/42">Genres</span>
+              <div className="theme-surface-muted rounded-2xl p-4">
+                <span className="theme-text-faint block text-xs uppercase tracking-[0.18em]">Genres</span>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {genreOptions.map((genre) => {
                     const selected = selectedGenres.includes(genre);
@@ -474,7 +655,7 @@ export default function ProducerPrivateProfilePage() {
                         className={`rounded-full border px-3 py-1.5 text-xs transition ${
                           selected
                             ? "border-[#8b4dff]/80 bg-[#8b4dff]/18 text-white"
-                            : "border-white/10 bg-white/[0.02] text-white/58 hover:bg-white/[0.05]"
+                            : "theme-soft theme-text-muted"
                         }`}
                       >
                         {genre}
@@ -486,7 +667,7 @@ export default function ProducerPrivateProfilePage() {
               <button
                 type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="w-full rounded-2xl border border-dashed border-white/12 bg-white/[0.02] px-4 py-3 text-sm text-white/74 hover:bg-white/[0.04]"
+                className="theme-soft w-full rounded-2xl border-dashed px-4 py-3 text-sm theme-text-soft"
               >
                 {selectedAvatar ? `Selected image: ${selectedAvatar.name}` : "Choose profile photo"}
               </button>
@@ -494,7 +675,7 @@ export default function ProducerPrivateProfilePage() {
                 <button
                   type="button"
                   onClick={() => setIsEditModalOpen(false)}
-                  className="rounded-full border border-white/12 bg-white/[0.03] px-5 py-2.5 text-sm text-white/78 hover:bg-white/[0.06]"
+                  className="theme-soft rounded-full px-5 py-2.5 text-sm theme-text-soft"
                 >
                   Cancel
                 </button>
@@ -520,20 +701,20 @@ export default function ProducerPrivateProfilePage() {
 
       <div className="relative pb-20 lg:pl-[365px]">
         <aside className="lg:fixed lg:top-36 lg:left-[max(1.5rem,calc((100vw-1200px)/2))] lg:w-[340px]">
-          <section className="rounded-[30px] border border-white/10 bg-[#1c1f29] px-5 py-4 shadow-[0_24px_70px_rgba(0,0,0,0.22)]">
+          <section className="theme-surface rounded-[30px] px-5 py-4">
             <div className="flex justify-center">
               <div className="relative">
                 {avatarImageUrl ? (
-                  <img src={avatarImageUrl} alt={profileDisplayName} className="h-32 w-32 rounded-full border border-white/10 object-cover" />
+                  <img src={avatarImageUrl} alt={profileDisplayName} className="h-32 w-32 rounded-full border object-cover" style={{ borderColor: "var(--line)" }} />
                 ) : (
-                  <div className="flex h-32 w-32 items-center justify-center rounded-full border border-white/10 bg-gradient-to-br from-[#2a3042] via-[#181b24] to-[#0c0f16] text-4xl font-black text-white/88">
+                  <div className="theme-avatar flex h-32 w-32 items-center justify-center rounded-full text-4xl font-black">
                     {profileInitial}
                   </div>
                 )}
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="absolute bottom-2 right-2 inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#11131d] text-white/80 shadow-[0_10px_30px_rgba(0,0,0,0.35)]"
+                  className="theme-soft absolute bottom-2 right-2 inline-flex h-10 w-10 items-center justify-center rounded-full theme-text-soft"
                 >
                   <Camera className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                 </button>
@@ -542,41 +723,41 @@ export default function ProducerPrivateProfilePage() {
             </div>
 
             <div className="mt-4 text-center">
-              <h2 className="text-[2rem] font-semibold leading-none text-white">{profileDisplayName}</h2>
+              <h2 className="spotify-display theme-text-main text-[2.5rem] leading-[0.92] sm:text-[2.85rem]">{profileDisplayName}</h2>
               <div className="mt-3 flex flex-wrap justify-center gap-2">
                 {profileGenres.length > 0 ? (
                   profileGenres.map((genre) => (
-                    <span key={genre} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/66">
+                    <span key={genre} className="theme-pill rounded-full px-3 py-1 text-xs">
                       {genre}
                     </span>
                   ))
                 ) : (
-                  <p className="text-sm text-white/52">Genre not set</p>
+                  <p className="theme-text-muted text-sm">Genre not set</p>
                 )}
               </div>
             </div>
 
             <div className="mt-4 grid grid-cols-3 gap-2">
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-center">
+              <div className="theme-soft rounded-2xl px-3 py-2.5 text-center">
                 <Play className="mx-auto h-4 w-4 text-[#a288ff]" strokeWidth={1.8} aria-hidden="true" />
-                <p className="mt-1.5 text-lg font-semibold text-white">{formatCompact(dashboard?.plays ?? 0)}</p>
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Plays</p>
+                <p className="spotify-display theme-text-main mt-1.5 text-xl">{formatCompact(dashboard?.plays ?? 0)}</p>
+                <p className="theme-text-faint text-[11px] uppercase tracking-[0.16em]">Plays</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-center">
+              <div className="theme-soft rounded-2xl px-3 py-2.5 text-center">
                 <Heart className="mx-auto h-4 w-4 text-[#ff9fc4]" strokeWidth={1.8} aria-hidden="true" />
-                <p className="mt-1.5 text-lg font-semibold text-white">{formatCompact(dashboard?.likes ?? 0)}</p>
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Likes</p>
+                <p className="spotify-display theme-text-main mt-1.5 text-xl">{formatCompact(dashboard?.likes ?? 0)}</p>
+                <p className="theme-text-faint text-[11px] uppercase tracking-[0.16em]">Likes</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] px-3 py-2.5 text-center">
+              <div className="theme-soft rounded-2xl px-3 py-2.5 text-center">
                 {dashboard?.verified || profile?.verified || trust?.verified ? <BadgeCheck className="mx-auto h-4 w-4 text-[#9ee8dc]" strokeWidth={1.8} aria-hidden="true" /> : <ShieldAlert className="mx-auto h-4 w-4 text-[#f4c784]" strokeWidth={1.8} aria-hidden="true" />}
-                <p className="mt-1.5 text-sm font-semibold text-white">{dashboard?.verified || profile?.verified || trust?.verified ? "Verified" : "Not verified"}</p>
-                <p className="text-[11px] uppercase tracking-[0.16em] text-white/45">Status</p>
+                <p className="theme-text-main mt-1.5 text-sm font-bold">{dashboard?.verified || profile?.verified || trust?.verified ? "Verified" : "Not verified"}</p>
+                <p className="theme-text-faint text-[11px] uppercase tracking-[0.16em]">Status</p>
               </div>
             </div>
 
-            <div className="mt-4 rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-white/42">Bio</p>
-              <p className="mt-1.5 text-sm leading-6 text-white/68">{profile?.bio || "No producer bio yet."}</p>
+            <div className="theme-soft mt-4 rounded-2xl p-4">
+              <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Bio</p>
+              <p className="theme-text-muted mt-1.5 text-sm leading-6">{profile?.bio || "No producer bio yet."}</p>
             </div>
 
             
@@ -591,81 +772,49 @@ export default function ProducerPrivateProfilePage() {
           </section>
         </aside>
 
-        <section className="space-y-5 lg:pt-[calc(var(--profile-filter-height,0px)+1.5rem)]" style={{ ["--profile-filter-height" as string]: `${filterCardHeight}px` }}>
-        <section ref={filterCardRef} className="overflow-hidden rounded-[30px] border border-white/10 bg-[#141720] p-4 shadow-[0_24px_70px_rgba(0,0,0,0.22)] lg:fixed lg:top-[6.8rem] lg:left-[calc(max(1.5rem,calc((100vw-1200px)/2))+365px)] lg:right-[max(1.5rem,calc((100vw-1200px)/2))] lg:z-30 lg:rounded-[24px] lg:rounded-t-none lg:border-x-0 lg:border-t-0 lg:border-b lg:border-white/8 lg:bg-[#0d0f16] lg:px-0 lg:pb-4 lg:pt-3 lg:shadow-none">
-          <div className="lg:px-1">
-          <div className="flex flex-wrap items-center justify-between gap-3 border-b border-white/8 pb-3">
-            <div>
-              <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/34">Producer catalog</p>
-              <h1 className="mt-1 text-2xl font-semibold tracking-tight text-white">{profileDisplayName}</h1>
-            </div>
-            <button
-              type="button"
-              onClick={() => router.push(`/producers/${user.id}`)}
-              className="rounded-full border border-white/12 bg-white/[0.03] px-4 py-2 text-sm text-white/75 hover:bg-white/[0.06]"
-            >
-              Open public profile
-            </button>
-          </div>
-
-          <div className="mt-3 flex flex-wrap gap-2">
-            {[
-              { key: "beats", label: "Beats" },
-              { key: "playlists", label: "Playlists" },
-              { key: "history", label: "History" },
-            ].map((option) => (
+        <section className="space-y-6">
+          <section className="theme-surface rounded-[30px] p-4 sm:p-5">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3" style={{ borderColor: "var(--line)" }}>
+              <div>
+                <p className="spotify-kicker theme-text-quiet text-[11px]">Producer studio</p>
+                <h1 className="spotify-display theme-text-main mt-1 text-[2.4rem] sm:text-[2.9rem]">{profileDisplayName}</h1>
+              </div>
               <button
-                key={option.key}
                 type="button"
-                onClick={() => setTab(option.key as PrivateTab)}
-                className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
-                  tab === option.key
-                    ? "border-[#8b4dff] bg-[#8b4dff] text-white"
-                    : "border-white/10 bg-white/[0.03] text-white/68 hover:bg-white/[0.06]"
-                }`}
+                onClick={() => router.push(`/producers/${user.id}`)}
+                className="theme-soft rounded-full px-4 py-2 text-sm theme-text-soft"
               >
-                {option.label}
+                Open public profile
               </button>
-            ))}
-          </div>
+            </div>
 
-          {tab === "beats" ? (
-            <div className="mt-3 border-t border-white/8 pt-3">
-              <p className="mb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/34">Beat filters</p>
-              <div className="flex flex-wrap items-center gap-2">
+            <div className="mt-4 flex flex-wrap gap-2">
               {[
-                { key: "recent", label: "Recent" },
-                { key: "mostPlayed", label: "Most Played" },
-                { key: "topLiked", label: "Top Liked" },
+                { key: "beats", label: "Beats" },
+                { key: "playlists", label: "Playlists" },
+                { key: "history", label: "History" },
               ].map((option) => (
                 <button
                   key={option.key}
                   type="button"
-                  onClick={() => setTrackView(option.key as TrackView)}
-                  className={`rounded-full border px-3 py-1.5 text-[12px] transition ${
-                    trackView === option.key
-                      ? "border-[#8b4dff]/80 bg-[#8b4dff]/18 text-white"
-                      : "border-white/10 bg-white/[0.02] text-white/58 hover:bg-white/[0.05]"
-                  }`}
+                  onClick={() => setTab(option.key as PrivateTab)}
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${tab === option.key ? "border-[#8b4dff] bg-[#8b4dff] text-white" : "theme-soft theme-text-muted"}`}
                 >
                   {option.label}
                 </button>
               ))}
-              </div>
             </div>
-          ) : null}
-          </div>
+
+            <div className="mt-4">
+              {tab === "beats" ? renderBeatTab() : null}
+              {tab === "playlists" ? renderPlaylistsTab() : null}
+              {tab === "history" ? renderHistoryTab() : null}
+            </div>
+          </section>
+
+          {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+          {message ? <div className="fixed right-6 top-24 z-[150] rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">{message}</div> : null}
         </section>
-
-        <div className="relative z-0">
-          {tab === "beats" ? renderBeatTab() : null}
-          {tab === "playlists" ? renderPlaylistsTab() : null}
-          {tab === "history" ? renderHistoryTab() : null}
-        </div>
-
-        {error ? <p className="text-sm text-rose-300">{error}</p> : null}
-        {message ? <div className="fixed right-6 top-24 z-[150] rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">{message}</div> : null}
-      </section>
     </div>
     </>
   );

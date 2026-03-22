@@ -1,9 +1,8 @@
 import type { Metadata } from "next";
 
 import { AppShell } from "@/app/app-shell";
-import { AuthProvider } from "@/app/auth-context";
+import { Providers } from "@/app/providers";
 import { CartProvider } from "@/context/cart-context";
-import { PlayerProvider } from "@/context/player-context";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -17,15 +16,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
-        <AuthProvider>
+        <Providers>
           <CartProvider>
-            <PlayerProvider>
-              <AppShell>{children}</AppShell>
-            </PlayerProvider>
+            <AppShell>{children}</AppShell>
           </CartProvider>
-        </AuthProvider>
+        </Providers>
       </body>
     </html>
   );

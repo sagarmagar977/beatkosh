@@ -4,7 +4,7 @@ from django.db import transaction
 
 from beats.models import Beat, LicenseType
 from catalog.models import BeatTape, Bundle, SoundKit
-from orders.models import Cart, CartItem, DownloadAccess, Order, OrderItem, PurchaseLicense
+from orders.models import Cart, CartItem, Order, OrderItem
 
 
 def resolve_product(product_type: str, product_id: int):
@@ -50,6 +50,7 @@ def get_or_create_cart(buyer):
 def add_item_to_cart(buyer, *, product_type: str, product_id: int, license_type: LicenseType | None = None):
     cart = get_or_create_cart(buyer)
     _product, title, price, _producer_id = resolve_product_and_price(product_type, product_id, license_type)
+
     item = CartItem.objects.filter(
         cart=cart,
         product_type=product_type,
@@ -109,10 +110,10 @@ def create_order_for_items(buyer, items_data):
     total = Decimal("0.00")
 
     for item in items_data:
-        product, title, price, _producer_id = resolve_product_and_price(
+        _product, title, price, _producer_id = resolve_product_and_price(
             item["product_type"], item["product_id"], item.get("license_type")
         )
-        order_item = OrderItem.objects.create(
+        OrderItem.objects.create(
             order=order,
             product_type=item["product_type"],
             product_id=item["product_id"],
@@ -121,15 +122,6 @@ def create_order_for_items(buyer, items_data):
             price=price,
         )
         total += price
-
-        if item["product_type"] == OrderItem.PRODUCT_BEAT and item.get("license_type"):
-            PurchaseLicense.objects.create(
-                buyer=buyer,
-                beat=product,
-                license_type=item["license_type"],
-                order_item=order_item,
-            )
-            DownloadAccess.objects.create(buyer=buyer, beat=product, order_item=order_item)
 
     order.total_price = total
     order.save(update_fields=["total_price"])
@@ -142,7 +134,8 @@ def checkout_cart(buyer):
     cart_items = list(cart.items.select_related("license_type"))
     if not cart_items:
         raise ValueError("Cart is empty.")
-    order = create_order_for_items(
+
+    return create_order_for_items(
         buyer,
         [
             {
@@ -153,6 +146,3 @@ def checkout_cart(buyer):
             for item in cart_items
         ],
     )
-    cart.items.all().delete()
-    cart.save(update_fields=["updated_at"])
-    return order

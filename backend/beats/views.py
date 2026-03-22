@@ -207,6 +207,7 @@ class BeatUploadDraftPublishView(APIView):
             stems_file_obj=draft.stems_file_obj,
             cover_art_obj=draft.cover_art_obj,
             featured_cover_photo=draft.featured_cover_photo,
+            featured_producer_ids=draft.featured_producer_ids,
         )
         if not beat.cover_art_obj and beat.featured_cover_photo:
             beat.cover_art_obj = beat.featured_cover_photo.image.name

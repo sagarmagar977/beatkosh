@@ -40,20 +40,36 @@ class ProjectsApiTests(APITestCase):
                 "description": "Need 5 beats",
                 "project_type": "album",
                 "expected_track_count": 5,
+                "preferred_genre": "Synthwave",
+                "instrument_types": ["Piano", "Synthesizer", "Piano"],
+                "mood_types": ["Dark", "Energetic", "Dark"],
                 "target_genre_style": "Nephop with melodic hooks",
                 "reference_links": ["https://example.com/ref"],
                 "delivery_timeline_days": 21,
                 "revision_allowance": 3,
                 "budget": "500.00",
+                "offer_price": "450.00",
             },
             format="json",
         )
+
+    def test_project_metadata_options(self):
+        response = self.client.get(reverse("project-metadata-options"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(response.data["project_types"][0]["value"], "custom_single")
+        self.assertIn("Synthwave", response.data["genres"])
+        self.assertIn("Piano", response.data["instrument_types"])
+        self.assertIn("Dark", response.data["moods"])
 
     def test_project_request_create(self):
         response = self._create_project_request()
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
         self.assertEqual(response.data["project_type"], "album")
         self.assertEqual(response.data["expected_track_count"], 5)
+        self.assertEqual(response.data["preferred_genre"], "Synthwave")
+        self.assertEqual(response.data["instrument_types"], ["Piano", "Synthesizer"])
+        self.assertEqual(response.data["mood_types"], ["Dark", "Energetic"])
+        self.assertEqual(response.data["offer_price"], "450.00")
 
     def test_milestone_and_deliverable_flow(self):
         req_response = self._create_project_request()
@@ -81,12 +97,17 @@ class ProjectsApiTests(APITestCase):
         project = Project.objects.get(title="Album Beat Pack")
         self.assertEqual(project.workflow_stage, Project.WORKFLOW_PROPOSAL_ACCEPTED)
         self.assertEqual(project.project_type, "album")
+        self.assertEqual(project.preferred_genre, "Synthwave")
+        self.assertEqual(project.instrument_types, ["Piano", "Synthesizer"])
+        self.assertEqual(project.mood_types, ["Dark", "Energetic"])
+        self.assertEqual(str(project.offer_price), "450.00")
 
         self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {artist_login.data['access']}")
         projects_response = self.client.get(reverse("project-list"))
         self.assertEqual(projects_response.status_code, status.HTTP_200_OK)
         project_id = projects_response.data[0]["id"]
         self.assertEqual(projects_response.data[0]["workflow_summary"]["milestone_count"], 0)
+        self.assertEqual(projects_response.data[0]["instrument_types"], ["Piano", "Synthesizer"])
 
         milestone_response = self.client.post(
             reverse("milestone-create"),

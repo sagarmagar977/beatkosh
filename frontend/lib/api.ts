@@ -73,9 +73,17 @@ export function resolveMediaUrl(raw?: string | null) {
   if (raw.startsWith("media/")) {
     return `${BACKEND_ORIGIN}/${raw}`;
   }
+  if (
+    raw.startsWith("beats/") ||
+    raw.startsWith("soundkits/") ||
+    raw.startsWith("avatars/") ||
+    raw.startsWith("profiles/")
+  ) {
+    return `${BACKEND_ORIGIN}/media/${raw}`;
+  }
   if (raw.startsWith("/")) {
     return `${BACKEND_ORIGIN}${raw}`;
   }
-  return `${BACKEND_ORIGIN}/${raw}`;
+  return `${BACKEND_ORIGIN}/media/${raw}`;
 }
 

@@ -38,6 +38,20 @@ class RecommendationFeedSerializer(serializers.Serializer):
     beats = BeatSerializer(many=True)
 
 
+class AnalyticsSeriesPointSerializer(serializers.Serializer):
+    label = serializers.CharField()
+    plays = serializers.IntegerField(required=False)
+    sales = serializers.IntegerField(required=False)
+    revenue = serializers.FloatField(required=False)
+
+
+class AnalyticsRangeSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    days = serializers.IntegerField()
+    start = serializers.DateField()
+    end = serializers.DateField()
+
+
 class ProducerDashboardSummarySerializer(serializers.Serializer):
     producer_id = serializers.IntegerField()
     follower_count = serializers.IntegerField()
@@ -49,5 +63,8 @@ class ProducerDashboardSummarySerializer(serializers.Serializer):
     skip_events = serializers.IntegerField()
     activity_drop_count = serializers.IntegerField()
     hiring_inquiry_count = serializers.IntegerField()
+    selected_range = AnalyticsRangeSerializer()
+    performance_series = AnalyticsSeriesPointSerializer(many=True)
+    revenue_series = AnalyticsSeriesPointSerializer(many=True)
     top_beats = BeatSerializer(many=True)
     audience_fit_producers = ProducerDiscoveryCardSerializer(many=True)

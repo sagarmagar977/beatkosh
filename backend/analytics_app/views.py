@@ -1,5 +1,9 @@
-from django.db.models import Avg, Count, Q
+from datetime import timedelta
+
+from django.db.models import Avg, Count, Q, Sum
+from django.db.models.functions import TruncDate
 from django.shortcuts import get_object_or_404
+from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -23,6 +27,48 @@ from catalog.models import Bundle
 from orders.models import OrderItem
 from projects.models import ProjectRequest
 from reviews.models import Review
+
+
+RANGE_DAY_MAP = {
+    "7d": 7,
+    "30d": 30,
+    "90d": 90,
+    "365d": 365,
+}
+
+
+def resolve_range_key(raw_value: str | None) -> tuple[str, int]:
+    normalized = (raw_value or "30d").strip().lower()
+    days = RANGE_DAY_MAP.get(normalized, 30)
+    key = normalized if normalized in RANGE_DAY_MAP else "30d"
+    return key, days
+
+
+def build_daily_series(*, start_date, end_date, labels, plays_by_date, sales_by_date, revenue_by_date):
+    total_days = (end_date - start_date).days + 1
+    series = []
+    revenue_series = []
+    for index in range(total_days):
+        current_date = start_date + timedelta(days=index)
+        label = current_date.strftime(labels)
+        plays_value = plays_by_date.get(current_date, 0)
+        sales_value = sales_by_date.get(current_date, 0)
+        revenue_value = float(revenue_by_date.get(current_date, 0) or 0)
+        series.append(
+            {
+                "label": label,
+                "plays": plays_value,
+                "sales": sales_value,
+                "revenue": round(revenue_value, 2),
+            }
+        )
+        revenue_series.append(
+            {
+                "label": label,
+                "revenue": round(revenue_value, 2),
+            }
+        )
+    return series, revenue_series
 
 
 class ProducerAnalyticsView(APIView):
@@ -62,6 +108,12 @@ class ProducerDashboardSummaryView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, request, producer_id: int):
+        range_key, range_days = resolve_range_key(request.query_params.get("range"))
+        end_date = timezone.localdate()
+        start_date = end_date - timedelta(days=range_days - 1)
+        start_dt = timezone.make_aware(timezone.datetime.combine(start_date, timezone.datetime.min.time()))
+        end_dt = timezone.make_aware(timezone.datetime.combine(end_date, timezone.datetime.max.time()))
+
         beat_queryset = (
             Beat.objects.filter(producer_id=producer_id, is_active=True)
             .select_related("producer", "producer__producer_profile")
@@ -70,10 +122,22 @@ class ProducerDashboardSummaryView(APIView):
         beat_ids = list(beat_queryset.values_list("id", flat=True))
         producer_profile = ProducerProfile.objects.filter(user_id=producer_id).select_related("user").first()
         summary = build_producer_trust_summary(producer_profile.user) if producer_profile else None
-        plays = AnalyticsEvent.objects.filter(event_type=AnalyticsEvent.EVENT_PLAY, producer_id=producer_id).count()
-        skips = AnalyticsEvent.objects.filter(event_type=AnalyticsEvent.EVENT_SKIP, producer_id=producer_id).count()
+        plays_queryset = AnalyticsEvent.objects.filter(
+            event_type=AnalyticsEvent.EVENT_PLAY,
+            producer_id=producer_id,
+        )
+        skips_queryset = AnalyticsEvent.objects.filter(
+            event_type=AnalyticsEvent.EVENT_SKIP,
+            producer_id=producer_id,
+        )
         likes = beat_queryset.aggregate(total=Count("likes"))["total"] or 0
-        purchases = OrderItem.objects.filter(order__status="paid", product_type=OrderItem.PRODUCT_BEAT, product_id__in=beat_ids).count()
+        purchases_queryset = OrderItem.objects.filter(
+            order__status="paid",
+            product_type=OrderItem.PRODUCT_BEAT,
+            product_id__in=beat_ids,
+        )
+        purchases = purchases_queryset.count()
+        plays = plays_queryset.count()
         hiring_inquiry_count = ProjectRequest.objects.filter(producer_id=producer_id).count()
         follower_count = ProducerFollow.objects.filter(producer_id=producer_id).count()
         conversion_rate = round((purchases / plays) * 100, 2) if plays else 0.0
@@ -88,6 +152,37 @@ class ProducerDashboardSummaryView(APIView):
             serialized["badges"] = candidate_summary["badges"]
             audience_fit.append(serialized)
 
+        plays_by_date = {
+            row["day"]: row["count"]
+            for row in plays_queryset.filter(created_at__range=(start_dt, end_dt))
+            .annotate(day=TruncDate("created_at"))
+            .values("day")
+            .annotate(count=Count("id"))
+        }
+        sales_by_date = {
+            row["day"]: row["count"]
+            for row in purchases_queryset.filter(order__created_at__range=(start_dt, end_dt))
+            .annotate(day=TruncDate("order__created_at"))
+            .values("day")
+            .annotate(count=Count("id"))
+        }
+        revenue_by_date = {
+            row["day"]: row["revenue"]
+            for row in purchases_queryset.filter(order__created_at__range=(start_dt, end_dt))
+            .annotate(day=TruncDate("order__created_at"))
+            .values("day")
+            .annotate(revenue=Sum("price"))
+        }
+        label_format = "%b %d" if range_days > 31 else "%d %b"
+        performance_series, revenue_series = build_daily_series(
+            start_date=start_date,
+            end_date=end_date,
+            labels=label_format,
+            plays_by_date=plays_by_date,
+            sales_by_date=sales_by_date,
+            revenue_by_date=revenue_by_date,
+        )
+
         payload = {
             "producer_id": producer_id,
             "follower_count": follower_count,
@@ -96,9 +191,17 @@ class ProducerDashboardSummaryView(APIView):
             "likes": likes,
             "purchases": purchases,
             "conversion_rate": conversion_rate,
-            "skip_events": skips,
+            "skip_events": skips_queryset.count(),
             "activity_drop_count": ActivityDrop.objects.filter(producer_id=producer_id).count(),
             "hiring_inquiry_count": hiring_inquiry_count,
+            "selected_range": {
+                "key": range_key,
+                "days": range_days,
+                "start": start_date,
+                "end": end_date,
+            },
+            "performance_series": performance_series,
+            "revenue_series": revenue_series,
             "top_beats": top_beats,
             "audience_fit_producers": audience_fit,
         }
@@ -284,5 +387,3 @@ class SimilarProducersView(APIView):
             serialized["badges"] = summary["badges"]
             data.append(serialized)
         return Response(data)
-
-

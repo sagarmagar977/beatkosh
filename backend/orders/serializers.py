@@ -6,6 +6,12 @@ from orders.models import Cart, CartItem, DownloadAccess, Order, OrderItem
 from orders.services import cart_totals, resolve_product
 
 
+def format_currency_amount(value):
+    if value is None:
+        return "0.00"
+    return f"{value:,.2f}"
+
+
 class OrderItemInputSerializer(serializers.Serializer):
     product_type = serializers.ChoiceField(choices=OrderItem.PRODUCT_TYPE_CHOICES)
     product_id = serializers.IntegerField(min_value=1)
@@ -50,10 +56,14 @@ class OrderCreateSerializer(serializers.Serializer):
 
 class OrderItemSerializer(serializers.ModelSerializer):
     license_name = serializers.CharField(source="license_type.name", read_only=True)
+    price_display = serializers.SerializerMethodField()
 
     class Meta:
         model = OrderItem
-        fields = ("id", "product_type", "product_id", "product_title", "license_name", "price")
+        fields = ("id", "product_type", "product_id", "product_title", "license_name", "price", "price_display")
+
+    def get_price_display(self, obj):
+        return format_currency_amount(obj.price)
 
 
 class OrderSerializer(serializers.ModelSerializer):
@@ -68,10 +78,14 @@ class OrderSerializer(serializers.ModelSerializer):
 class CartItemSerializer(serializers.ModelSerializer):
     license_name = serializers.CharField(source="license_type.name", read_only=True)
     product = serializers.SerializerMethodField()
+    price_display = serializers.SerializerMethodField()
 
     class Meta:
         model = CartItem
-        fields = ("id", "product_type", "product_id", "product_title", "license_name", "price", "product")
+        fields = ("id", "product_type", "product_id", "product_title", "license_name", "price", "price_display", "product")
+
+    def get_price_display(self, obj):
+        return format_currency_amount(obj.price)
 
     def get_product(self, obj):
         product = resolve_product(obj.product_type, obj.product_id)
@@ -106,11 +120,17 @@ class CartItemSerializer(serializers.ModelSerializer):
 class CartSerializer(serializers.ModelSerializer):
     items = CartItemSerializer(many=True, read_only=True)
     beat_total = serializers.SerializerMethodField()
+    beat_total_display = serializers.SerializerMethodField()
     soundkit_total = serializers.SerializerMethodField()
+    soundkit_total_display = serializers.SerializerMethodField()
     discount_total = serializers.SerializerMethodField()
+    discount_total_display = serializers.SerializerMethodField()
     platform_fee = serializers.SerializerMethodField()
+    platform_fee_display = serializers.SerializerMethodField()
     subtotal = serializers.SerializerMethodField()
+    subtotal_display = serializers.SerializerMethodField()
     total = serializers.SerializerMethodField()
+    total_display = serializers.SerializerMethodField()
     item_count = serializers.SerializerMethodField()
 
     class Meta:
@@ -120,11 +140,17 @@ class CartSerializer(serializers.ModelSerializer):
             "buyer",
             "items",
             "beat_total",
+            "beat_total_display",
             "soundkit_total",
+            "soundkit_total_display",
             "discount_total",
+            "discount_total_display",
             "platform_fee",
+            "platform_fee_display",
             "subtotal",
+            "subtotal_display",
             "total",
+            "total_display",
             "item_count",
             "updated_at",
         )
@@ -139,17 +165,35 @@ class CartSerializer(serializers.ModelSerializer):
     def get_soundkit_total(self, obj):
         return self._totals(obj)["soundkit_total"]
 
+    def get_beat_total_display(self, obj):
+        return format_currency_amount(self._totals(obj)["beat_total"])
+
+    def get_soundkit_total_display(self, obj):
+        return format_currency_amount(self._totals(obj)["soundkit_total"])
+
     def get_discount_total(self, obj):
         return self._totals(obj)["discount_total"]
+
+    def get_discount_total_display(self, obj):
+        return format_currency_amount(self._totals(obj)["discount_total"])
 
     def get_platform_fee(self, obj):
         return self._totals(obj)["platform_fee"]
 
+    def get_platform_fee_display(self, obj):
+        return format_currency_amount(self._totals(obj)["platform_fee"])
+
     def get_subtotal(self, obj):
         return self._totals(obj)["subtotal"]
 
+    def get_subtotal_display(self, obj):
+        return format_currency_amount(self._totals(obj)["subtotal"])
+
     def get_total(self, obj):
         return self._totals(obj)["total"]
+
+    def get_total_display(self, obj):
+        return format_currency_amount(self._totals(obj)["total"])
 
     def get_item_count(self, obj):
         return self._totals(obj)["item_count"]
@@ -159,7 +203,8 @@ class DownloadAccessSerializer(serializers.ModelSerializer):
     beat = BeatSerializer(read_only=True)
     order_id = serializers.IntegerField(source="order_item.order_id", read_only=True)
     order_status = serializers.CharField(source="order_item.order.status", read_only=True)
+    license_name = serializers.CharField(source="order_item.license_type.name", read_only=True)
 
     class Meta:
         model = DownloadAccess
-        fields = ("id", "beat", "order_id", "order_status", "granted_at")
+        fields = ("id", "beat", "order_id", "order_status", "license_name", "granted_at")

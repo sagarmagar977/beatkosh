@@ -26,6 +26,10 @@ type LicenseOption = {
   format: string;
 };
 
+type CartSummary = {
+  items: Array<{ product_type: string; product_id: number }>;
+};
+
 type Beat = {
   id: number;
   producer: number;
@@ -89,6 +93,22 @@ export default function BeatsPage() {
     };
     void run();
   }, []);
+
+  useEffect(() => {
+    const loadCart = async () => {
+      if (!token) {
+        setCartBeatIds([]);
+        return;
+      }
+      try {
+        const cart = await apiRequest<CartSummary>("/orders/cart/me/", { token });
+        setCartBeatIds(cart.items.filter((item) => item.product_type === "beat").map((item) => item.product_id));
+      } catch {
+        // ignore cart badge sync failures here
+      }
+    };
+    void loadCart();
+  }, [token]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -229,7 +249,7 @@ export default function BeatsPage() {
           {topFilters.map((item, idx) => <button key={item} type="button" className={`chip ${idx === 0 ? "active" : ""}`}>{item}</button>)}
         </div>
         <div className="mt-5 grid gap-3 xl:grid-cols-[280px_1fr_auto]">
-          <input className="h-11 rounded-2xl border border-white/10 bg-white/5 px-4 text-sm text-white/80 outline-none placeholder:text-white/35" placeholder="Search beats, producers, moods, tags" value={query} onChange={(event) => setQuery(event.target.value)} />
+          <input className="theme-input h-11 rounded-2xl px-4 text-sm outline-none" placeholder="Search beats, producers, moods, tags" value={query} onChange={(event) => setQuery(event.target.value)} />
           <div className="flex flex-wrap gap-2">
             {filters.map((item) => <button key={item} type="button" className="chip">{item}</button>)}
           </div>
@@ -237,16 +257,17 @@ export default function BeatsPage() {
         </div>
       </section>
 
-      {!token ? <section className="surface-panel rounded-[26px] border border-[#8b28ff]/20 bg-[#141826] p-4 text-sm text-white/75">Login is required to preview beats, save playlists, and use the cart.</section> : null}
+      {!token ? <section className="theme-surface rounded-[26px] border-[#8b28ff]/20 p-4 text-sm theme-text-soft">Login is required to preview beats, save playlists, and use the cart.</section> : null}
 
       <section className="space-y-3">
-        {loading ? <p className="text-sm text-white/60">Loading beats...</p> : null}
+        {loading ? <p className="theme-text-muted text-sm">Loading beats...</p> : null}
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         {!loading && !error ? (
           <>
             {filtered.map((beat) => {
               const playbackUrl = resolveMediaUrl(beat.preview_audio_obj || beat.audio_file_obj);
               const isCurrent = currentTrack?.id === beat.id;
+              const inCart = cartBeatIds.includes(beat.id);
               return (
                 <BeatListRow
                   key={beat.id}
@@ -256,8 +277,8 @@ export default function BeatsPage() {
                   isCurrent={isCurrent}
                   isPlaying={isCurrent && isPlaying}
                   onPlay={() => handlePlayAttempt(beat, playbackUrl, isCurrent)}
-                  actionLabel={cartBeatIds.includes(beat.id) ? "Added to cart" : `Rs ${beat.base_price}`}
-                  actionState={cartBeatIds.includes(beat.id) ? "success" : "default"}
+                  actionLabel={inCart ? "Added to cart" : `Rs ${beat.base_price}`}
+                  actionState={inCart ? "success" : "default"}
                   onAction={() => {
                     setLicenseModalBeat(beat);
                     setSelectedLicenseId(beat.licenses?.[0]?.id ?? null);
@@ -266,39 +287,39 @@ export default function BeatsPage() {
                 />
               );
             })}
-            {filtered.length === 0 ? <p className="text-sm text-white/60">No beats found.</p> : null}
+            {filtered.length === 0 ? <p className="theme-text-muted text-sm">No beats found.</p> : null}
           </>
         ) : null}
       </section>
 
       {licenseModalBeat ? (
-        <div className="fixed inset-0 z-[130] flex items-start justify-center bg-black/70 px-4 pt-24 backdrop-blur-sm" onClick={() => setLicenseModalBeat(null)}>
-          <section className="w-full max-w-[980px] rounded-2xl border border-white/15 bg-[#1d1f2a] p-5" onClick={(e) => e.stopPropagation()}>
+        <div className="theme-overlay fixed inset-0 z-[130] flex items-start justify-center px-4 pt-24 backdrop-blur-sm" onClick={() => setLicenseModalBeat(null)}>
+          <section className="theme-floating w-full max-w-[980px] rounded-2xl p-5" onClick={(e) => e.stopPropagation()}>
             <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
               <div>
-                <div className="mb-4 flex items-start justify-between"><div><h3 className="text-4xl font-semibold">Select License Type</h3><p className="text-white/65">Choose how you want to license this beat.</p></div></div>
-                <div className="overflow-hidden rounded-xl border border-white/10">
+                <div className="mb-4 flex items-start justify-between"><div><h3 className="theme-text-main text-4xl font-semibold">Select License Type</h3><p className="theme-text-muted">Choose how you want to license this beat.</p></div></div>
+                <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--line)" }}>
                   {licenseOptions.map((item) => (
-                    <button key={item.id} type="button" onClick={() => setSelectedLicenseId(item.id)} className={`block w-full border-b border-white/10 px-4 py-3 text-left text-2xl ${selectedLicenseId === item.id ? "bg-[#8b28ff] text-white" : "bg-transparent text-white/90"}`}>
+                    <button key={item.id} type="button" onClick={() => setSelectedLicenseId(item.id)} className={`block w-full border-b px-4 py-3 text-left text-2xl ${selectedLicenseId === item.id ? "bg-[#8b28ff] text-white" : "theme-text-soft bg-transparent"}`} style={{ borderColor: "var(--line)" }}>
                       {item.label}
                     </button>
                   ))}
                 </div>
               </div>
               <div>
-                <button type="button" onClick={() => setLicenseModalBeat(null)} className="float-right inline-flex items-center justify-center text-white/70"><X className="h-6 w-6" strokeWidth={1.8} aria-hidden="true" /></button>
+                <button type="button" onClick={() => setLicenseModalBeat(null)} className="theme-text-soft float-right inline-flex items-center justify-center"><X className="h-6 w-6" strokeWidth={1.8} aria-hidden="true" /></button>
                 <div className="mb-4 flex items-center gap-3">
-                  <div className="flex h-20 w-20 items-center justify-center rounded-md border border-white/10 bg-gradient-to-br from-[#2a3546] to-[#11151d] text-sm font-bold text-white/80">{licenseModalBeat.title.slice(0, 2).toUpperCase()}</div>
-                  <div><p className="text-4xl font-semibold">{licenseModalBeat.title}</p><p className="text-xl text-white/70">{licenseModalBeat.producer_username}</p></div>
+                  <div className="theme-avatar flex h-20 w-20 items-center justify-center rounded-md text-sm font-bold">{licenseModalBeat.title.slice(0, 2).toUpperCase()}</div>
+                  <div><p className="theme-text-main text-4xl font-semibold">{licenseModalBeat.title}</p><p className="theme-text-muted text-xl">{licenseModalBeat.producer_username}</p></div>
                 </div>
-                <div className="rounded-xl border border-white/10 bg-black/20 p-4 text-lg">
+                <div className="theme-surface-muted rounded-xl p-4 text-lg">
                   <div className="grid grid-cols-2 gap-3">
-                    <p className="text-white/70">License Usage</p><p className="text-right">Unlimited Streaming</p>
-                    <p className="text-white/70">Format & Files</p><p className="text-right">{selectedLicenseInfo?.format || "WAV File"}</p>
-                    <p className="text-white/70">Nature</p><p className="text-right">{selectedLicenseInfo?.nature || "Non-Exclusive"}</p>
-                    <p className="text-white/70">Distribution</p><p className="text-right">{licenseModalBeat.non_exclusive_master_recordings || "Unlimited Copies"}</p>
-                    <p className="text-white/70">Publishing Rights</p><p className="text-right">{selectedLicenseInfo?.nature === "Exclusive" ? (licenseModalBeat.exclusive_publishing_rights || "0%") : (licenseModalBeat.non_exclusive_publishing_rights || "0%")}</p>
-                    <p className="text-white/70">License Period</p><p className="text-right">{licenseModalBeat.non_exclusive_license_period || "Unlimited"}</p>
+                    <p className="theme-text-muted">License Usage</p><p className="theme-text-main text-right">Unlimited Streaming</p>
+                    <p className="theme-text-muted">Format & Files</p><p className="theme-text-main text-right">{selectedLicenseInfo?.format || "WAV File"}</p>
+                    <p className="theme-text-muted">Nature</p><p className="theme-text-main text-right">{selectedLicenseInfo?.nature || "Non-Exclusive"}</p>
+                    <p className="theme-text-muted">Distribution</p><p className="theme-text-main text-right">{licenseModalBeat.non_exclusive_master_recordings || "Unlimited Copies"}</p>
+                    <p className="theme-text-muted">Publishing Rights</p><p className="theme-text-main text-right">{selectedLicenseInfo?.nature === "Exclusive" ? (licenseModalBeat.exclusive_publishing_rights || "0%") : (licenseModalBeat.non_exclusive_publishing_rights || "0%")}</p>
+                    <p className="theme-text-muted">License Period</p><p className="theme-text-main text-right">{licenseModalBeat.non_exclusive_license_period || "Unlimited"}</p>
                   </div>
                 </div>
                 <div className="mt-4 flex justify-end">
@@ -317,3 +338,5 @@ export default function BeatsPage() {
     </div>
   );
 }
+
+

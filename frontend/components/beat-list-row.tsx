@@ -63,7 +63,7 @@ export function BeatListRow({
     return () => window.removeEventListener("pointerdown", onPointerDown);
   }, []);
 
-  const coverUrl = resolveMediaUrl(beat.cover_art_obj);
+  const coverUrl = resolveMediaUrl((beat as SavedBeatEntry & { cover_art_obj?: string | null }).cover_art_obj);
 
   const requireSession = () => {
     if (token) {
@@ -135,8 +135,8 @@ export function BeatListRow({
       <article
         className={`rounded-[22px] border px-3 py-3 transition ${
           isCurrent
-            ? "border-white/10 bg-white/[0.05] shadow-[0_18px_40px_rgba(0,0,0,0.14)]"
-            : "border-transparent bg-transparent hover:border-white/8 hover:bg-white/[0.04]"
+            ? "theme-soft-strong shadow-[var(--panel-shadow-soft)]"
+            : "theme-soft"
         }`}
       >
         <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
@@ -145,16 +145,16 @@ export function BeatListRow({
               type="button"
               onClick={onPlay}
               className={`mt-1 inline-flex h-11 w-11 flex-none items-center justify-center rounded-full border text-sm ${
-                isCurrent && isPlaying ? "border-[#8b28ff] bg-[#8b28ff] text-white" : "border-white/15 bg-white/5 text-white/84"
+                isCurrent && isPlaying ? "border-[#8b28ff] bg-[#8b28ff] text-white" : "theme-soft theme-text-soft"
               }`}
             >
               {isCurrent && isPlaying ? <Pause className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" /> : <Play className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />}
             </button>
 
             {coverUrl ? (
-              <img src={coverUrl} alt={beat.title} className="h-16 w-16 rounded-2xl border border-white/10 object-cover" />
+              <img src={coverUrl} alt={beat.title} className="h-16 w-16 rounded-2xl border object-cover" style={{ borderColor: "var(--line)" }} />
             ) : (
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-[#263044] to-[#12151d] text-lg font-bold text-white/82">
+              <div className="theme-avatar flex h-16 w-16 items-center justify-center rounded-2xl text-lg font-bold">
                 {beat.title.slice(0, 2).toUpperCase()}
               </div>
             )}
@@ -163,19 +163,19 @@ export function BeatListRow({
               <div className="flex flex-wrap items-start gap-3">
                 <div className="min-w-0 flex-1">
                   {detailHref ? (
-                    <Link href={detailHref} className="block truncate text-xl font-semibold tracking-tight text-white hover:underline">
+                    <Link href={detailHref} className="theme-text-main block truncate text-xl font-semibold tracking-tight hover:underline">
                       {beat.title}
                     </Link>
                   ) : (
-                    <p className="truncate text-xl font-semibold tracking-tight text-white">{beat.title}</p>
+                    <p className="theme-text-main truncate text-xl font-semibold tracking-tight">{beat.title}</p>
                   )}
-                  <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm text-white/64">
+                  <div className="theme-text-muted mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
                     {artistHref ? (
-                      <Link href={artistHref} className="font-medium text-white/78 hover:underline">
+                      <Link href={artistHref} className="theme-text-soft font-medium hover:underline">
                         {beat.producer_username}
                       </Link>
                     ) : (
-                      <span className="font-medium text-white/78">{beat.producer_username}</span>
+                      <span className="theme-text-soft font-medium">{beat.producer_username}</span>
                     )}
                     <span>{beat.bpm} BPM</span>
                     <span>{beat.key || "Key N/A"}</span>
@@ -188,7 +188,7 @@ export function BeatListRow({
           <div className="flex flex-col gap-3 xl:items-end">
             <div className="flex flex-wrap gap-2 xl:justify-end">
               {tags.map((tag) => (
-                <span key={tag} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/66">
+                <span key={tag} className="theme-pill rounded-full px-3 py-1 text-xs">
                   {tag}
                 </span>
               ))}
@@ -202,7 +202,7 @@ export function BeatListRow({
                     ? actionState === "success"
                       ? "border border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
                       : "bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#5b48ff] text-white"
-                    : "border border-white/12 bg-white/[0.04] text-white/84"
+                    : "theme-soft theme-text-soft"
                 }`}
               >
                 {actionLabel}
@@ -211,21 +211,21 @@ export function BeatListRow({
                 <button
                   type="button"
                   onClick={() => setMenuOpen((current) => !current)}
-                  className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/12 bg-white/[0.04] text-white/76"
+                  className="theme-soft theme-text-soft inline-flex h-10 w-10 items-center justify-center rounded-full"
                 >
                   <EllipsisVertical className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                 </button>
                 {menuOpen ? (
-                  <div className="absolute right-0 top-12 z-20 w-56 rounded-2xl border border-white/12 bg-[#12141d] p-2 shadow-[0_20px_60px_rgba(0,0,0,0.4)]">
-                    <button type="button" onClick={handleListenLater} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-white/80 hover:bg-white/[0.06]">
+                  <div className="theme-menu absolute right-0 top-12 z-20 w-56 rounded-2xl p-2">
+                    <button type="button" onClick={handleListenLater} className="theme-soft theme-text-soft flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm">
                       <Clock3 className="h-4 w-4 text-[#9f8cff]" strokeWidth={1.8} aria-hidden="true" />
                       Listen later
                     </button>
-                    <button type="button" onClick={openPlaylistModal} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-white/80 hover:bg-white/[0.06]">
+                    <button type="button" onClick={openPlaylistModal} className="theme-soft theme-text-soft flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm">
                       <Play className="h-4 w-4 text-[#9f8cff]" strokeWidth={1.8} aria-hidden="true" />
                       Add to playlist
                     </button>
-                    <button type="button" onClick={() => void handleShare()} className="flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm text-white/80 hover:bg-white/[0.06]">
+                    <button type="button" onClick={() => void handleShare()} className="theme-soft theme-text-soft flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm">
                       <Share2 className="h-4 w-4 text-[#9f8cff]" strokeWidth={1.8} aria-hidden="true" />
                       Share
                     </button>
@@ -238,30 +238,30 @@ export function BeatListRow({
       </article>
 
       {playlistOpen ? (
-        <div className="fixed inset-0 z-[140] flex items-start justify-center bg-black/70 px-4 pt-24 backdrop-blur-sm" onClick={() => setPlaylistOpen(false)}>
-          <section className="w-full max-w-[540px] rounded-[28px] border border-white/12 bg-[#181b24] p-5 shadow-[0_30px_90px_rgba(0,0,0,0.46)]" onClick={(event) => event.stopPropagation()}>
+        <div className="theme-overlay fixed inset-0 z-[140] flex items-start justify-center px-4 pt-24 backdrop-blur-sm" onClick={() => setPlaylistOpen(false)}>
+          <section className="theme-floating w-full max-w-[540px] rounded-[28px] p-5" onClick={(event) => event.stopPropagation()}>
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/42">Save Beat</p>
-                <h3 className="mt-2 text-2xl font-semibold text-white">Add to playlist</h3>
-                <p className="mt-1 text-sm text-white/58">Inspired by YouTube: save this beat to Listen later or one of your playlists.</p>
+                <p className="theme-text-faint text-xs font-semibold uppercase tracking-[0.24em]">Save Beat</p>
+                <h3 className="theme-text-main mt-2 text-2xl font-semibold">Add to playlist</h3>
+                <p className="theme-text-muted mt-1 text-sm">Inspired by YouTube: save this beat to Listen later or one of your playlists.</p>
               </div>
-              <button type="button" onClick={() => setPlaylistOpen(false)} className="rounded-full border border-white/12 px-3 py-1.5 text-xs text-white/70">
+              <button type="button" onClick={() => setPlaylistOpen(false)} className="theme-soft theme-text-soft rounded-full px-3 py-1.5 text-xs">
                 Close
               </button>
             </div>
 
             <div className="mt-5 space-y-3">
-              <label className="flex items-center justify-between rounded-2xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-white/84">
+              <label className="theme-soft theme-text-soft flex items-center justify-between rounded-2xl px-4 py-3 text-sm">
                 <span>Listen later</span>
                 <input type="checkbox" checked={includeListenLater} onChange={(event) => setIncludeListenLater(event.target.checked)} className="h-4 w-4 accent-[#8b28ff]" />
               </label>
 
-              <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/42">Your playlists</p>
+              <div className="theme-soft rounded-2xl p-4">
+                <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Your playlists</p>
                 <div className="mt-3 space-y-2">
                   {library.playlists.map((playlist) => (
-                    <label key={playlist.id} className="flex items-center justify-between rounded-xl border border-white/10 px-3 py-2 text-sm text-white/80">
+                    <label key={playlist.id} className="theme-soft theme-text-soft flex items-center justify-between rounded-xl px-3 py-2 text-sm">
                       <span>{playlist.name}</span>
                       <input
                         type="checkbox"
@@ -275,23 +275,23 @@ export function BeatListRow({
                       />
                     </label>
                   ))}
-                  {library.playlists.length === 0 ? <p className="text-sm text-white/52">No custom playlists yet.</p> : null}
+                  {library.playlists.length === 0 ? <p className="theme-text-muted text-sm">No custom playlists yet.</p> : null}
                 </div>
               </div>
 
-              <div className="rounded-2xl border border-dashed border-white/12 bg-white/[0.02] p-4">
-                <p className="text-xs uppercase tracking-[0.18em] text-white/42">Create new playlist</p>
+              <div className="theme-soft rounded-2xl border-dashed p-4">
+                <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Create new playlist</p>
                 <input
                   value={newPlaylistName}
                   onChange={(event) => setNewPlaylistName(event.target.value)}
                   placeholder="Late night rap ideas"
-                  className="mt-3 h-11 w-full rounded-2xl border border-white/10 bg-[#11131a] px-4 text-sm text-white outline-none placeholder:text-white/30"
+                  className="theme-input mt-3 h-11 w-full rounded-2xl px-4 text-sm outline-none"
                 />
               </div>
             </div>
 
             <div className="mt-5 flex justify-end gap-2">
-              <button type="button" onClick={() => setPlaylistOpen(false)} className="rounded-full border border-white/12 px-4 py-2 text-sm text-white/70">
+              <button type="button" onClick={() => setPlaylistOpen(false)} className="theme-soft theme-text-soft rounded-full px-4 py-2 text-sm">
                 Cancel
               </button>
               <button type="button" onClick={handlePlaylistSave} className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#5b48ff] px-5 py-2 text-sm font-semibold text-white">
@@ -304,3 +304,9 @@ export function BeatListRow({
     </>
   );
 }
+
+
+
+
+
+
