@@ -1,6 +1,6 @@
 from django.db.models import Q
-from rest_framework import generics, permissions
-from rest_framework.exceptions import PermissionDenied
+from rest_framework import generics, permissions, status
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -84,35 +84,69 @@ class ProjectProposalCreateView(generics.CreateAPIView):
 
     def perform_create(self, serializer):
         req = serializer.validated_data["project_request"]
-        if req.producer_id != self.request.user.id:
-            raise PermissionDenied("Only the requested producer can submit a proposal.")
+        if not self.request.user.is_producer:
+            raise PermissionDenied("Only producers can submit proposals.")
+        if req.artist_id == self.request.user.id:
+            raise PermissionDenied("Artists cannot submit proposals to their own brief.")
+        if req.status != ProjectRequest.STATUS_PENDING:
+            raise ValidationError("This hiring brief is no longer accepting proposals.")
+        if req.producer_id and req.producer_id != self.request.user.id:
+            raise PermissionDenied("Only the requested producer can submit a proposal for this brief.")
 
-        proposal = serializer.save(producer=self.request.user)
-        req = proposal.project_request
-        if req.status == ProjectRequest.STATUS_PENDING:
-            req.status = ProjectRequest.STATUS_ACCEPTED
-            req.save(update_fields=["status"])
-            Project.objects.get_or_create(
-                artist=req.artist,
-                producer=req.producer,
-                title=req.title,
-                defaults={
-                    "description": req.description,
-                    "project_type": req.project_type,
-                    "expected_track_count": req.expected_track_count,
-                    "preferred_genre": req.preferred_genre,
-                    "instrument_types": req.instrument_types,
-                    "mood_types": req.mood_types,
-                    "target_genre_style": req.target_genre_style,
-                    "reference_links": req.reference_links,
-                    "delivery_timeline_days": req.delivery_timeline_days,
-                    "revision_allowance": req.revision_allowance,
-                    "linked_conversation_hint": f"Discuss revisions for {req.title} in shared chat",
-                    "budget": req.budget,
-                    "offer_price": req.offer_price,
-                    "workflow_stage": Project.WORKFLOW_PROPOSAL_ACCEPTED,
-                },
-            )
+        serializer.save(producer=self.request.user)
+
+
+class ProjectProposalAcceptView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        proposal = Proposal.objects.select_related("project_request", "producer", "project_request__artist").get(pk=pk)
+        brief = proposal.project_request
+
+        if request.user.id != brief.artist_id:
+            raise PermissionDenied("Only the artist who created the brief can accept a proposal.")
+        if brief.status != ProjectRequest.STATUS_PENDING:
+            raise ValidationError("This hiring brief already has an accepted proposal.")
+
+        brief.status = ProjectRequest.STATUS_ACCEPTED
+        brief.producer = proposal.producer
+        brief.offer_price = proposal.amount
+        brief.save(update_fields=["status", "producer", "offer_price"])
+
+        project, created = Project.objects.get_or_create(
+            artist=brief.artist,
+            producer=proposal.producer,
+            title=brief.title,
+            defaults={
+                "description": brief.description,
+                "project_type": brief.project_type,
+                "expected_track_count": brief.expected_track_count,
+                "preferred_genre": brief.preferred_genre,
+                "instrument_types": brief.instrument_types,
+                "mood_types": brief.mood_types,
+                "target_genre_style": brief.target_genre_style,
+                "reference_links": brief.reference_links,
+                "delivery_timeline_days": brief.delivery_timeline_days,
+                "revision_allowance": brief.revision_allowance,
+                "linked_conversation_hint": f"Discuss revisions for {brief.title} in shared chat",
+                "budget": brief.budget,
+                "offer_price": proposal.amount,
+                "workflow_stage": Project.WORKFLOW_PROPOSAL_ACCEPTED,
+            },
+        )
+        if not created:
+            project.offer_price = proposal.amount
+            project.workflow_stage = Project.WORKFLOW_PROPOSAL_ACCEPTED
+            project.save(update_fields=["offer_price", "workflow_stage"])
+
+        return Response(
+            {
+                "proposal": ProposalSerializer(proposal).data,
+                "project": ProjectSerializer(project).data,
+                "project_request": ProjectRequestSerializer(brief).data,
+            },
+            status=status.HTTP_200_OK,
+        )
 
 
 class ProjectListView(generics.ListAPIView):

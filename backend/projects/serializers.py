@@ -7,6 +7,7 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
     workflow_label = serializers.SerializerMethodField()
     instrument_types = serializers.ListField(child=serializers.CharField(max_length=120), required=False)
     mood_types = serializers.ListField(child=serializers.CharField(max_length=80), required=False)
+    producer_username = serializers.CharField(source="producer.username", read_only=True)
 
     class Meta:
         model = ProjectRequest
@@ -14,6 +15,7 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
             "id",
             "artist",
             "producer",
+            "producer_username",
             "title",
             "description",
             "project_type",
@@ -32,8 +34,11 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
             "created_at",
         )
         read_only_fields = ("artist", "status", "created_at")
+        extra_kwargs = {"producer": {"required": False, "allow_null": True}}
 
     def validate_producer(self, value):
+        if value is None:
+            return value
         if not value.is_producer:
             raise serializers.ValidationError("Selected user is not a producer.")
         return value
@@ -59,9 +64,11 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
 
 
 class ProposalSerializer(serializers.ModelSerializer):
+    producer_username = serializers.CharField(source="producer.username", read_only=True)
+
     class Meta:
         model = Proposal
-        fields = ("id", "project_request", "producer", "amount", "message", "created_at")
+        fields = ("id", "project_request", "producer", "producer_username", "amount", "message", "created_at")
         read_only_fields = ("producer", "created_at")
 
 

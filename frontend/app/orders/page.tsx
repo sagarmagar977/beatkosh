@@ -252,36 +252,51 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+    <div className="mx-auto flex h-full min-h-0 w-full max-w-[1380px] flex-col gap-4 overflow-hidden pb-2">
       <section>
-        <h1 className="theme-text-main text-3xl font-bold uppercase tracking-tight">My Cart</h1>
+        <div className="mt-1 flex flex-col gap-2 md:flex-row md:items-end md:justify-between">
+          <div>
+            <h1 className="theme-text-main text-[2.35rem] font-bold uppercase leading-none tracking-tight md:text-[2.8rem]">My Cart</h1>
+            
+          </div>
+         
+        </div>
       </section>
-      <section className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[minmax(0,1.72fr)_320px]">
-        <div className="theme-surface flex min-h-0 flex-col overflow-hidden rounded-[28px] p-5 xl:h-full">
-          <div className="theme-text-faint grid grid-cols-[minmax(0,1.95fr)_190px_170px_96px] gap-4 border-b pb-3 text-[13px]" style={{ borderColor: "var(--line)" }}>
+      <section className="mx-auto grid min-h-0 w-full max-w-[1180px] flex-1 items-start justify-center gap-5 2xl:max-w-[1240px] xl:grid-cols-[minmax(720px,820px)_340px]">
+        <div className="theme-surface flex min-h-[560px] min-w-0 flex-col overflow-hidden rounded-[32px] border border-white/8 bg-[radial-gradient(circle_at_top_left,rgba(120,71,255,0.12),transparent_36%),linear-gradient(180deg,rgba(20,20,24,0.98),rgba(16,16,20,0.98))] p-6 shadow-[0_22px_54px_rgba(0,0,0,0.28)] xl:h-full">
+          <div className="theme-text-faint grid grid-cols-[minmax(0,1.95fr)_190px_170px_96px] gap-4 border-b pb-4 text-[12px] font-semibold uppercase tracking-[0.16em]" style={{ borderColor: "var(--line)" }}>
             <span className="pl-2">Items</span>
             <span className="text-center">License</span>
             <span className="text-center">Fee Only</span>
             <span className="text-center">Actions</span>
           </div>
           <div className="no-scrollbar flex-1 overflow-y-auto pt-4 pr-1">
-            {!loading && cart && cart.items.length === 0 ? <p className="theme-text-muted py-6 text-sm">Cart is empty. Add some beats first.</p> : null}
+            {!loading && cart && cart.items.length === 0 ? (
+              <div className="flex h-full min-h-[360px] items-center justify-center py-8">
+                <div className="mx-auto max-w-md text-center">
+                  <p className="theme-text-main text-2xl font-semibold">Your cart is empty</p>
+                  <p className="theme-text-muted mt-3 text-sm leading-6">
+                    Add some beats first and they will show up here in a cleaner, easier-to-scan layout.
+                  </p>
+                </div>
+              </div>
+            ) : null}
 
             <div className="space-y-4">
               {cart?.items.map((item) => {
                 const coverUrl = resolveMediaUrl(item.product.cover_art_obj);
                 return (
-                  <article key={item.id} className="theme-soft grid grid-cols-[minmax(0,1.95fr)_190px_170px_96px] items-center gap-4 rounded-[18px] px-4 py-3">
+                  <article key={item.id} className="theme-soft grid grid-cols-[minmax(0,1.95fr)_190px_170px_96px] items-center gap-4 rounded-[22px] border border-white/6 bg-white/[0.025] px-4 py-3.5 shadow-[0_14px_32px_rgba(0,0,0,0.14)] transition hover:border-white/10 hover:bg-white/[0.035]">
                     <div className="flex min-w-0 items-center gap-3">
                       {coverUrl ? (
-                        <img src={coverUrl} alt={item.product_title} className="h-12 w-12 rounded-lg object-cover" />
+                        <img src={coverUrl} alt={item.product_title} className="h-14 w-14 rounded-xl object-cover shadow-[0_10px_24px_rgba(0,0,0,0.26)]" />
                       ) : (
-                        <div className="theme-avatar flex h-12 w-12 items-center justify-center rounded-lg text-[10px] font-semibold">
+                        <div className="theme-avatar flex h-14 w-14 items-center justify-center rounded-xl text-[10px] font-semibold">
                           {item.product_title.slice(0, 2).toUpperCase()}
                         </div>
                       )}
                       <div className="min-w-0">
-                        <p className="theme-text-main line-clamp-1 text-[1.35rem] font-semibold leading-tight">{item.product_title}</p>
+                        <p className="theme-text-main line-clamp-1 text-[1.3rem] font-semibold leading-tight">{item.product_title}</p>
                         <div className="theme-text-muted mt-1.5 flex flex-wrap items-center gap-1.5 text-[12px]">
                           <span>{item.product.producer_name || "Producer"}</span>
                           {item.product.product_badge ? <span className="theme-pill rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-[0.16em]">{item.product.product_badge}</span> : null}
@@ -290,16 +305,16 @@ export default function OrdersPage() {
                       </div>
                     </div>
                     <div className="flex w-[190px] justify-center">
-                      <span className="theme-soft inline-flex min-w-[142px] items-center justify-center rounded-lg border-[#5eb5ff]/50 px-3 py-2 text-[15px] font-semibold text-[#8cc5ff]">{item.license_name || "Standard"}</span>
+                      <span className="theme-soft inline-flex min-w-[148px] items-center justify-center rounded-xl border border-[#5eb5ff]/28 bg-[#60b8ff]/[0.08] px-3 py-2.5 text-[15px] font-semibold text-[#96cdff]">{item.license_name || "Standard"}</span>
                     </div>
                     <div className="flex w-[170px] justify-center">
-                      <span className="theme-text-main whitespace-nowrap text-[1.4rem] font-semibold">{cartPrice(item.price_display, item.price)}</span>
+                      <span className="theme-text-main whitespace-nowrap text-[1.45rem] font-semibold">{cartPrice(item.price_display, item.price)}</span>
                     </div>
                     <div className="theme-text-soft flex w-[96px] items-center justify-center gap-2.5">
-                      <button type="button" disabled={busyItemId === item.id || item.product_type !== "beat"} onClick={() => void openEdit(item)} className="disabled:opacity-40">
+                      <button type="button" disabled={busyItemId === item.id || item.product_type !== "beat"} onClick={() => void openEdit(item)} className="rounded-full border border-white/8 bg-white/[0.03] p-2 transition hover:bg-white/[0.07] disabled:opacity-40">
                         <Pencil className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                       </button>
-                      <button type="button" disabled={busyItemId === item.id} onClick={() => void removeItem(item.id)} className="disabled:opacity-40">
+                      <button type="button" disabled={busyItemId === item.id} onClick={() => void removeItem(item.id)} className="rounded-full border border-white/8 bg-white/[0.03] p-2 transition hover:bg-white/[0.07] disabled:opacity-40">
                         <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                       </button>
                     </div>
@@ -309,14 +324,21 @@ export default function OrdersPage() {
             </div>
           </div>
         </div>
-        <aside className="theme-surface h-fit self-start rounded-[24px] p-4">
-          <div className="space-y-4">
-            <div className="space-y-3 text-lg">
+        <aside className="theme-surface sticky top-4 h-fit self-start rounded-[32px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(39,204,51,0.16),transparent_32%),linear-gradient(180deg,rgba(18,20,18,0.98),rgba(13,15,13,0.98))] p-5 shadow-[0_22px_54px_rgba(0,0,0,0.28)]">
+          <div className="space-y-5">
+            <div>
+              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#9be4a2]">Payment summary</p>
+              <h2 className="theme-text-main mt-3 text-[1.9rem] font-semibold leading-tight">Ready to checkout</h2>
+              <p className="theme-text-muted mt-2 text-sm leading-6">
+                Your totals are grouped clearly so the final amount stands out first.
+              </p>
+            </div>
+            <div className="space-y-3 rounded-[24px] border border-white/8 bg-black/20 p-4 text-lg">
               <div className="flex items-center justify-between gap-4"><span className="theme-text-muted">Total of Beats</span><span className="theme-text-main font-semibold">{cartPrice(cart?.beat_total_display, cart?.beat_total)}</span></div>
               <div className="flex items-center justify-between gap-4"><span className="theme-text-muted">Total of Sound kits</span><span className="theme-text-main font-semibold">{cartPrice(cart?.soundkit_total_display, cart?.soundkit_total)}</span></div>
-              <div className="flex items-center justify-between gap-4 border-t pt-4" style={{ borderColor: "var(--line)" }}><span className="theme-text-main font-semibold">Total Fee</span><span className="text-[1.9rem] font-semibold text-[#35f04b]">{cartPrice(cart?.total_display, cart?.total)}</span></div>
+              <div className="flex items-center justify-between gap-4 border-t pt-4" style={{ borderColor: "var(--line)" }}><span className="theme-text-main text-xl font-semibold">Total Fee</span><span className="text-[2.2rem] font-black text-[#35f04b]">{cartPrice(cart?.total_display, cart?.total)}</span></div>
             </div>
-            <button type="button" disabled={!cart?.item_count || busyItemId === -1} onClick={() => void handleCheckout()} className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-[#27cc33] px-4 py-4 text-lg font-black uppercase tracking-wide text-black disabled:opacity-50">
+            <button type="button" disabled={!cart?.item_count || busyItemId === -1} onClick={() => void handleCheckout()} className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-[#27cc33] px-4 py-4 text-lg font-black uppercase tracking-wide text-black shadow-[0_18px_36px_rgba(39,204,51,0.24)] transition hover:brightness-105 disabled:opacity-50">
               <ShieldCheck className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
               Checkout with eSewa
             </button>

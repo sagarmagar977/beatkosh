@@ -676,8 +676,8 @@ export default function ProducerPrivateProfilePage() {
         </div>
       ) : null}
 
-      <div className="relative pb-20 xl:pl-[365px]">
-        <aside className="mb-6 xl:fixed xl:left-[max(1.5rem,calc((100vw-1200px)/2))] xl:top-[calc(var(--app-header-height,112px)+1.5rem)] xl:mb-0 xl:w-[340px]">
+      <div className="grid gap-6 pb-20 xl:grid-cols-[340px_minmax(0,1fr)] xl:items-start">
+        <aside className="xl:sticky xl:top-[calc(var(--app-header-height,112px)+1.5rem)]">
           <section className="theme-surface rounded-[30px] px-5 py-4">
             <div className="flex justify-center">
               <div className="relative">
@@ -749,7 +749,7 @@ export default function ProducerPrivateProfilePage() {
           </section>
         </aside>
 
-        <section className="space-y-6">
+        <section className="min-w-0 space-y-6">
           <section className="theme-surface rounded-[30px] p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3" style={{ borderColor: "var(--line)" }}>
               <div>

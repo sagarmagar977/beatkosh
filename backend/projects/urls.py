@@ -8,9 +8,11 @@ from projects.views import (
     ProjectListView,
     ProjectMetadataOptionsView,
     ProjectMilestoneListView,
+    ProjectProposalAcceptView,
     ProjectProposalCreateView,
     ProjectRequestCreateView,
 )
+
 
 def both(route: str, view, name: str):
     route = route.strip("/")
@@ -21,10 +23,12 @@ def both(route: str, view, name: str):
         path(f"{route}/", view, name=name),
     ]
 
+
 urlpatterns = [
     *both("metadata-options", ProjectMetadataOptionsView.as_view(), "project-metadata-options"),
     *both("request", ProjectRequestCreateView.as_view(), "project-request-create"),
     *both("proposal", ProjectProposalCreateView.as_view(), "project-proposal-create"),
+    *both("proposal/<int:pk>/accept", ProjectProposalAcceptView.as_view(), "project-proposal-accept"),
     *both("", ProjectListView.as_view(), "project-list"),
     *both("milestones", MilestoneCreateView.as_view(), "milestone-create"),
     *both("milestones/<int:pk>/status", MilestoneStatusUpdateView.as_view(), "milestone-status-update"),

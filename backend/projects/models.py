@@ -28,7 +28,13 @@ class ProjectRequest(models.Model):
     )
 
     artist = models.ForeignKey(User, on_delete=models.CASCADE, related_name="project_requests_sent")
-    producer = models.ForeignKey(User, on_delete=models.CASCADE, related_name="project_requests_received")
+    producer = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        related_name="project_requests_received",
+        null=True,
+        blank=True,
+    )
     title = models.CharField(max_length=150)
     description = models.TextField()
     project_type = models.CharField(max_length=30, choices=TYPE_CHOICES, default=TYPE_CUSTOM_SINGLE)
@@ -143,4 +149,3 @@ class Deliverable(models.Model):
     version_label = models.CharField(max_length=40, blank=True)
     status = models.CharField(max_length=30, choices=STATUS_CHOICES, default=STATUS_SUBMITTED)
     created_at = models.DateTimeField(auto_now_add=True)
-

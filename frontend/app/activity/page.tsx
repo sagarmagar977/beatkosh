@@ -1,35 +1,43 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { BookOpen, Clock3, Compass, FileText, Heart, LayoutPanelLeft, MessageSquareMore, Package2, Search, SlidersHorizontal, Upload, Users } from "lucide-react";
+import { BookOpen, Clock3, Compass, FileText, Heart, LayoutPanelLeft, MessageSquareMore, Package2, Search, ShoppingCart, SlidersHorizontal, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { BeatListRow } from "@/components/beat-list-row";
+import { useCart } from "@/context/cart-context";
+import { usePlayer } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import type { HomeBeat } from "@/lib/home-shelves";
 import { useBeatLibrary } from "@/lib/beat-library";
-
-type FollowItem = {
-  id: number;
-  producer: number;
-  producer_username: string;
-};
 
 type LikeItem = {
   id: number;
   beat: { id: number; title: string; producer_username: string };
 };
 
-type Beat = {
+type Beat = HomeBeat;
+
+type License = {
   id: number;
-  title: string;
-  producer_username: string;
-  genre?: string | null;
-  bpm?: number | null;
-  cover_art_obj?: string | null;
-  play_count?: number;
-  like_count?: number;
-  created_at?: string;
+  name: string;
+  includes_stems?: boolean;
+  is_exclusive?: boolean;
+  includes_wav?: boolean;
+};
+
+type LicenseOption = {
+  id: number;
+  label: string;
+  price: string;
+  nature: string;
+  format: string;
+};
+
+type CartSummary = {
+  items: Array<{ product_type: string; product_id: number }>;
 };
 
 type BrowseTile = {
@@ -77,31 +85,36 @@ const accentClasses = [
 export default function ActivityPage() {
   const router = useRouter();
   const { token, user } = useAuth();
-  const [follows, setFollows] = useState<FollowItem[]>([]);
+  const { refreshCart } = useCart();
+  const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
   const [likes, setLikes] = useState<LikeItem[]>([]);
   const [beats, setBeats] = useState<Beat[]>([]);
+  const [licenseCatalog, setLicenseCatalog] = useState<License[]>([]);
+  const [licenseModalBeat, setLicenseModalBeat] = useState<Beat | null>(null);
+  const [selectedLicenseId, setSelectedLicenseId] = useState<number | null>(null);
+  const [cartBeatIds, setCartBeatIds] = useState<number[]>([]);
+  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [selectedBeatId, setSelectedBeatId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<ShelfSectionKey | null>(null);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("browse");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const selectedGenreSectionRef = useRef<HTMLElement | null>(null);
   const library = useBeatLibrary(user?.id, token);
   const isProducerMode = user?.active_role === "producer";
 
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const [followData, likeData, beatData] = await Promise.all([
-        apiRequest<FollowItem[]>("/account/follows/me/", { token }),
+      const [likeData, beatData, licenses] = await Promise.all([
         apiRequest<LikeItem[]>("/account/likes/beats/me/", { token }),
         apiRequest<Beat[]>("/beats/"),
+        apiRequest<License[]>("/beats/licenses/"),
       ]);
-      setFollows(followData);
       setLikes(likeData);
       setBeats(beatData);
-      setSelectedBeatId((current) => current ?? beatData[0]?.id ?? null);
+      setLicenseCatalog(licenses);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load activity");
     }
@@ -111,6 +124,29 @@ export default function ActivityPage() {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
+
+  useEffect(() => {
+    const loadCart = async () => {
+      if (!token) {
+        setCartBeatIds([]);
+        return;
+      }
+      try {
+        const cart = await apiRequest<CartSummary>("/orders/cart/me/", { token });
+        setCartBeatIds(cart.items.filter((item) => item.product_type === "beat").map((item) => item.product_id));
+      } catch {
+        setCartBeatIds([]);
+      }
+    };
+
+    void loadCart();
+  }, [token]);
+
+  useEffect(() => {
+    if (!message) return;
+    const timeout = window.setTimeout(() => setMessage(null), 2400);
+    return () => window.clearTimeout(timeout);
+  }, [message]);
 
 
   const availableGenres = useMemo(() => {
@@ -137,7 +173,7 @@ export default function ActivityPage() {
     }));
   }, [searchableBeats]);
 
-  const selectedGenreName = selectedGenre ?? browseTiles[0]?.beat.genre ?? availableGenres[0] ?? null;
+  const selectedGenreName = selectedGenre;
 
   const genreTiles = useMemo(() => {
     return browseTiles
@@ -153,7 +189,7 @@ export default function ActivityPage() {
 
   const selectedGenreBeats = useMemo(() => {
     if (!selectedGenreName) {
-      return searchableBeats;
+      return [];
     }
     return searchableBeats.filter((beat) => (beat.genre ?? "") === selectedGenreName);
   }, [searchableBeats, selectedGenreName]);
@@ -173,12 +209,152 @@ export default function ActivityPage() {
     ];
   }, [selectedGenreBeats]);
 
+  const selectedGenreHeroBeat = shelfSections[0]?.items[0] ?? null;
+  const selectedGenreHeroCover = resolveMediaUrl(selectedGenreHeroBeat?.cover_art_obj);
+
+  const licenseOptions = useMemo(() => {
+    if (!licenseModalBeat) {
+      return [] as LicenseOption[];
+    }
+
+    const buildOption = (license: License): LicenseOption => ({
+      id: license.id,
+      label: license.name.toUpperCase(),
+      price: licenseModalBeat.base_price,
+      nature: license.is_exclusive ? "Exclusive" : "Non-Exclusive",
+      format: license.includes_stems ? "WAV & STEMS File" : "WAV File",
+    });
+
+    if (licenseModalBeat.licenses && licenseModalBeat.licenses.length > 0) {
+      return licenseModalBeat.licenses.map(buildOption);
+    }
+
+    return licenseCatalog.map(buildOption);
+  }, [licenseCatalog, licenseModalBeat]);
+
+  const effectiveSelectedLicenseId = licenseOptions.some((item) => item.id === selectedLicenseId)
+    ? selectedLicenseId
+    : (licenseOptions[0]?.id ?? null);
+
+  const selectedLicenseInfo = licenseOptions.find((item) => item.id === effectiveSelectedLicenseId) ?? licenseOptions[0];
+
+  const notify = (text: string) => {
+    setMessage(text);
+  };
+
+  const handleGenreSelect = (genre: string | null) => {
+    setSelectedGenre(genre);
+    setExpandedSection(null);
+
+    if (!genre) {
+      return;
+    }
+
+    window.requestAnimationFrame(() => {
+      selectedGenreSectionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  };
+
+  const handlePlayAttempt = async (beat: Beat, queue: Beat[]) => {
+    const playbackUrl = resolveMediaUrl(beat.preview_audio_obj || beat.audio_file_obj);
+    if (!token || !canPlay) {
+      router.push("/auth/login");
+      return;
+    }
+    if (!playbackUrl) {
+      notify("No preview is available for this beat yet.");
+      return;
+    }
+
+    const isCurrent = currentTrack?.id === beat.id;
+    if (isCurrent) {
+      await togglePlay();
+      return;
+    }
+
+    const queueTracks = queue
+      .map((item) => {
+        const audioUrl = resolveMediaUrl(item.preview_audio_obj || item.audio_file_obj);
+        if (!audioUrl) return null;
+        return {
+          id: item.id,
+          title: item.title,
+          artist: item.producer_username,
+          bpm: item.bpm,
+          playCount: item.play_count,
+          key: item.key,
+          genre: item.genre,
+          mood: item.mood,
+          price: item.base_price,
+          coverText: item.title,
+          coverUrl: resolveMediaUrl(item.cover_art_obj),
+          beatUrl: `/beats/${item.id}`,
+          defaultLicenseId: item.licenses?.[0]?.id ?? null,
+          audioUrl,
+          source: "activity-browse",
+        };
+      })
+      .filter((item): item is NonNullable<typeof item> => Boolean(item));
+
+    const startIndex = queueTracks.findIndex((item) => item.id === beat.id);
+
+    await playTrack(
+      {
+        id: beat.id,
+        title: beat.title,
+        artist: beat.producer_username,
+        bpm: beat.bpm,
+        playCount: beat.play_count,
+        key: beat.key,
+        genre: beat.genre,
+        mood: beat.mood,
+        price: beat.base_price,
+        coverText: beat.title,
+        coverUrl: resolveMediaUrl(beat.cover_art_obj),
+        beatUrl: `/beats/${beat.id}`,
+        defaultLicenseId: beat.licenses?.[0]?.id ?? null,
+        audioUrl: playbackUrl,
+        source: "activity-browse",
+      },
+      startIndex >= 0 ? { queue: queueTracks, startIndex } : undefined,
+    );
+  };
+
+  const handleAddToCart = async () => {
+    if (!token) {
+      router.push("/auth/login");
+      return;
+    }
+    if (!licenseModalBeat || !effectiveSelectedLicenseId) {
+      notify("Choose a license first.");
+      return;
+    }
+
+    try {
+      await apiRequest("/orders/cart/items/", {
+        method: "POST",
+        token,
+        body: {
+          product_type: "beat",
+          product_id: licenseModalBeat.id,
+          license_id: effectiveSelectedLicenseId,
+        },
+      });
+      setCartBeatIds((current) => (current.includes(licenseModalBeat.id) ? current : [...current, licenseModalBeat.id]));
+      await refreshCart();
+      notify("Added to cart.");
+      setLicenseModalBeat(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to add beat to cart");
+    }
+  };
+
   const sidebarActions = useMemo(() => {
     const baseActions = [
       { key: "browse" as const, label: "Genre Browse", icon: Compass },
-      { key: "kits" as const, label: "Sound Kits", icon: Package2, href: "/catalog" },
-      { key: "hiring" as const, label: "Hiring", icon: FileText, href: "/projects" },
-      { key: "resources" as const, label: "Resources", icon: BookOpen, href: "/resources" },
+      { key: "kits" as const, label: "Sound Kits", icon: Package2 },
+      { key: "hiring" as const, label: "Hiring", icon: FileText },
+      { key: "resources" as const, label: "Resources", icon: BookOpen },
       { key: "liked" as const, label: "Liked", icon: Heart },
       { key: "history" as const, label: "Play History", icon: Clock3 },
       { key: "playlists" as const, label: "Playlists", icon: Clock3 },
@@ -195,6 +371,24 @@ export default function ActivityPage() {
 
     return baseActions;
   }, [isProducerMode]);
+
+  const soundKitHighlights = [
+    { title: "Starter packs", detail: "Quick one-shots, chord loops, and drum textures for fast sketching.", href: "/catalog" },
+    { title: "808 + drums", detail: "Harder rhythm kits for trap, drill, and club-ready grooves.", href: "/catalog" },
+    { title: "Melody loops", detail: "Atmospheric phrases and tonal loops for hooks and intros.", href: "/catalog" },
+  ];
+
+  const resourceHighlights = [
+    { title: "Producer guides", detail: "Reading and workflow notes for writing, releasing, and licensing beats.", href: "/resources" },
+    { title: "Reference hub", detail: "Open saved references, inspiration notes, and production study material.", href: "/reference-hub" },
+    { title: "Release prep", detail: "Checklist-style resources for cover art, metadata, and launch planning.", href: "/resources" },
+  ];
+
+  const hiringHighlights = [
+    { title: "Open projects", detail: "Review active briefs, in-progress collaborations, and deal stages.", href: "/projects" },
+    { title: "Post a brief", detail: "Jump into the hiring flow and outline the sound you need.", href: "/projects" },
+    { title: "Negotiation lane", detail: "Track offers, revisions, and delivery conversations in one place.", href: "/projects" },
+  ];
 
   return (
     <div className="flex h-[calc(100vh-10rem)] min-h-0 flex-col overflow-hidden rounded-[34px] border border-white/8 bg-[#090909] p-3 text-white shadow-[0_30px_120px_rgba(0,0,0,0.42)]">
@@ -213,7 +407,7 @@ export default function ActivityPage() {
               </button>
             </div>
 
-            <div className="grid gap-2">
+            <div className={`${sidebarCollapsed ? "flex flex-1 w-full flex-col items-center justify-between py-2" : "grid gap-2"}`}>
               {sidebarActions.map((action) => {
                 const Icon = action.icon;
                 const active = sidebarMode === action.key;
@@ -228,7 +422,7 @@ export default function ActivityPage() {
                       }
                       setSidebarMode(action.key);
                     }}
-                    className={`group flex w-full items-center rounded-[18px] border border-transparent bg-transparent text-left shadow-none transition ${sidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-3 py-2.5"} hover:bg-white/[0.05]`}
+                    className={`group flex w-full items-center rounded-[18px] border border-transparent bg-transparent text-left shadow-none transition ${sidebarCollapsed ? "max-w-[52px] justify-center px-0 py-3" : "gap-3 px-3 py-2.5"} hover:bg-white/[0.05]`}
                     aria-label={action.label}
                     title={action.label}
                   >
@@ -249,28 +443,16 @@ export default function ActivityPage() {
           <div className="rounded-[22px] bg-[linear-gradient(180deg,rgba(66,154,110,0.35),rgba(18,18,18,0.95)_45%)] p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
-                <p className="text-xs uppercase tracking-[0.28em] text-white/55">Browse</p>
-                <h1 className="mt-2 text-3xl font-semibold tracking-tight">Browse all</h1>
-                <p className="mt-2 max-w-2xl text-sm text-white/65">
-                  This view turns BeatKosh Browse into a denser music-explorer layout, with real beat cover photos leading the discovery cards.
-                </p>
+                
               </div>
 
-              <label className="flex h-12 w-full items-center gap-3 rounded-full border border-white/10 bg-[#0a0a0a]/70 px-4 text-sm text-white/60 md:max-w-sm">
-                <Search className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-                <input
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="What beat do you want to play?"
-                  className="w-full bg-transparent text-white outline-none placeholder:text-white/35"
-                />
-              </label>
+              
             </div>
 
             <div className="mt-6 flex flex-wrap gap-2">
               <button
                 type="button"
-                onClick={() => setSelectedGenre(null)}
+                onClick={() => handleGenreSelect(null)}
                 className={`rounded-full px-4 py-2 text-sm transition ${selectedGenre === null ? "bg-white text-black" : "bg-white/10 text-white/86 hover:bg-white/16"}`}
               >
                 All genres
@@ -280,7 +462,7 @@ export default function ActivityPage() {
                   key={chip}
                   type="button"
                   onClick={() => {
-                    setSelectedGenre(chip);
+                    handleGenreSelect(chip);
                     setSidebarMode("browse");
                   }}
                   className={`rounded-full px-4 py-2 text-sm transition ${selectedGenre === chip ? "bg-white text-black" : "bg-white/10 text-white/86 hover:bg-white/16"}`}
@@ -303,9 +485,7 @@ export default function ActivityPage() {
                   key={`genre-${tile.beat.genre}`}
                   type="button"
                   onClick={() => {
-                    setSelectedGenre(tile.beat.genre ?? null);
-                    setSelectedBeatId(tile.beat.id);
-                    setExpandedSection(null);
+                    handleGenreSelect(tile.beat.genre ?? null);
                   }}
                   className={`group relative min-h-[172px] overflow-hidden rounded-[18px] bg-gradient-to-br ${tile.accentClass} p-5 text-left transition duration-300 hover:-translate-y-0.5 hover:shadow-[0_24px_40px_rgba(0,0,0,0.32)] ${selectedGenreName === tile.beat.genre ? "ring-2 ring-white/30" : ""}`}
                 >
@@ -332,19 +512,40 @@ export default function ActivityPage() {
             </div>
 
             {selectedGenreName ? (
-              <section className="overflow-hidden rounded-[24px] bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)]">
-                <div className="px-6 py-8 md:px-8 md:py-10">
-                  <p className="text-xs uppercase tracking-[0.28em] text-white/55">Genre</p>
-                  <h2 className="mt-3 text-5xl font-semibold tracking-tight text-white md:text-6xl">{selectedGenreName}</h2>
-                  <p className="mt-3 max-w-2xl text-sm text-white/68">
+              <section
+                ref={selectedGenreSectionRef}
+                className="relative overflow-hidden rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)] min-h-[260px]"
+              >
+                {selectedGenreHeroCover ? (
+                  <img
+                    src={selectedGenreHeroCover}
+                    alt={selectedGenreHeroBeat?.title || selectedGenreName}
+                    className="absolute inset-0 h-full w-full object-cover"
+                  />
+                ) : null}
+                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,8,18,0.9)_0%,rgba(30,18,42,0.72)_42%,rgba(12,8,18,0.88)_100%)]" />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(172,115,220,0.32),rgba(17,13,20,0.84)_82%)]" />
+
+                <div className="relative flex min-h-[260px] flex-col justify-end px-6 py-8 md:px-8 md:py-10">
+                  <p className="text-xs uppercase tracking-[0.28em] text-white/62">Genre</p>
+                  <h2 className="mt-3 max-w-[12ch] text-5xl font-semibold tracking-tight text-white md:text-6xl">{selectedGenreName}</h2>
+                  <p className="mt-3 max-w-2xl text-sm text-white/76">
                     Browse curated beat rows for this genre by popularity, likes, and release freshness.
                   </p>
+                  {selectedGenreHeroBeat ? (
+                    <div className="mt-5 inline-flex w-fit items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
+                      <span className="text-white/58">Top track</span>
+                      <span className="font-medium text-white">{selectedGenreHeroBeat.title}</span>
+                      <span className="text-white/58">{selectedGenreHeroBeat.producer_username}</span>
+                    </div>
+                  ) : null}
                 </div>
               </section>
             ) : null}
 
-            <div className="space-y-7">
-              {shelfSections.map((section) => {
+            {selectedGenreName ? (
+              <div className="space-y-7">
+                {shelfSections.map((section) => {
                 const showingAll = expandedSection === section.key;
                 const visibleItems = showingAll ? section.items : section.items.slice(0, 5);
                 return (
@@ -362,33 +563,40 @@ export default function ActivityPage() {
                       ) : null}
                     </div>
 
-                    <div className="mt-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-5">
+                    <div className="mt-4 space-y-3">
                       {visibleItems.map((beat) => {
-                        const coverUrl = resolveMediaUrl(beat.cover_art_obj);
+                        const isCurrent = currentTrack?.id === beat.id;
+                        const inCart = cartBeatIds.includes(beat.id);
+
                         return (
-                          <button
+                          <BeatListRow
                             key={`${section.key}-${beat.id}`}
-                            type="button"
-                            onClick={() => setSelectedBeatId(beat.id)}
-                            className={`group rounded-[18px] bg-white/[0.03] p-3 text-left transition hover:bg-white/[0.06] ${selectedBeatId === beat.id ? "ring-2 ring-white/20" : ""}`}
-                          >
-                            <div className="aspect-square overflow-hidden rounded-[14px] bg-white/5">
-                              {coverUrl ? (
-                                <img src={coverUrl} alt={beat.title} className="h-full w-full object-cover transition duration-300 group-hover:scale-[1.03]" />
-                              ) : (
-                                <div className="flex h-full w-full items-center justify-center text-sm text-white/40">No cover</div>
-                              )}
-                            </div>
-                            <p className="mt-3 line-clamp-2 text-base font-medium text-white">{beat.title}</p>
-                            <p className="mt-1 text-sm text-white/55">{beat.producer_username}</p>
-                          </button>
+                            beat={beat}
+                            artistHref={`/producers/${beat.producer}`}
+                            detailHref={`/beats/${beat.id}`}
+                            isCurrent={isCurrent}
+                            isPlaying={isCurrent && isPlaying}
+                            onPlay={() => void handlePlayAttempt(beat, section.items)}
+                            actionLabel={inCart ? "Added to cart" : `Rs ${beat.base_price}`}
+                            actionState={inCart ? "success" : "default"}
+                            onAction={() => {
+                              setLicenseModalBeat(beat);
+                              setSelectedLicenseId(beat.licenses?.[0]?.id ?? null);
+                            }}
+                            message={notify}
+                          />
                         );
                       })}
                     </div>
                   </section>
                 );
-              })}
-            </div>
+                })}
+              </div>
+            ) : (
+              <section className="rounded-[24px] border border-dashed border-white/10 bg-white/[0.03] px-6 py-10 text-center text-sm text-white/58">
+                Click any genre card above to open the filtered beat rows for that genre.
+              </section>
+            )}
 
             {selectedGenreBeats.length === 0 ? <p className="mt-4 text-sm text-white/55">No beats matched that search.</p> : null}
           </div>
@@ -431,7 +639,7 @@ export default function ActivityPage() {
                     <button
                       key={`hub-${sidebarMode}-${beat.id}`}
                       type="button"
-                      onClick={() => setSelectedBeatId(beat.id)}
+                      onClick={() => router.push(`/beats/${beat.id}`)}
                       className="group rounded-[18px] bg-white/[0.03] p-3 text-left transition hover:bg-white/[0.06]"
                     >
                       <div className="aspect-square overflow-hidden rounded-[14px] bg-white/5">
@@ -456,7 +664,7 @@ export default function ActivityPage() {
                     </div>
                     <div className="mt-3 space-y-2">
                       {library.listenLater.slice(0, 5).map((beat) => (
-                        <button key={`listen-later-${beat.id}`} type="button" onClick={() => setSelectedBeatId(beat.id)} className="flex w-full items-center justify-between rounded-[14px] bg-white/[0.03] px-3 py-2 text-left transition hover:bg-white/[0.06]">
+                        <button key={`listen-later-${beat.id}`} type="button" onClick={() => router.push(`/beats/${beat.id}`)} className="flex w-full items-center justify-between rounded-[14px] bg-white/[0.03] px-3 py-2 text-left transition hover:bg-white/[0.06]">
                           <div>
                             <p className="text-sm text-white">{beat.title}</p>
                             <p className="mt-1 text-xs text-white/45">{beat.producer_username}</p>
@@ -480,19 +688,51 @@ export default function ActivityPage() {
                 </div>
               ) : null}
 
-              {["kits", "resources", "hiring", "studio", "uploads", "briefs", "negotiations"].includes(sidebarMode) ? (
+              {sidebarMode === "kits" ? (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {soundKitHighlights.map((item) => (
+                    <Link key={item.title} href={item.href} className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]">
+                      <p className="text-lg font-semibold text-white">{item.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-white/58">{item.detail}</p>
+                      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#b598ff]">Open catalog</p>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+
+              {sidebarMode === "resources" ? (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {resourceHighlights.map((item) => (
+                    <Link key={item.title} href={item.href} className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]">
+                      <p className="text-lg font-semibold text-white">{item.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-white/58">{item.detail}</p>
+                      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#b598ff]">Open resource</p>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+
+              {sidebarMode === "hiring" ? (
+                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+                  {hiringHighlights.map((item) => (
+                    <Link key={item.title} href={item.href} className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]">
+                      <p className="text-lg font-semibold text-white">{item.title}</p>
+                      <p className="mt-2 text-sm leading-6 text-white/58">{item.detail}</p>
+                      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#b598ff]">Open workspace</p>
+                    </Link>
+                  ))}
+                </div>
+              ) : null}
+
+              {["studio", "uploads", "briefs", "negotiations"].includes(sidebarMode) ? (
                 <div className="grid gap-4 md:grid-cols-2">
                   <Link
                     href={
-                      sidebarMode === "kits"
-                        ? "/catalog"
-                        : sidebarMode === "resources"
-                          ? "/resources"
-                          : sidebarMode === "hiring" || sidebarMode === "briefs" || sidebarMode === "negotiations"
-                            ? "/projects"
-                            : sidebarMode === "studio"
-                              ? "/producer/studio"
-                              : "/producer/media-uploads"
+                      sidebarMode === "briefs" || sidebarMode === "negotiations"
+                        ? "/projects"
+                        : sidebarMode === "studio"
+                          ? "/producer/studio"
+                          : "/producer/media-uploads"
                     }
                     className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]"
                   >
@@ -507,6 +747,64 @@ export default function ActivityPage() {
       </div>
 
       {error ? <p className="mt-4 text-sm text-[#ffb4a9]">{error}</p> : null}
+      {licenseModalBeat ? (
+        <div className="theme-overlay fixed inset-0 z-[130] flex items-start justify-center px-4 pt-24 backdrop-blur-sm" onClick={() => setLicenseModalBeat(null)}>
+          <section className="theme-floating w-full max-w-[980px] rounded-2xl p-5" onClick={(event) => event.stopPropagation()}>
+            <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+              <div>
+                <div className="mb-4 flex items-start justify-between">
+                  <div>
+                    <h3 className="theme-text-main text-4xl font-semibold">Select License Type</h3>
+                    <p className="theme-text-muted">Choose how you want to license this beat.</p>
+                  </div>
+                </div>
+                <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--line)" }}>
+                  {licenseOptions.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => setSelectedLicenseId(item.id)}
+                      className={`block w-full border-b px-4 py-3 text-left text-2xl ${selectedLicenseId === item.id ? "bg-[#8b28ff] text-white" : "theme-text-soft bg-transparent"}`}
+                      style={{ borderColor: "var(--line)" }}
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <button type="button" onClick={() => setLicenseModalBeat(null)} className="theme-text-soft float-right inline-flex items-center justify-center">
+                  <X className="h-6 w-6" strokeWidth={1.8} aria-hidden="true" />
+                </button>
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="theme-avatar flex h-20 w-20 items-center justify-center rounded-md text-sm font-bold">{licenseModalBeat.title.slice(0, 2).toUpperCase()}</div>
+                  <div>
+                    <p className="theme-text-main text-4xl font-semibold">{licenseModalBeat.title}</p>
+                    <p className="theme-text-muted text-xl">{licenseModalBeat.producer_username}</p>
+                  </div>
+                </div>
+                <div className="theme-surface-muted rounded-xl p-4 text-lg">
+                  <div className="grid grid-cols-2 gap-3">
+                    <p className="theme-text-muted">License Usage</p><p className="theme-text-main text-right">Unlimited Streaming</p>
+                    <p className="theme-text-muted">Format & Files</p><p className="theme-text-main text-right">{selectedLicenseInfo?.format || "WAV File"}</p>
+                    <p className="theme-text-muted">Nature</p><p className="theme-text-main text-right">{selectedLicenseInfo?.nature || "Non-Exclusive"}</p>
+                    <p className="theme-text-muted">Category</p><p className="theme-text-main text-right">{selectedGenreName || "Browse picks"}</p>
+                    <p className="theme-text-muted">Genre</p><p className="theme-text-main text-right">{licenseModalBeat.genre}</p>
+                    <p className="theme-text-muted">Tempo</p><p className="theme-text-main text-right">{licenseModalBeat.bpm} BPM</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button type="button" onClick={() => void handleAddToCart()} className="brand-btn inline-flex items-center gap-2 px-8 py-3 text-3xl font-semibold">
+                    <ShoppingCart className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+                    Rs {selectedLicenseInfo?.price || licenseModalBeat.base_price}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+      {message ? <div className="fixed right-6 top-24 z-[150] rounded-2xl border border-emerald-400/30 bg-emerald-500/15 px-4 py-3 text-sm text-emerald-100 shadow-[0_12px_30px_rgba(0,0,0,0.35)]">{message}</div> : null}
     </div>
   );
 }
