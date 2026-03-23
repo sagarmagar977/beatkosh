@@ -28,6 +28,7 @@ type AppNotification = {
 };
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const HEADER_CLEARANCE_PX = 3;
   const pathname = usePathname();
   const router = useRouter();
   const { user, token, loading, logout, startSelling, switchRole, refreshMe, meError } = useAuth();
@@ -49,6 +50,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const userMenuCloseTimeout = useRef<number | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
+  const headerRef = useRef<HTMLElement | null>(null);
+  const [headerHeight, setHeaderHeight] = useState(0);
 
   const hasSession = Boolean(token);
   const profileHref = user?.is_producer ? "/producer/profile" : null;
@@ -139,6 +142,26 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     const timer = window.setTimeout(() => setGlobalFlash(null), 3200);
     return () => window.clearTimeout(timer);
   }, [pathname]);
+
+  useEffect(() => {
+    const syncHeaderHeight = () => {
+      setHeaderHeight(headerRef.current?.offsetHeight ?? 0);
+    };
+
+    syncHeaderHeight();
+    window.addEventListener("resize", syncHeaderHeight);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined" && headerRef.current) {
+      resizeObserver = new ResizeObserver(syncHeaderHeight);
+      resizeObserver.observe(headerRef.current);
+    }
+
+    return () => {
+      window.removeEventListener("resize", syncHeaderHeight);
+      resizeObserver?.disconnect();
+    };
+  }, []);
 
   useEffect(() => {
     if (!token || !notificationsOpen) {
@@ -261,8 +284,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Legacy-route guard removed now that auth context is unified.
 
   return (
-    <div className="app-theme flex h-screen flex-col overflow-hidden pt-[112px] md:pt-[124px]">
-      <header className="theme-header fixed inset-x-0 top-0 z-[110] isolate border-b shadow-[0_14px_34px_rgba(0,0,0,0.32)]" style={{ borderColor: "var(--line)" }}>
+    <div className="app-theme flex h-screen flex-col overflow-hidden" style={{ paddingTop: headerHeight + HEADER_CLEARANCE_PX }}>
+      <header ref={headerRef} className="theme-header fixed inset-x-0 top-0 z-[110] isolate border-b shadow-[0_14px_34px_rgba(0,0,0,0.32)]" style={{ borderColor: "var(--line)" }}>
         <div className="absolute inset-0 -z-10 bg-[#0b0b0f]" aria-hidden="true" />
         <div className="relative z-10 flex w-full items-center gap-3 bg-[#0b0b0f] px-3 py-3 md:px-4 lg:px-5">
           <Link href="/" className="hidden shrink-0 text-3xl font-black tracking-[-0.07em] md:block" style={{ color: "var(--brand)" }}>
@@ -723,8 +746,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <main
         className={
           isOrdersRoute
-            ? "flex min-h-0 w-full flex-1 overflow-hidden px-3 py-6 md:px-4 lg:px-5"
-            : "min-h-0 w-full flex-1 overflow-y-auto overscroll-y-contain px-3 py-6 pb-32 md:px-4 lg:px-5"
+            ? "flex min-h-0 w-full flex-1 overflow-hidden px-3 pb-6 md:px-4 lg:px-5"
+            : "min-h-0 w-full flex-1 overflow-y-auto overscroll-y-contain px-3 pb-32 md:px-4 lg:px-5"
         }
       >
         {children}

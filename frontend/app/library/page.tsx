@@ -85,14 +85,6 @@ export default function LibraryPage() {
 
   return (
     <div className="space-y-6">
-      <section className="surface-panel rounded-[34px] p-6 md:p-8">
-        <p className="eyebrow">Artist library</p>
-        <h1 className="mt-3 text-4xl font-semibold tracking-tight">Downloads, order history, and recently played</h1>
-        <p className="mt-3 max-w-3xl text-white/68">
-          This page covers Beat22 artist parity for library and history tracking.
-        </p>
-      </section>
-
       <section className="grid gap-6 xl:grid-cols-3">
         <div className="surface-panel rounded-[30px] p-6">
           <p className="eyebrow">Downloads</p>

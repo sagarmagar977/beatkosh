@@ -226,8 +226,8 @@ export default function HomePage() {
 
   return (
     <div className="space-y-4 pb-24">
-      <section className="pt-1">
-        <h1 className="max-w-[12ch] text-4xl font-semibold leading-[0.94] text-white md:text-6xl">
+      <section className="pt-3 md:pt-4">
+        <h1 className="max-w-[12ch] text-4xl font-semibold leading-[1.02] text-white md:text-6xl">
           {headingGreeting}
         </h1>
       </section>
