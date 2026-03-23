@@ -119,7 +119,7 @@ function SectionHeader({ title, action, onAction }: { title: string; action?: st
 function BeatShelfCard({ beat }: { beat: Beat }) {
   const cover = resolveMediaUrl(beat.cover_art_obj);
   return (
-    <Link href={`/beats/${beat.id}`} className="group w-[180px] flex-none">
+    <Link href={`/beats/${beat.id}`} className="group w-[150px] flex-none sm:w-[180px]">
       <div className="overflow-hidden rounded-[22px] bg-white/[0.04]">
         {cover ? (
           <img src={cover} alt={beat.title} className="aspect-square w-full object-cover transition duration-300 group-hover:scale-[1.04]" />
@@ -136,7 +136,7 @@ function BeatShelfCard({ beat }: { beat: Beat }) {
 function ProducerCard({ producer }: { producer: FeaturedProducer }) {
   const avatar = resolveMediaUrl(producer.avatar_obj);
   return (
-    <Link href={`/producers/${producer.producer_id}`} className="group w-[210px] flex-none rounded-[26px] bg-white/[0.04] p-4 transition hover:bg-white/[0.07]">
+    <Link href={`/producers/${producer.producer_id}`} className="group w-[180px] flex-none rounded-[26px] bg-white/[0.04] p-4 transition hover:bg-white/[0.07] sm:w-[210px]">
       {avatar ? (
         <img src={avatar} alt={producer.producer_name} className="h-20 w-20 rounded-full object-cover" />
       ) : (
@@ -310,9 +310,9 @@ export default function ProducerProfilePage() {
 
   return (
     <div className="pb-28">
-      <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)_290px]">
-        <aside className="space-y-4">
-          <section className="theme-surface rounded-[32px] p-6">
+      <div className="grid gap-6 lg:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_290px]">
+        <aside className="space-y-4 lg:app-sidebar-sticky 2xl:top-[calc(var(--app-header-height,112px)+1rem)]">
+          <section className="theme-surface rounded-[32px] p-5 sm:p-6">
             <div className="flex justify-center">
               {profileAvatarUrl ? (
                 <img src={profileAvatarUrl} alt={producerName} className="h-32 w-32 rounded-full border border-white/10 object-cover" />
@@ -323,7 +323,7 @@ export default function ProducerProfilePage() {
               )}
             </div>
             <div className="mt-5 text-center">
-              <h1 className="spotify-display text-[2.6rem] leading-[0.92] text-white">{producerName}</h1>
+              <h1 className="spotify-display text-[2.15rem] leading-[0.92] text-white sm:text-[2.6rem]">{producerName}</h1>
               <p className="mt-2 text-sm text-white/62">{profile?.headline || "Producer profile"}</p>
             </div>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
@@ -331,7 +331,7 @@ export default function ProducerProfilePage() {
                 <span key={genre} className="theme-pill rounded-full px-3 py-1 text-xs">{genre}</span>
               ))}
             </div>
-            <div className="mt-5 grid grid-cols-3 gap-2">
+            <div className="mt-5 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div className="theme-soft rounded-2xl px-3 py-3 text-center">
                 <p className="spotify-display text-xl text-white">{formatCompact(dashboard?.plays ?? 0)}</p>
                 <p className="mt-1 text-[11px] uppercase tracking-[0.16em] text-white/42">Plays</p>
@@ -347,7 +347,7 @@ export default function ProducerProfilePage() {
             </div>
           </section>
 
-          <section className="theme-surface rounded-[28px] p-5">
+          <section className="theme-surface rounded-[28px] p-4 sm:p-5">
             <div className="flex items-center gap-2 text-white">
               {isVerified ? <BadgeCheck className="h-4 w-4 text-emerald-300" strokeWidth={1.8} aria-hidden="true" /> : <ShieldAlert className="h-4 w-4 text-white/45" strokeWidth={1.8} aria-hidden="true" />}
               <p className="text-sm font-medium">About this producer</p>
@@ -362,10 +362,10 @@ export default function ProducerProfilePage() {
           </section>
         </aside>
 
-        <main className="space-y-6">
+        <main className="min-w-0 space-y-6">
           <section className="overflow-hidden rounded-[34px] border border-white/10 bg-[#121314]">
             <div
-              className="relative p-6 sm:p-8"
+              className="relative p-5 sm:p-6 xl:p-8"
               style={{
                 background: heroBeat?.cover_art_obj
                   ? `linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(18,19,20,0.9) 72%), url(${resolveMediaUrl(heroBeat.cover_art_obj)}) center/cover`
@@ -373,20 +373,20 @@ export default function ProducerProfilePage() {
               }}
             >
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/55">Producer profile</p>
-              <h2 className="spotify-display mt-4 max-w-[720px] text-[3rem] leading-[0.9] text-white sm:text-[4.5rem]">{producerName}</h2>
+              <h2 className="spotify-display mt-4 max-w-[720px] text-[2.35rem] leading-[0.92] text-white sm:text-[3.4rem] xl:text-[4.5rem]">{producerName}</h2>
               <p className="mt-3 max-w-[640px] text-sm leading-6 text-white/72">{profile?.headline || "Top beats, recent drops, collaborators, and tag worlds from this producer in one place."}</p>
-              <div className="mt-6 flex flex-wrap items-center gap-3">
+              <div className="mt-6 flex flex-wrap items-stretch gap-3">
                 {heroBeat ? (
                   <button
                     type="button"
                     onClick={() => void handlePlay(heroBeat, activeTopList)}
-                    className="inline-flex items-center gap-2 rounded-full bg-[#1ed760] px-5 py-3 text-sm font-semibold text-black"
+                    className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#1ed760] px-5 py-3 text-sm font-semibold text-black sm:w-auto"
                   >
                     <Play className="h-4 w-4 fill-current" strokeWidth={1.8} aria-hidden="true" />
                     Play top beat
                   </button>
                 ) : null}
-                <button type="button" onClick={() => router.push(`/projects?producer=${userId}`)} className="inline-flex items-center gap-2 rounded-full bg-[#af89ff] px-5 py-3 text-sm font-semibold text-[#140f20]">
+                <button type="button" onClick={() => router.push(`/projects?producer=${userId}`)} className="inline-flex w-full items-center justify-center gap-2 rounded-full bg-[#af89ff] px-5 py-3 text-sm font-semibold text-[#140f20] sm:w-auto">
                   Hire producer
                 </button>
                 {!isOwnProfile ? (
@@ -394,12 +394,12 @@ export default function ProducerProfilePage() {
                     type="button"
                     onClick={() => void handleFollowToggle()}
                     disabled={followBusy}
-                    className={`inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition ${isFollowing ? "border border-white/18 bg-white/[0.06] text-white" : "bg-white text-black"} disabled:cursor-not-allowed disabled:opacity-60`}
+                    className={`inline-flex w-full items-center justify-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition sm:w-auto ${isFollowing ? "border border-white/18 bg-white/[0.06] text-white" : "bg-white text-black"} disabled:cursor-not-allowed disabled:opacity-60`}
                   >
                     {followBusy ? "Updating..." : isFollowing ? "Following" : "Follow"}
                   </button>
                 ) : null}
-                <button type="button" onClick={() => setShowAllTop((current) => !current)} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-3 text-sm text-white/85">
+                <button type="button" onClick={() => setShowAllTop((current) => !current)} className="inline-flex w-full items-center justify-center gap-2 rounded-full border border-white/20 px-4 py-3 text-sm text-white/85 sm:w-auto">
                   {showAllTop ? "Show top 5" : "See all tracks"}
                   <ChevronRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                 </button>
@@ -407,7 +407,7 @@ export default function ProducerProfilePage() {
             </div>
           </section>
 
-          <section className="theme-surface rounded-[30px] p-6">
+          <section className="theme-surface rounded-[30px] p-4 sm:p-6">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <SectionHeader title={trackView === "popular" ? "Popular" : trackView === "liked" ? "Top Liked" : "Latest Drops"} action={showAllTop ? "Show less" : activeTopList.length > 5 ? "See more" : undefined} onAction={activeTopList.length > 5 ? () => setShowAllTop((current) => !current) : undefined} />
               <div className="flex flex-wrap gap-2">
@@ -440,7 +440,7 @@ export default function ProducerProfilePage() {
                     key={beat.id}
                     type="button"
                     onClick={() => void handlePlay(beat, activeTopList)}
-                    className="flex w-full items-center gap-4 rounded-[22px] px-3 py-3 text-left transition hover:bg-white/[0.04]"
+                    className="grid w-full grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-[22px] px-3 py-3 text-left transition hover:bg-white/[0.04] sm:flex sm:gap-4"
                   >
                     <span className="w-6 text-sm text-white/40">{index + 1}</span>
                     <div className="h-11 w-11 overflow-hidden rounded-xl bg-white/[0.05]">
@@ -450,8 +450,8 @@ export default function ProducerProfilePage() {
                       <p className={`line-clamp-1 text-sm font-semibold ${isCurrent ? "text-[#1ed760]" : "text-white"}`}>{beat.title}</p>
                       <p className="mt-1 text-xs text-white/50">{beat.genre} ? {beat.bpm} BPM ? {beat.key || "Key N/A"}</p>
                     </div>
-                    <span className="hidden text-sm text-white/45 sm:block">{formatCompact(trackView === "liked" ? beat.like_count ?? 0 : beat.play_count ?? 0)}</span>
-                    <span className="rounded-full bg-white text-black px-3 py-1.5 text-xs font-semibold">Rs {beat.base_price}</span>
+                    <span className="hidden text-sm text-white/45 md:block">{formatCompact(trackView === "liked" ? beat.like_count ?? 0 : beat.play_count ?? 0)}</span>
+                    <span className="col-start-2 justify-self-start rounded-full bg-white px-3 py-1.5 text-xs font-semibold text-black sm:col-start-auto sm:justify-self-auto">Rs {beat.base_price}</span>
                   </button>
                 );
               })}
@@ -460,7 +460,7 @@ export default function ProducerProfilePage() {
           </section>
 
           <section className="space-y-6">
-            <section className="theme-surface rounded-[30px] p-6">
+            <section className="theme-surface rounded-[30px] p-4 sm:p-6">
               <SectionHeader title="Discography" action={beats.length > 4 ? "Show all" : undefined} onAction={beats.length > 4 ? () => setShowAllTop(true) : undefined} />
               <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
                 {rankedBeats.recent.slice(0, 10).map((beat) => <BeatShelfCard key={beat.id} beat={beat} />)}
@@ -468,7 +468,7 @@ export default function ProducerProfilePage() {
             </section>
 
             {featuringProducers.length > 0 ? (
-              <section className="theme-surface rounded-[30px] p-6">
+              <section className="theme-surface rounded-[30px] p-4 sm:p-6">
                 <SectionHeader title={`Featuring ${producerName}`} />
                 <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
                   {featuringProducers.map((producer) => <ProducerCard key={producer.producer_id} producer={producer} />)}
@@ -477,7 +477,7 @@ export default function ProducerProfilePage() {
             ) : null}
 
             {topTags.map((entry) => (
-              <section key={entry.tag} className="theme-surface rounded-[30px] p-6">
+              <section key={entry.tag} className="theme-surface rounded-[30px] p-4 sm:p-6">
                 <SectionHeader title={`${entry.tag} beats`} />
                 <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
                   {entry.beats.map((beat) => <BeatShelfCard key={beat.id} beat={beat} />)}
@@ -487,8 +487,8 @@ export default function ProducerProfilePage() {
           </section>
         </main>
 
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
-          <section className="theme-surface rounded-[28px] p-5">
+        <aside className="space-y-4 2xl:app-sidebar-sticky">
+          <section className="theme-surface rounded-[28px] p-4 sm:p-5">
             <p className="text-sm font-semibold text-white">Beat list</p>
             <p className="mt-1 text-xs text-white/46">Top 5 in the current filter, with a quick play action.</p>
             <div className="mt-4 space-y-2">
@@ -510,7 +510,7 @@ export default function ProducerProfilePage() {
           </section>
 
           {heroBeat ? (
-            <section className="theme-surface rounded-[28px] p-5">
+            <section className="theme-surface rounded-[28px] p-4 sm:p-5">
               <p className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-white/45">
                 <Sparkles className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
                 Featured beat

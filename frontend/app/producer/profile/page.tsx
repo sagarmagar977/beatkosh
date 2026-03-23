@@ -417,7 +417,7 @@ export default function ProducerPrivateProfilePage() {
           ))}
         </div>
 
-        <aside className="space-y-4 xl:sticky xl:top-24 xl:self-start">
+        <aside className="space-y-4 xl:app-sidebar-sticky">
           <section className="theme-surface rounded-[28px] p-5">
             <p className="text-sm font-semibold text-white">Quick beat list</p>
             <p className="mt-1 text-xs text-white/46">Your current top 5 for this filter.</p>
@@ -676,8 +676,8 @@ export default function ProducerPrivateProfilePage() {
         </div>
       ) : null}
 
-      <div className="relative pb-20 lg:pl-[365px]">
-        <aside className="lg:fixed lg:top-36 lg:left-[max(1.5rem,calc((100vw-1200px)/2))] lg:w-[340px]">
+      <div className="relative pb-20 xl:pl-[365px]">
+        <aside className="mb-6 xl:fixed xl:left-[max(1.5rem,calc((100vw-1200px)/2))] xl:top-[calc(var(--app-header-height,112px)+1.5rem)] xl:mb-0 xl:w-[340px]">
           <section className="theme-surface rounded-[30px] px-5 py-4">
             <div className="flex justify-center">
               <div className="relative">
@@ -700,7 +700,7 @@ export default function ProducerPrivateProfilePage() {
             </div>
 
             <div className="mt-4 text-center">
-              <h2 className="spotify-display theme-text-main text-[2.5rem] leading-[0.92] sm:text-[2.85rem]">{profileDisplayName}</h2>
+              <h2 className="spotify-display theme-text-main text-[2.1rem] leading-[0.92] sm:text-[2.5rem]">{profileDisplayName}</h2>
               <div className="mt-3 flex flex-wrap justify-center gap-2">
                 {profileGenres.length > 0 ? (
                   profileGenres.map((genre) => (
@@ -714,7 +714,7 @@ export default function ProducerPrivateProfilePage() {
               </div>
             </div>
 
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
               <div className="theme-soft rounded-2xl px-3 py-2.5 text-center">
                 <Play className="mx-auto h-4 w-4 text-[#a288ff]" strokeWidth={1.8} aria-hidden="true" />
                 <p className="spotify-display theme-text-main mt-1.5 text-xl">{formatCompact(dashboard?.plays ?? 0)}</p>
@@ -754,7 +754,7 @@ export default function ProducerPrivateProfilePage() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3" style={{ borderColor: "var(--line)" }}>
               <div>
                 <p className="spotify-kicker theme-text-quiet text-[11px]">Producer studio</p>
-                <h1 className="spotify-display theme-text-main mt-1 text-[2.4rem] sm:text-[2.9rem]">{profileDisplayName}</h1>
+                <h1 className="spotify-display theme-text-main mt-1 text-[2rem] sm:text-[2.9rem]">{profileDisplayName}</h1>
               </div>
               <button
                 type="button"

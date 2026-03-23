@@ -4,7 +4,7 @@ import { Compass, Home, Search, ShoppingCart } from "lucide-react";
 import { SunMoon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useRef, useState } from "react";
 
 import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
@@ -29,6 +29,7 @@ type AppNotification = {
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const HEADER_CLEARANCE_PX = 3;
+  const DEFAULT_HEADER_HEIGHT = 112;
   const pathname = usePathname();
   const router = useRouter();
   const { user, token, loading, logout, startSelling, switchRole, refreshMe, meError } = useAuth();
@@ -51,7 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const userMenuCloseTimeout = useRef<number | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
-  const [headerHeight, setHeaderHeight] = useState(0);
+  const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT);
 
   const hasSession = Boolean(token);
   const profileHref = user?.is_producer ? "/producer/profile" : null;
@@ -66,6 +67,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isProtectedRoute = !isPublicAuthRoute;
   const hideGlobalPlayer = normalizedPath.startsWith("/producer/upload-wizard");
   const isOrdersRoute = normalizedPath === "/orders";
+  const isActivityRoute = normalizedPath === "/activity";
 
   useEffect(() => {
     if (loading) {
@@ -145,7 +147,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const syncHeaderHeight = () => {
-      setHeaderHeight(headerRef.current?.offsetHeight ?? 0);
+      setHeaderHeight(headerRef.current?.offsetHeight ?? DEFAULT_HEADER_HEIGHT);
     };
 
     syncHeaderHeight();
@@ -284,16 +286,24 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Legacy-route guard removed now that auth context is unified.
 
   return (
-    <div className="app-theme flex h-screen flex-col overflow-hidden" style={{ paddingTop: headerHeight + HEADER_CLEARANCE_PX }}>
+    <div
+      className={isOrdersRoute || isActivityRoute ? "app-theme flex h-screen flex-col overflow-hidden" : "app-theme min-h-screen"}
+      style={
+        {
+          "--app-header-height": `${headerHeight}px`,
+          paddingTop: `calc(var(--app-header-height) + ${HEADER_CLEARANCE_PX}px)`,
+        } as CSSProperties
+      }
+    >
       <header ref={headerRef} className="theme-header fixed inset-x-0 top-0 z-[110] isolate border-b shadow-[0_14px_34px_rgba(0,0,0,0.32)]" style={{ borderColor: "var(--line)" }}>
         <div className="absolute inset-0 -z-10 bg-[#0b0b0f]" aria-hidden="true" />
-        <div className="relative z-10 flex w-full items-center gap-3 bg-[#0b0b0f] px-3 py-3 md:px-4 lg:px-5">
+        <div className="relative z-10 flex w-full items-center gap-3 bg-[#0b0b0f] px-3 py-3 md:grid md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-4 md:px-4 lg:px-5">
           <Link href="/" className="hidden shrink-0 text-3xl font-black tracking-[-0.07em] md:block" style={{ color: "var(--brand)" }}>
             B
           </Link>
 
-          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center justify-center md:flex">
-            <div className="flex items-center justify-center gap-2">
+          <div className="hidden min-w-0 items-center justify-center md:flex">
+            <div className="flex min-w-0 items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -313,7 +323,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
 
               <form
-                className="pointer-events-auto flex h-11 w-[420px] items-center rounded-full border border-white/10 bg-[#1c1722] px-3.5 shadow-[0_12px_34px_rgba(0,0,0,0.2)] lg:w-[460px]"
+                className="pointer-events-auto flex h-11 min-w-0 w-full max-w-[420px] items-center rounded-full border border-white/10 bg-[#1c1722] px-3 shadow-[0_12px_34px_rgba(0,0,0,0.2)] lg:max-w-[500px] lg:px-3.5 xl:w-[460px]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   runSearch();
@@ -358,11 +368,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             B
           </Link>
 
-          <div className="ml-auto flex items-center gap-2">
+          <div className="ml-auto flex items-center gap-1.5 md:ml-0 md:justify-self-end sm:gap-2">
             <button
               type="button"
               onClick={() => setNotificationsOpen((s) => !s)}
-              className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] px-0 text-xs text-white/72 transition hover:bg-[#26202e] hover:text-white"
+              className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] px-0 text-xs text-white/72 transition hover:bg-[#26202e] hover:text-white"
               aria-label="Notifications"
             >
               <span className="sr-only">Notifications</span>
@@ -374,7 +384,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <Link
               href="/orders"
-              className="relative hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] text-xs text-white/72 transition hover:bg-[#26202e] hover:text-white md:inline-flex"
+              className="relative hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] text-xs text-white/72 transition hover:bg-[#26202e] hover:text-white lg:inline-flex"
               aria-label="Cart"
               title="Cart"
             >
@@ -384,7 +394,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={toggleTheme}
-              className="hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] text-white/72 transition hover:bg-[#26202e] hover:text-white md:inline-flex"
+              className="hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] text-white/72 transition hover:bg-[#26202e] hover:text-white lg:inline-flex"
               aria-label="Toggle color mode"
               title="Toggle color mode"
             >
@@ -407,7 +417,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }
                 }}
                 disabled={startSellingBusy}
-                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-60 sm:px-4 sm:text-xs"
               >
                 {startSellingBusy ? "Starting..." : "Start Selling"}
               </button>
@@ -415,7 +425,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <button
                 type="button"
                 onClick={() => setUploadPickerOpen(true)}
-                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-4 py-2 text-xs font-semibold text-white"
+                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-3 py-2 text-[11px] font-semibold text-white sm:px-4 sm:text-xs"
               >
                 Upload
               </button>
@@ -435,7 +445,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   }
                 }}
                 disabled={startSellingBusy}
-                className="rounded-full bg-gradient-to-r from-[#2d3348] via-[#3b4663] to-[#56637f] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+                className="rounded-full bg-gradient-to-r from-[#2d3348] via-[#3b4663] to-[#56637f] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-60 sm:px-4 sm:text-xs"
               >
                 {startSellingBusy ? "Switching..." : "Producer Mode"}
               </button>
@@ -468,7 +478,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
 
               <div
-                className={`theme-menu absolute right-0 top-[46px] z-50 w-[260px] rounded-2xl p-3 backdrop-blur-xl transition-all duration-220 ease-out ${userMenuOpen ? "pointer-events-auto translate-y-0 scale-100 opacity-100" : "pointer-events-none -translate-y-2 scale-[0.98] opacity-0"}`}
+                className={`theme-menu absolute right-0 top-[46px] z-50 w-[min(260px,calc(100vw-1.5rem))] rounded-2xl p-3 backdrop-blur-xl transition-all duration-220 ease-out ${userMenuOpen ? "pointer-events-auto translate-y-0 scale-100 opacity-100" : "pointer-events-none -translate-y-2 scale-[0.98] opacity-0"}`}
                 onMouseEnter={cancelUserMenuClose}
                 onMouseLeave={closeUserMenuSoon}
               >
@@ -625,7 +635,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {startSellingError ? <p className="ml-auto text-xs text-[#ff8f7d]">{startSellingError}</p> : null}
 
             {notificationsOpen ? (
-              <div className="theme-menu absolute right-0 top-[46px] z-50 w-[340px] rounded-2xl p-4 backdrop-blur-xl">
+              <div className="theme-menu absolute right-0 top-[46px] z-50 w-[min(340px,calc(100vw-1.5rem))] rounded-2xl p-4 backdrop-blur-xl">
                 <p className="text-sm font-semibold theme-text-main">Notifications</p>
                 {notificationsLoading ? <p className="mt-3 text-xs theme-text-muted">Loading notifications...</p> : null}
                 {!notificationsLoading && notifications.length === 0 ? <p className="mt-3 text-xs theme-text-muted">No new notifications.</p> : null}
@@ -745,9 +755,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       ) : null}
       <main
         className={
-          isOrdersRoute
-            ? "flex min-h-0 w-full flex-1 overflow-hidden px-3 pb-6 md:px-4 lg:px-5"
-            : "min-h-0 w-full flex-1 overflow-y-auto overscroll-y-contain px-3 pb-32 md:px-4 lg:px-5"
+          isOrdersRoute || isActivityRoute
+            ? "flex min-h-0 flex-1 w-full overflow-hidden px-3 pb-6 md:px-4 lg:px-5"
+            : "w-full px-3 pb-32 md:px-4 lg:px-5"
         }
       >
         {children}

@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 :root {
-  --bg: #121016;
-  --bg-elevated: #19161d;
-  --panel: #201b24;
-  --panel-2: #27212d;
-  --panel-3: #302733;
+  --bg: #050505;
+  --bg-elevated: #0b0b0c;
+  --panel: #111214;
+  --panel-2: #17181b;
+  --panel-3: #1d1f23;
   --panel-soft: rgba(255, 246, 238, 0.045);
   --panel-soft-strong: rgba(255, 246, 238, 0.075);
   --line: rgba(255, 236, 226, 0.12);
@@ -20,14 +20,14 @@
   --brand-line: rgba(139, 40, 255, 0.42);
   --success: #1ecb88;
   --warn: #f2be43;
-  --header-bg: #0b0b0f;
-  --overlay: rgba(16, 12, 18, 0.76);
+  --header-bg: #050505;
+  --overlay: rgba(5, 5, 5, 0.82);
   --panel-shadow: 0 24px 70px rgba(8, 5, 12, 0.34);
   --panel-shadow-soft: 0 18px 36px rgba(8, 5, 12, 0.18);
-  --page-glow-a: rgba(139, 40, 255, 0.18);
-  --page-glow-b: rgba(255, 149, 88, 0.08);
-  --page-grad-start: #17131b;
-  --page-grad-end: #100d14;
+  --page-glow-a: rgba(255, 255, 255, 0.02);
+  --page-glow-b: rgba(255, 255, 255, 0.01);
+  --page-grad-start: #080808;
+  --page-grad-end: #020202;
   color-scheme: dark;
 }
 
@@ -73,6 +73,7 @@
 }
 
 body {
+  margin: 0;
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", "Inter", "Trebuchet MS", sans-serif;
@@ -162,6 +163,12 @@ body {
 .app-theme {
   min-height: 100vh;
   color: var(--text);
+}
+
+.app-sidebar-sticky {
+  position: sticky;
+  top: calc(var(--app-header-height, 112px) + 1rem);
+  align-self: start;
 }
 
 .theme-header {

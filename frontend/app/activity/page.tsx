@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { BookOpen, Clock3, Compass, Droplets, FileText, Heart, MessageSquareMore, Package2, Search, SlidersHorizontal, Upload, Users } from "lucide-react";
+import { BookOpen, Clock3, Compass, FileText, Heart, LayoutPanelLeft, MessageSquareMore, Package2, Search, SlidersHorizontal, Upload, Users } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
@@ -18,14 +18,6 @@ type FollowItem = {
 type LikeItem = {
   id: number;
   beat: { id: number; title: string; producer_username: string };
-};
-
-type DropItem = {
-  id: number;
-  producer_username: string;
-  message: string;
-  beat?: { id: number; title: string } | null;
-  created_at: string;
 };
 
 type Beat = {
@@ -61,8 +53,6 @@ type SidebarMode =
   | "hiring"
   | "liked"
   | "history"
-  | "drops"
-  | "following"
   | "playlists"
   | "studio"
   | "uploads"
@@ -89,7 +79,6 @@ export default function ActivityPage() {
   const { token, user } = useAuth();
   const [follows, setFollows] = useState<FollowItem[]>([]);
   const [likes, setLikes] = useState<LikeItem[]>([]);
-  const [drops, setDrops] = useState<DropItem[]>([]);
   const [beats, setBeats] = useState<Beat[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [selectedBeatId, setSelectedBeatId] = useState<number | null>(null);
@@ -97,21 +86,20 @@ export default function ActivityPage() {
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<ShelfSectionKey | null>(null);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("browse");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const library = useBeatLibrary(user?.id, token);
   const isProducerMode = user?.active_role === "producer";
 
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const [followData, likeData, dropData, beatData] = await Promise.all([
+      const [followData, likeData, beatData] = await Promise.all([
         apiRequest<FollowItem[]>("/account/follows/me/", { token }),
         apiRequest<LikeItem[]>("/account/likes/beats/me/", { token }),
-        apiRequest<DropItem[]>("/analytics/drops/feed/", { token }),
         apiRequest<Beat[]>("/beats/"),
       ]);
       setFollows(followData);
       setLikes(likeData);
-      setDrops(dropData);
       setBeats(beatData);
       setSelectedBeatId((current) => current ?? beatData[0]?.id ?? null);
     } catch (err) {
@@ -194,8 +182,6 @@ export default function ActivityPage() {
       { key: "liked" as const, label: "Liked", icon: Heart },
       { key: "history" as const, label: "Play History", icon: Clock3 },
       { key: "playlists" as const, label: "Playlists", icon: Clock3 },
-      { key: "drops" as const, label: "Follower Drops", icon: Droplets },
-      { key: "following" as const, label: "Followed By You", icon: Users },
     ];
 
     if (isProducerMode) {
@@ -211,46 +197,53 @@ export default function ActivityPage() {
   }, [isProducerMode]);
 
   return (
-    <div className="min-h-[calc(100vh-7rem)] rounded-[34px] border border-white/8 bg-[#090909] p-3 text-white shadow-[0_30px_120px_rgba(0,0,0,0.42)]">
-      <div className="grid gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="xl:sticky xl:top-24 xl:self-start">
-          <div className="rounded-[24px] bg-[#121212] p-4 xl:flex xl:h-[calc(100vh-10rem)] xl:flex-col xl:overflow-hidden">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-white">Hub shortcuts</p>
+    <div className="flex h-[calc(100vh-10rem)] min-h-0 flex-col overflow-hidden rounded-[34px] border border-white/8 bg-[#090909] p-3 text-white shadow-[0_30px_120px_rgba(0,0,0,0.42)]">
+      <div className={`grid min-h-0 flex-1 gap-3 ${sidebarCollapsed ? "xl:grid-cols-[92px_minmax(0,1fr)]" : "xl:grid-cols-[280px_minmax(0,1fr)]"}`}>
+        <aside className="hidden min-h-0 xl:block">
+          <div className={`flex h-full flex-col overflow-hidden rounded-[24px] bg-[#121212] p-4 transition-[width,padding] duration-200 ${sidebarCollapsed ? "items-center px-3" : ""}`}>
+            <div className={`mb-3 flex w-full items-center ${sidebarCollapsed ? "justify-center" : "justify-start"}`}>
+              <button
+                type="button"
+                onClick={() => setSidebarCollapsed((current) => !current)}
+                className="flex h-11 w-11 items-center justify-center rounded-[16px] border border-white/10 bg-white/[0.04] text-white/72 transition hover:bg-white/[0.08] hover:text-white"
+                aria-label={sidebarCollapsed ? "Expand sidebar shortcuts" : "Collapse sidebar shortcuts"}
+                title={sidebarCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+              >
+                <LayoutPanelLeft className="h-4.5 w-4.5" strokeWidth={1.9} aria-hidden="true" />
+              </button>
             </div>
-            <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-white/75">{follows.length} follows</span>
-          </div>
 
-          <div className="mt-5 grid gap-2 xl:flex-1 xl:content-start">
-            {sidebarActions.map((action) => {
-              const Icon = action.icon;
-              const active = sidebarMode === action.key;
-              return (
-                <button
-                  key={action.key}
-                  type="button"
-                  onClick={() => {
-                    if ("href" in action && action.href) {
-                      router.push(action.href);
-                      return;
-                    }
-                    setSidebarMode(action.key);
-                  }}
-                  className={`flex w-full items-center gap-3 rounded-[18px] border px-3 py-2.5 text-left transition ${active ? "border-white/18 bg-white/[0.08]" : "border-white/8 bg-white/[0.03] hover:bg-white/[0.05]"}`}
-                >
-                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] ${active ? "bg-[#8f5cff]/20 text-[#b598ff]" : "bg-white/[0.04] text-white/68"}`}>
-                    <Icon className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
-                  </div>
-                  <p className="min-w-0 truncate text-sm font-medium text-white">{action.label}</p>
-                </button>
-              );
-            })}
-          </div>
+            <div className="grid gap-2">
+              {sidebarActions.map((action) => {
+                const Icon = action.icon;
+                const active = sidebarMode === action.key;
+                return (
+                  <button
+                    key={action.key}
+                    type="button"
+                    onClick={() => {
+                      if ("href" in action && action.href) {
+                        router.push(action.href);
+                        return;
+                      }
+                      setSidebarMode(action.key);
+                    }}
+                    className={`group flex w-full items-center rounded-[18px] border border-transparent bg-transparent text-left shadow-none transition ${sidebarCollapsed ? "justify-center px-0 py-3" : "gap-3 px-3 py-2.5"} hover:bg-white/[0.05]`}
+                    aria-label={action.label}
+                    title={action.label}
+                  >
+                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] transition ${active ? "bg-transparent text-[#b598ff]" : "bg-transparent text-white/68 group-hover:text-white/82"}`}>
+                      <Icon className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+                    </div>
+                    {!sidebarCollapsed ? <p className={`min-w-0 truncate text-sm font-medium transition ${active ? "text-white" : "text-white/92 group-hover:text-white"}`}>{action.label}</p> : null}
+                  </button>
+                );
+              })}
+            </div>
           </div>
         </aside>
 
-        <main className="rounded-[24px] bg-[#121212] p-4 md:p-5">
+        <main className="min-h-0 overflow-y-auto rounded-[24px] bg-[#121212] p-4 md:p-5">
           {sidebarMode === "browse" ? (
             <>
           <div className="rounded-[22px] bg-[linear-gradient(180deg,rgba(66,154,110,0.35),rgba(18,18,18,0.95)_45%)] p-5">
@@ -411,8 +404,6 @@ export default function ActivityPage() {
                   {sidebarMode === "liked" && "Jump through the beats you already saved and keep discovery anchored around your taste."}
                   {sidebarMode === "history" && "Use recent activity as a quick-return lane for replaying beats you were exploring."}
                   {sidebarMode === "playlists" && "Open your backend-saved Listen later queue and custom playlists without switching into producer tools."}
-                  {sidebarMode === "drops" && "Track the latest producer drops and new beat activity from the people you follow."}
-                  {sidebarMode === "following" && "Keep your followed producers visible so you can move back into discovery fast."}
                   {sidebarMode === "kits" && "Browse sound kits from the sidebar instead of relying on the old top navigation tab."}
                   {sidebarMode === "resources" && "Open learning and support content directly from the browse sidebar."}
                   {sidebarMode === "hiring" && "Move into the hiring workspace from the browse sidebar when you want to post or review briefs."}
@@ -427,8 +418,6 @@ export default function ActivityPage() {
                 {(sidebarMode === "liked" ? beats.filter((beat) => likes.some((item) => item.beat.id === beat.id)) :
                   sidebarMode === "history" ? [...beats].sort((a, b) => (b.play_count ?? 0) - (a.play_count ?? 0)) :
                   sidebarMode === "playlists" ? [] :
-                  sidebarMode === "drops" ? [] :
-                  sidebarMode === "following" ? [] :
                   sidebarMode === "kits" ? [] :
                   sidebarMode === "resources" ? [] :
                   sidebarMode === "hiring" ? [] :
@@ -454,18 +443,6 @@ export default function ActivityPage() {
                   );
                 })}
               </div>
-
-              {sidebarMode === "drops" ? (
-                <div className="space-y-3">
-                  {drops.slice(0, 6).map((drop) => (
-                    <div key={drop.id} className="rounded-[18px] bg-white/[0.04] p-4">
-                      <p className="text-sm font-medium text-white">{drop.producer_username}</p>
-                      <p className="mt-2 text-sm text-white/62">{drop.message || "New update posted."}</p>
-                      {drop.beat?.title ? <p className="mt-2 text-xs uppercase tracking-[0.2em] text-white/38">{drop.beat.title}</p> : null}
-                    </div>
-                  ))}
-                </div>
-              ) : null}
 
               {sidebarMode === "playlists" ? (
                 <div className="space-y-4">
@@ -500,17 +477,6 @@ export default function ActivityPage() {
                     ))}
                     {library.playlists.length === 0 ? <p className="rounded-[18px] bg-white/[0.04] p-4 text-sm text-white/55 md:col-span-2">No custom playlists yet. Use the three-dot menu on any beat to save one.</p> : null}
                   </div>
-                </div>
-              ) : null}
-
-              {sidebarMode === "following" ? (
-                <div className="grid gap-3 md:grid-cols-2">
-                  {follows.map((item) => (
-                    <div key={item.id} className="rounded-[18px] bg-white/[0.04] p-4">
-                      <p className="text-base font-medium text-white">{item.producer_username}</p>
-                      
-                    </div>
-                  ))}
                 </div>
               ) : null}
 

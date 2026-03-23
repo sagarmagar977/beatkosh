@@ -21,14 +21,7 @@ function applyTheme(theme: Theme) {
 }
 
 function getInitialTheme(): Theme {
-  if (typeof window === "undefined") {
-    return "dark";
-  }
-  const savedTheme = window.localStorage.getItem(STORAGE_KEY);
-  if (savedTheme === "light" || savedTheme === "dark") {
-    return savedTheme;
-  }
-  return window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  return "dark";
 }
 
 export function Providers({ children }: { children: ReactNode }) {

@@ -191,7 +191,7 @@ function StatCardSkeleton() {
 export function ProducerStudioSkeleton() {
   return (
     <div className="grid gap-6 pb-10 xl:grid-cols-[280px_minmax(0,1fr)]">
-      <aside className="xl:sticky xl:top-24 xl:self-start">
+      <aside className="xl:app-sidebar-sticky">
         <div className="overflow-hidden rounded-[32px] border border-white/8 bg-[linear-gradient(180deg,#140f1e_0%,#0d0a15_100%)] p-5 shadow-[0_26px_70px_rgba(6,4,12,0.34)]">
           <div className="flex items-center gap-3">
             <Skeleton className="h-12 w-12 rounded-2xl" />
