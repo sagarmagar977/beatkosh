@@ -144,6 +144,52 @@ class AnalyticsApiTests(APITestCase):
         similar_producers = self.client.get(reverse("similar-producers", kwargs={"producer_id": producer_a.id}))
         self.assertEqual(similar_producers.status_code, status.HTTP_200_OK)
 
+
+    def test_listening_history_isolated_per_user(self):
+        producer = User.objects.create_user(
+            username="isolatedproducer",
+            email="isolatedproducer@example.com",
+            password="strong-pass-123",
+            is_artist=False,
+            is_producer=True,
+            active_role="producer",
+        )
+        artist_a = User.objects.create_user(
+            username="artistalpha",
+            email="artistalpha@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        artist_b = User.objects.create_user(
+            username="artistbeta",
+            email="artistbeta@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        beat = Beat.objects.create(
+            producer=producer,
+            title="Private History Beat",
+            genre="LoFi",
+            bpm=88,
+            base_price="15.00",
+        )
+
+        login_a = self.client.post(reverse("login"), {"username": "artistalpha", "password": "strong-pass-123"}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_a.data['access']}")
+        self.client.post(reverse("listening-play"), {"beat_id": beat.id}, format="json")
+        recent_a = self.client.get(reverse("listening-recent"))
+        self.assertEqual(len(recent_a.data), 1)
+
+        login_b = self.client.post(reverse("login"), {"username": "artistbeta", "password": "strong-pass-123"}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_b.data['access']}")
+        recent_b = self.client.get(reverse("listening-recent"))
+        self.assertEqual(recent_b.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(recent_b.data), 0)
+
     def test_dashboard_summary_endpoint(self):
         producer = User.objects.create_user(
             username="dashproducer",

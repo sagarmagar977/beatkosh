@@ -1,4 +1,18 @@
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import BasePermission, SAFE_METHODS
+
+
+def ensure_producer_capability(user, *, message="Producer role required."):
+    if not (user and user.is_authenticated and getattr(user, "is_producer", False)):
+        raise PermissionDenied(message)
+
+
+def ensure_producer_mode(user, *, message="Switch to producer mode to access this feature."):
+    ensure_producer_capability(user, message=message)
+    if getattr(user, "active_role", None) != "producer":
+        raise PermissionDenied(message)
+
+
 
 
 class IsProducerOrReadOnly(BasePermission):

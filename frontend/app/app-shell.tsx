@@ -31,7 +31,7 @@ import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
 import { useTheme } from "@/app/providers";
 import { GlobalPlayer } from "@/components/global-player";
-import { apiRequest } from "@/lib/api";
+import { apiRequest, resolveMediaUrl } from "@/lib/api";
 
 type MenuIconKind =
   | "headphones"
@@ -151,7 +151,7 @@ const navLinks: NavLink[] = [
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { user, token, loading, logout, startSelling, refreshMe, meError } = useAuth();
+  const { user, token, loading, logout, startSelling, switchRole, refreshMe, meError } = useAuth();
   const { theme, toggleTheme } = useTheme();
 
   const [hoverMenuOpen, setHoverMenuOpen] = useState<string | null>(null);
@@ -173,8 +173,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const hasSession = Boolean(token);
   const profileHref = user?.is_producer ? "/producer/profile" : null;
+  const avatarUrl = resolveMediaUrl(user?.producer_profile?.avatar_obj);
+  const avatarFallback = (user?.producer_profile?.producer_name || user?.username || "U").slice(0, 1).toUpperCase();
 
   const normalizedPath = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
+  const producerWorkspaceRoutes = ["/producer/studio", "/producer/upload-wizard", "/producer/settings", "/producer/profile", "/producer/media-uploads", "/dashboard/selling", "/wallet"];
+  const isProducerWorkspaceRoute = producerWorkspaceRoutes.some((route) => normalizedPath === route || normalizedPath.startsWith(`${route}/`));
   const publicAuthRoutes = ["/auth/login", "/auth/register"];
   const isPublicAuthRoute = publicAuthRoutes.includes(normalizedPath);
   const isProtectedRoute = !isPublicAuthRoute;
@@ -186,11 +190,31 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
     if (isProtectedRoute && !hasSession) {
       router.replace("/auth/login");
+      return;
     }
     if (isPublicAuthRoute && hasSession) {
       router.replace("/");
+      return;
     }
-  }, [hasSession, isProtectedRoute, isPublicAuthRoute, loading, router]);
+    if (!user || !isProducerWorkspaceRoute) {
+      return;
+    }
+
+    const redirectToListening = (message: string) => {
+      if (typeof window !== "undefined") {
+        window.sessionStorage.setItem(GLOBAL_FLASH_SESSION_KEY, message);
+      }
+      router.replace("/dashboard/listening");
+    };
+
+    if (!user.is_producer) {
+      redirectToListening("Enable producer mode first to access the seller workspace.");
+      return;
+    }
+    if (user.active_role !== "producer") {
+      redirectToListening("Switch to producer mode from your avatar menu to access the seller workspace.");
+    }
+  }, [hasSession, isProducerWorkspaceRoute, isProtectedRoute, isPublicAuthRoute, loading, router, user]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -365,13 +389,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   return (
     <div className="app-theme min-h-screen pb-28">
       <header className="theme-header sticky top-0 z-40 border-b backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1380px] items-center gap-3 px-4 py-3 lg:px-6">
-          <Link href="/" className="text-3xl font-black tracking-[-0.07em] md:mr-2" style={{ color: "var(--brand)" }}>
+        <div className="mx-auto flex max-w-[1380px] items-center gap-3 px-4 py-3 md:grid md:grid-cols-[1fr_auto_1fr] md:gap-4 lg:px-6">
+          <Link href="/" className="text-3xl font-black tracking-[-0.07em] md:justify-self-start" style={{ color: "var(--brand)" }}>
             B
           </Link>
 
-          <div className="hidden flex-1 items-center justify-center md:flex">
-            <div className="flex w-full max-w-[760px] items-center gap-3">
+          <div className="hidden items-center justify-center md:flex md:justify-self-center">
+            <div className="flex w-full max-w-[680px] items-center gap-2.5">
               <button
                 type="button"
                 onClick={() => {
@@ -379,7 +403,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setHoverMenuOpen(null);
                   router.push("/");
                 }}
-                className={`inline-flex h-12 w-12 items-center justify-center rounded-full border transition ${
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition ${
                   isHomeActive
                     ? "border-white/18 bg-white/12 text-white"
                     : "border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08]"
@@ -387,11 +411,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 aria-label="Go home"
                 title="Home"
               >
-                <Home className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+                <Home className="h-[1.15rem] w-[1.15rem]" strokeWidth={2} aria-hidden="true" />
               </button>
 
               <form
-                className="flex h-14 flex-1 items-center rounded-full border border-white/10 bg-white/[0.05] px-4 shadow-[0_12px_34px_rgba(0,0,0,0.2)]"
+                className="flex h-12 w-[560px] items-center rounded-full border border-white/10 bg-white/[0.05] px-4 shadow-[0_12px_34px_rgba(0,0,0,0.2)]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   runSearch();
@@ -399,7 +423,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <button
                   type="submit"
-                  className="mr-3 inline-flex h-9 w-9 items-center justify-center rounded-full text-white/58 transition hover:text-white"
+                  className="mr-2.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/58 transition hover:text-white"
                   aria-label="Search"
                 >
                   <Search className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
@@ -411,10 +435,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     setPinnedMenuOpen("Browse");
                     setHoverMenuOpen("Browse");
                   }}
-                  className="min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                  className="min-w-0 flex-1 bg-transparent text-[0.95rem] text-white outline-none placeholder:text-white/40"
                   placeholder="What do you want to play?"
                 />
-                <div className="mx-4 h-7 w-px bg-white/10" />
+                <div className="mx-3 h-7 w-px bg-white/10" />
                 <button
                   type="button"
                   onClick={() => {
@@ -422,101 +446,120 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     setHoverMenuOpen("Browse");
                     router.push("/activity");
                   }}
-                  className="inline-flex h-9 w-9 items-center justify-center rounded-full text-white/58 transition hover:bg-white/8 hover:text-white"
+                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-white/58 transition hover:bg-white/8 hover:text-white"
                   aria-label="Open browse"
                   title="Browse"
                 >
                   <Compass className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
                 </button>
               </form>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setPinnedMenuOpen("Browse");
-                  setHoverMenuOpen("Browse");
-                  router.push("/activity");
-                }}
-                className={`inline-flex h-12 items-center gap-2 rounded-full border px-4 text-sm font-medium transition ${
-                  isBrowseActive || openMenuKey === "Browse"
-                    ? "border-[#1ed760]/35 bg-[#1ed760]/12 text-white"
-                    : "border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08]"
-                }`}
-              >
-                <Compass className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
-                Browse
-              </button>
             </div>
           </div>
 
-          <button
-            type="button"
-            onClick={() => setNotificationsOpen((s) => !s)}
-            className="theme-soft relative inline-flex h-10 w-10 items-center justify-center rounded-full px-0 text-xs theme-text-soft"
-            aria-label="Notifications"
-          >
-            <span className="sr-only">Notifications</span>
-            <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-              <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
-              <path d="M10 21a2 2 0 0 0 4 0" />
-            </svg>
-          </button>
-
-          <Link href="/orders" className="theme-soft hidden rounded-full px-3 py-2 text-xs theme-text-soft md:inline-flex">
-            Cart
-          </Link>
-
-          <button
-            type="button"
-            onClick={toggleTheme}
-            className="theme-toggle hidden h-10 w-10 items-center justify-center rounded-full transition md:inline-flex"
-            aria-label="Toggle color mode"
-            title="Toggle color mode"
-          >
-            <SunMoon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-          </button>
-
-          {user && user.active_role !== "producer" ? (
+          <div className="ml-auto flex items-center gap-2 md:ml-0 md:justify-self-end">
             <button
               type="button"
-              onClick={async () => {
-                setStartSellingBusy(true);
-                setStartSellingError(null);
-                try {
-                  await startSelling();
-                  router.push("/producer/studio");
-                } catch (err) {
-                  setStartSellingError(err instanceof Error ? err.message : "Unable to start selling");
-                } finally {
-                  setStartSellingBusy(false);
-                }
-              }}
-              disabled={startSellingBusy}
-              className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              onClick={() => setNotificationsOpen((s) => !s)}
+              className="theme-soft relative inline-flex h-10 w-10 items-center justify-center rounded-full px-0 text-xs theme-text-soft"
+              aria-label="Notifications"
             >
-              {startSellingBusy ? "Starting..." : "Start Selling"}
+              <span className="sr-only">Notifications</span>
+              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+                <path d="M10 21a2 2 0 0 0 4 0" />
+              </svg>
             </button>
-          ) : (
+
+            <Link
+              href="/orders"
+              className="theme-soft relative hidden h-10 w-10 items-center justify-center rounded-full text-xs theme-text-soft md:inline-flex"
+              aria-label="Cart"
+              title="Cart"
+            >
+              <ShoppingCart className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+            </Link>
+
             <button
               type="button"
-              onClick={() => setUploadPickerOpen(true)}
-              className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-4 py-2 text-xs font-semibold text-white"
+              onClick={toggleTheme}
+              className="theme-toggle hidden h-10 w-10 items-center justify-center rounded-full transition md:inline-flex"
+              aria-label="Toggle color mode"
+              title="Toggle color mode"
             >
-              Upload
+              <SunMoon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
             </button>
-          )}
 
-          <button
-            type="button"
-            onClick={() => setUserMenuOpen((s) => !s)}
-            className="theme-avatar flex h-10 w-10 items-center justify-center rounded-full text-xs font-semibold"
-          >
-            {user?.username?.slice(0, 1).toUpperCase() ?? "U"}
-          </button>
+            {!user?.is_producer ? (
+              <button
+                type="button"
+                onClick={async () => {
+                  setStartSellingBusy(true);
+                  setStartSellingError(null);
+                  try {
+                    await startSelling();
+                    router.push("/producer/studio");
+                  } catch (err) {
+                    setStartSellingError(err instanceof Error ? err.message : "Unable to start selling");
+                  } finally {
+                    setStartSellingBusy(false);
+                  }
+                }}
+                disabled={startSellingBusy}
+                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                {startSellingBusy ? "Starting..." : "Start Selling"}
+              </button>
+            ) : user.active_role === "producer" ? (
+              <button
+                type="button"
+                onClick={() => setUploadPickerOpen(true)}
+                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-4 py-2 text-xs font-semibold text-white"
+              >
+                Upload
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={async () => {
+                  setStartSellingBusy(true);
+                  setStartSellingError(null);
+                  try {
+                    await switchRole("producer");
+                    router.push("/producer/studio");
+                  } catch (err) {
+                    setStartSellingError(err instanceof Error ? err.message : "Unable to switch to producer mode");
+                  } finally {
+                    setStartSellingBusy(false);
+                  }
+                }}
+                disabled={startSellingBusy}
+                className="rounded-full bg-gradient-to-r from-[#2d3348] via-[#3b4663] to-[#56637f] px-4 py-2 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                {startSellingBusy ? "Switching..." : "Producer Mode"}
+              </button>
+            )}
+
+            <button
+              type="button"
+              onClick={() => setUserMenuOpen((s) => !s)}
+              className="theme-avatar flex h-10 w-10 items-center justify-center overflow-hidden rounded-full text-xs font-semibold"
+              aria-label="Open user menu"
+            >
+              {avatarUrl ? (
+                <img
+                  src={avatarUrl}
+                  alt={user?.producer_profile?.producer_name || user?.username || "User avatar"}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                avatarFallback
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="mx-auto max-w-[1380px] px-4 pb-3 lg:px-6">
-          <nav ref={navRef} className="relative flex items-center gap-6 text-sm theme-text-muted">
+          <nav ref={navRef} className="relative flex items-center justify-center gap-6 text-sm theme-text-muted">
             <div className="flex w-full items-center gap-2 md:hidden">
               <button
                 type="button"
@@ -562,52 +605,54 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             </div>
 
-            {navLinks.map((link) => {
-              const hasMenu = Boolean(link.menu && link.menu.length);
-              const menuKey = link.menuKey ?? link.label;
-              // Route-based active state is reserved for destination tabs like Browse.
-              const isActive = !hasMenu && normalizedPath === link.href;
-              const isOpen = openMenuKey === menuKey;
-              return (
-                <div
-                  key={link.label}
-                  className="relative hidden md:block"
-                  onMouseEnter={() => {
-                    if (!hasMenu) {
-                      return;
-                    }
-                    if (menuCloseTimeout.current) {
-                      window.clearTimeout(menuCloseTimeout.current);
-                    }
-                    setHoverMenuOpen(menuKey);
-                  }}
-                  onMouseLeave={() => {
-                    if (!hasMenu) {
-                      return;
-                    }
-                    closeMenuSoon();
-                  }}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
+            <div className="hidden w-full max-w-[620px] items-center justify-between md:flex">
+              {navLinks.map((link) => {
+                const hasMenu = Boolean(link.menu && link.menu.length);
+                const menuKey = link.menuKey ?? link.label;
+                // Route-based active state is reserved for destination tabs like Browse.
+                const isActive = !hasMenu && normalizedPath === link.href;
+                const isOpen = openMenuKey === menuKey;
+                return (
+                  <div
+                    key={link.label}
+                    className="relative"
+                    onMouseEnter={() => {
                       if (!hasMenu) {
-                        router.push(link.href);
                         return;
                       }
-                      setPinnedMenuOpen((prev) => (prev === menuKey ? null : menuKey));
+                      if (menuCloseTimeout.current) {
+                        window.clearTimeout(menuCloseTimeout.current);
+                      }
                       setHoverMenuOpen(menuKey);
                     }}
-                    className={
-                      "rounded-full px-3 py-2 transition " +
-                      (isActive || isOpen ? "theme-soft-strong theme-text-main" : "theme-text-muted")
-                    }
+                    onMouseLeave={() => {
+                      if (!hasMenu) {
+                        return;
+                      }
+                      closeMenuSoon();
+                    }}
                   >
-                    {link.label}
-                  </button>
-                </div>
-              );
-            })}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (!hasMenu) {
+                          router.push(link.href);
+                          return;
+                        }
+                        setPinnedMenuOpen((prev) => (prev === menuKey ? null : menuKey));
+                        setHoverMenuOpen(menuKey);
+                      }}
+                      className={
+                        "rounded-full px-2 py-2 text-center font-semibold transition " +
+                        (isActive || isOpen ? "theme-soft-strong theme-text-main" : "theme-text-muted")
+                      }
+                    >
+                      {link.label}
+                    </button>
+                  </div>
+                );
+              })}
+            </div>
 
             {openMenuKey && activeMenuItems.length ? (
               <div
@@ -646,10 +691,39 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {startSellingError ? <p className="ml-auto text-xs text-[#ff8f7d]">{startSellingError}</p> : null}
 
             {userMenuOpen ? (
-              <div className="theme-menu absolute right-0 top-[46px] z-50 w-[240px] rounded-2xl p-3 backdrop-blur-xl">
+              <div className="theme-menu absolute right-0 top-[46px] z-50 w-[260px] rounded-2xl p-3 backdrop-blur-xl">
                 <p className="px-2 pb-2 text-xs theme-text-faint">Signed in as {user?.username ?? ""}</p>
+                {user?.is_producer ? (
+                  <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-2">
+                    <p className="px-1 pb-2 text-[11px] uppercase tracking-[0.18em] theme-text-faint">Mode</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(["artist", "producer"] as const).map((role) => {
+                        const active = user.active_role === role;
+                        return (
+                          <button
+                            key={role}
+                            type="button"
+                            disabled={active}
+                            onClick={async () => {
+                              try {
+                                await switchRole(role);
+                                setUserMenuOpen(false);
+                                router.push(role === "producer" ? "/producer/studio" : "/dashboard/listening");
+                              } catch (err) {
+                                setStartSellingError(err instanceof Error ? err.message : "Unable to switch mode");
+                              }
+                            }}
+                            className={`rounded-xl px-3 py-2 text-sm font-medium capitalize transition ${active ? "bg-[#f6b067] text-[#20150e]" : "theme-soft theme-text-soft"}`}
+                          >
+                            {role}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
                 <div className="grid gap-2">
-                  {profileHref ? (
+                  {profileHref && user?.active_role === "producer" ? (
                     <Link
                       href={profileHref}
                       className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
@@ -659,19 +733,45 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </Link>
                   ) : null}
                   <Link
-                    href="/dashboard/listening"
+                    href={user?.active_role === "producer" ? "/dashboard/selling" : "/dashboard/listening"}
                     className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
                     onClick={() => setUserMenuOpen(false)}
                   >
-                    Dashboard
+                    {user?.active_role === "producer" ? "Seller Dashboard" : "Listening Dashboard"}
                   </Link>
-                  <Link
-                    href="/producer/studio"
-                    className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                    onClick={() => setUserMenuOpen(false)}
-                  >
-                    Studio
-                  </Link>
+                  {user?.active_role === "producer" ? (
+                    <>
+                      <Link
+                        href="/producer/studio"
+                        className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        Studio
+                      </Link>
+                      <Link
+                        href="/producer/media-uploads"
+                        className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        Media Uploads
+                      </Link>
+                      <Link
+                        href="/producer/settings"
+                        className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
+                        onClick={() => setUserMenuOpen(false)}
+                      >
+                        Seller Settings
+                      </Link>
+                    </>
+                  ) : (
+                    <Link
+                      href="/library"
+                      className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
+                      onClick={() => setUserMenuOpen(false)}
+                    >
+                      Library
+                    </Link>
+                  )}
                   <button
                     type="button"
                     onClick={toggleTheme}

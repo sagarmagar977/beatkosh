@@ -42,10 +42,10 @@ export function BeatListRow({
 }: BeatListRowProps) {
   const router = useRouter();
   const { token, user } = useAuth();
-  const library = useBeatLibrary(user?.id);
+  const library = useBeatLibrary(user?.id, token);
   const [menuOpen, setMenuOpen] = useState(false);
   const [playlistOpen, setPlaylistOpen] = useState(false);
-  const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [selectedIds, setSelectedIds] = useState<number[]>([]);
   const [includeListenLater, setIncludeListenLater] = useState(false);
   const [newPlaylistName, setNewPlaylistName] = useState("");
   const menuRef = useRef<HTMLDivElement | null>(null);
@@ -95,8 +95,7 @@ export function BeatListRow({
     if (library.isInListenLater(beat.id)) {
       notify("Already in Listen later.");
     } else {
-      library.addToListenLater(beat);
-      notify("Saved to Listen later.");
+      void library.addToListenLater(beat).then(() => notify("Saved to Listen later."));
     }
     setMenuOpen(false);
   };
@@ -120,14 +119,15 @@ export function BeatListRow({
     if (!requireSession()) {
       return;
     }
-    library.saveBeatCollections(beat, {
+    void library.saveBeatCollections(beat, {
       includeListenLater,
       playlistIds: selectedIds,
       newPlaylistName,
+    }).then(() => {
+      setPlaylistOpen(false);
+      setMenuOpen(false);
+      notify("Playlist saved.");
     });
-    setPlaylistOpen(false);
-    setMenuOpen(false);
-    notify("Playlist saved.");
   };
 
   return (

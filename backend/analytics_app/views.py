@@ -22,6 +22,7 @@ from analytics_app.serializers import (
     RecommendationFeedSerializer,
 )
 from beats.models import Beat
+from common.permissions import ensure_producer_mode
 from beats.serializers import BeatSerializer
 from catalog.models import Bundle
 from orders.models import OrderItem
@@ -262,8 +263,7 @@ class ActivityDropCreateView(generics.GenericAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
-        if not request.user.is_producer:
-            return Response({"detail": "Producer role required."}, status=status.HTTP_403_FORBIDDEN)
+        ensure_producer_mode(request.user)
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         beat = None

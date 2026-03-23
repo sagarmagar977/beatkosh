@@ -16,9 +16,24 @@ export type User = {
   id: number;
   username: string;
   email: string;
+  auth_provider: "local" | "google";
   is_artist: boolean;
   is_producer: boolean;
   active_role: "artist" | "producer";
+  artist_profile?: {
+    stage_name?: string;
+    bio?: string;
+    genres?: string;
+    verified?: boolean;
+  } | null;
+  producer_profile?: {
+    producer_name?: string;
+    avatar_obj?: string | null;
+    headline?: string;
+    bio?: string;
+    genres?: string;
+    verified?: boolean;
+  } | null;
 };
 
 type AuthContextType = {
@@ -27,6 +42,7 @@ type AuthContextType = {
   loading: boolean;
   meError: { status: number; bodyText: string } | null;
   login: (username: string, password: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<void>;
   register: (payload: { username: string; email: string; password: string }) => Promise<void>;
   switchRole: (role: "artist" | "producer") => Promise<void>;
   startSelling: () => Promise<void>;
@@ -325,6 +341,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return () => window.clearTimeout(timeoutId);
   }, [logout, token, tryRefreshAccess]);
 
+  const completeLogin = useCallback(
+    async (tokens: { access: string; refresh: string }, debugLabel: string) => {
+      localStorage.setItem(TOKEN_KEY, tokens.access);
+      localStorage.setItem(REFRESH_KEY, tokens.refresh);
+      setToken(tokens.access);
+      setLoading(true);
+
+      await ensureMe(tokens.access);
+      setLoading(false);
+      debugAuth(debugLabel);
+    },
+    [ensureMe],
+  );
+
   const login = useCallback(
     async (username: string, password: string) => {
       debugAuth("login-start", { username });
@@ -333,16 +363,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         body: { username, password },
       });
 
-      localStorage.setItem(TOKEN_KEY, tokens.access);
-      localStorage.setItem(REFRESH_KEY, tokens.refresh);
-      setToken(tokens.access);
-      setLoading(true);
-
-      await ensureMe(tokens.access);
-      setLoading(false);
-      debugAuth("login-success", { username });
+      await completeLogin(tokens, `login-success:${username}`);
     },
-    [ensureMe],
+    [completeLogin],
+  );
+
+  const loginWithGoogle = useCallback(
+    async (credential: string) => {
+      debugAuth("google-login-start");
+      const tokens = await apiJson<{ access: string; refresh: string }>("/account/google/", {
+        method: "POST",
+        body: { credential },
+      });
+
+      await completeLogin(tokens, "google-login-success");
+    },
+    [completeLogin],
   );
 
   const register = useCallback(
@@ -384,8 +420,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [token]);
 
   const value = useMemo(
-    () => ({ user, token, loading, meError, login, register, switchRole, startSelling, logout, refreshMe }),
-    [user, token, loading, meError, login, register, switchRole, startSelling, logout, refreshMe],
+    () => ({ user, token, loading, meError, login, loginWithGoogle, register, switchRole, startSelling, logout, refreshMe }),
+    [user, token, loading, meError, login, loginWithGoogle, register, switchRole, startSelling, logout, refreshMe],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

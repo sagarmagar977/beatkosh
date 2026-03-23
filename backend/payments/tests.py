@@ -179,6 +179,25 @@ class PaymentsApiTests(APITestCase):
         self.assertEqual(payout_response.status_code, status.HTTP_200_OK)
         self.assertEqual(payout_response.data["method"], "bank")
 
+
+    def test_producer_wallet_requires_active_producer_mode(self):
+        self.producer.is_artist = True
+        self.producer.active_role = "artist"
+        self.producer.save(update_fields=["is_artist", "active_role"])
+
+        producer_login = self.client.post(
+            reverse("login"),
+            {"username": "payproducer", "password": "strong-pass-123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {producer_login.data['access']}")
+
+        wallet_response = self.client.get(reverse("wallet-me"))
+        self.assertEqual(wallet_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        payout_response = self.client.get(reverse("producer-payout-profile-me"))
+        self.assertEqual(payout_response.status_code, status.HTTP_403_FORBIDDEN)
+
     def test_payment_confirm_and_idempotent_behavior(self):
         payment_response = self.client.post(
             reverse("payment-initiate"),

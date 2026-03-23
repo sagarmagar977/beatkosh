@@ -1,7 +1,7 @@
 from django.contrib.auth import get_user_model
 from rest_framework import serializers
 
-from accounts.models import ArtistProfile, BeatLike, ProducerFollow, ProducerProfile, ProducerSellerAgreement, UserNotification
+from accounts.models import ArtistProfile, BeatLike, LibraryPlaylist, ProducerFollow, ProducerProfile, ProducerSellerAgreement, UserNotification
 from beats.models import Beat
 from beats.serializers import BeatSerializer
 
@@ -51,6 +51,7 @@ class UserMeSerializer(serializers.ModelSerializer):
             "id",
             "username",
             "email",
+            "auth_provider",
             "is_artist",
             "is_producer",
             "active_role",
@@ -77,6 +78,12 @@ class RegisterSerializer(serializers.ModelSerializer):
         )
         ArtistProfile.objects.get_or_create(user=user)
         return user
+
+
+
+
+class GoogleAuthSerializer(serializers.Serializer):
+    credential = serializers.CharField()
 
 
 class SwitchRoleSerializer(serializers.Serializer):
@@ -215,3 +222,40 @@ class ProducerDiscoveryCardSerializer(serializers.ModelSerializer):
         beat_ids = obj.featured_beat_ids[:3] if isinstance(obj.featured_beat_ids, list) else []
         beats = Beat.objects.filter(id__in=beat_ids, producer=obj.user).select_related("producer").prefetch_related("available_licenses")
         return BeatSerializer(beats, many=True).data
+
+
+class LibraryPlaylistSerializer(serializers.ModelSerializer):
+    beats = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LibraryPlaylist
+        fields = ("id", "name", "beats", "created_at", "updated_at")
+
+    def get_beats(self, obj):
+        items = list(obj.items.select_related("beat", "beat__producer", "beat__producer__producer_profile").prefetch_related("beat__available_licenses", "beat__likes", "beat__tags"))
+        beats = [item.beat for item in items if getattr(item, "beat", None)]
+        return BeatSerializer(beats, many=True).data
+
+
+class LibraryStateSerializer(serializers.Serializer):
+    listen_later = BeatSerializer(many=True)
+    playlists = LibraryPlaylistSerializer(many=True)
+
+
+class LibraryPlaylistCreateSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=120)
+
+    def validate_name(self, value):
+        cleaned = " ".join(value.split()).strip()
+        if not cleaned:
+            raise serializers.ValidationError("Playlist name is required.")
+        return cleaned
+
+
+class LibraryBeatCollectionsSerializer(serializers.Serializer):
+    include_listen_later = serializers.BooleanField()
+    playlist_ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False)
+    new_playlist_name = serializers.CharField(required=False, allow_blank=True, max_length=120)
+
+    def validate_new_playlist_name(self, value):
+        return " ".join(value.split()).strip()

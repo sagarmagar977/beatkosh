@@ -3,6 +3,7 @@ attrs==25.4.0
 djangorestframework==3.16.1
 dj-database-url==2.2.0
 Django==6.0.3
+cryptography==46.0.5
 djangorestframework_simplejwt==5.5.1
 drf-spectacular==0.29.0
 gunicorn==22.0.0

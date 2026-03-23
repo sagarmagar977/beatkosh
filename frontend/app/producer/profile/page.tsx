@@ -95,7 +95,7 @@ export default function ProducerPrivateProfilePage() {
   const router = useRouter();
   const { token, user } = useAuth();
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
-  const library = useBeatLibrary(user?.id);
+  const library = useBeatLibrary(user?.id, token);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [profile, setProfile] = useState<ProducerProfile | null>(null);
   const [beats, setBeats] = useState<Beat[]>([]);
@@ -512,8 +512,7 @@ export default function ProducerPrivateProfilePage() {
               actionLabel="Remove"
               actionTone="neutral"
               onAction={() => {
-                library.removeFromListenLater(beat.id);
-                notify("Removed from Listen later.");
+                void library.removeFromListenLater(beat.id).then(() => notify("Removed from Listen later."));
               }}
               message={notify}
             />
@@ -550,8 +549,7 @@ export default function ProducerPrivateProfilePage() {
                   actionLabel="Remove"
                   actionTone="neutral"
                   onAction={() => {
-                    library.removeBeatFromPlaylist(playlist.id, beat.id);
-                    notify(`Removed from ${playlist.name}.`);
+                    void library.removeBeatFromPlaylist(playlist.id, beat.id).then(() => notify(`Removed from ${playlist.name}.`));
                   }}
                   message={notify}
                 />

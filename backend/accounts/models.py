@@ -4,6 +4,13 @@ from django.db import models
 
 
 class User(AbstractUser):
+    AUTH_PROVIDER_LOCAL = "local"
+    AUTH_PROVIDER_GOOGLE = "google"
+    AUTH_PROVIDER_CHOICES = (
+        (AUTH_PROVIDER_LOCAL, "Local"),
+        (AUTH_PROVIDER_GOOGLE, "Google"),
+    )
+
     ROLE_ARTIST = "artist"
     ROLE_PRODUCER = "producer"
     ROLE_CHOICES = (
@@ -12,6 +19,8 @@ class User(AbstractUser):
     )
 
     email = models.EmailField(unique=True)
+    auth_provider = models.CharField(max_length=20, choices=AUTH_PROVIDER_CHOICES, default=AUTH_PROVIDER_LOCAL)
+    google_sub = models.CharField(max_length=255, unique=True, null=True, blank=True)
     is_artist = models.BooleanField(default=True)
     is_producer = models.BooleanField(default=False)
     active_role = models.CharField(max_length=20, choices=ROLE_CHOICES, default=ROLE_ARTIST)
@@ -111,3 +120,40 @@ class ProducerSellerAgreement(models.Model):
 
     def __str__(self) -> str:
         return f"SellerAgreement<{self.producer.username}>"
+
+
+class LibraryListenLater(models.Model):
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="listen_later_entries")
+    beat = models.ForeignKey("beats.Beat", on_delete=models.CASCADE, related_name="listen_later_entries")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("user", "beat")
+        ordering = ("-created_at",)
+
+
+class LibraryPlaylist(models.Model):
+    owner = models.ForeignKey(User, on_delete=models.CASCADE, related_name="beat_playlists")
+    name = models.CharField(max_length=120)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        unique_together = ("owner", "name")
+        ordering = ("-updated_at", "-created_at")
+
+    def __str__(self) -> str:
+        return f"Playlist<{self.owner.username}:{self.name}>"
+
+
+class LibraryPlaylistItem(models.Model):
+    playlist = models.ForeignKey(LibraryPlaylist, on_delete=models.CASCADE, related_name="items")
+    beat = models.ForeignKey("beats.Beat", on_delete=models.CASCADE, related_name="playlist_items")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ("playlist", "beat")
+        ordering = ("-created_at",)
+
+    def __str__(self) -> str:
+        return f"PlaylistItem<{self.playlist_id}:{self.beat_id}>"

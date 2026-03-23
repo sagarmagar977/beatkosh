@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useMemo, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
+
+import { apiRequest } from "@/lib/api";
 
 export type SavedBeatEntry = {
   id: number;
@@ -17,7 +19,7 @@ export type SavedBeatEntry = {
 };
 
 export type SavedPlaylist = {
-  id: string;
+  id: number;
   name: string;
   beats: SavedBeatEntry[];
   created_at: string;
@@ -27,258 +29,190 @@ export type SavedPlaylist = {
 type BeatLibraryState = {
   listenLater: SavedBeatEntry[];
   playlists: SavedPlaylist[];
+  loading: boolean;
 };
 
 type SaveBeatCollectionsPayload = {
   includeListenLater: boolean;
-  playlistIds: string[];
+  playlistIds: number[];
   newPlaylistName?: string;
 };
-
-const STORAGE_PREFIX = "beatkosh-beat-library-v1";
-const LIBRARY_EVENT = "beatkosh-library-updated";
 
 const defaultState: BeatLibraryState = {
   listenLater: [],
   playlists: [],
+  loading: false,
 };
 
-const snapshotCache = new Map<string, { raw: string | null; state: BeatLibraryState }>();
+type LibraryStore = {
+  state: BeatLibraryState;
+  listeners: Set<() => void>;
+  inflight?: Promise<void>;
+};
 
-function getStorageKey(userId: number) {
-  return `${STORAGE_PREFIX}:${userId}`;
+const stores = new Map<number, LibraryStore>();
+
+function getStore(userId?: number | null) {
+  if (!userId) {
+    return null;
+  }
+  let store = stores.get(userId);
+  if (!store) {
+    store = { state: defaultState, listeners: new Set() };
+    stores.set(userId, store);
+  }
+  return store;
 }
 
-function sanitizeState(raw: unknown): BeatLibraryState {
-  if (!raw || typeof raw !== "object") {
-    return defaultState;
-  }
-  const candidate = raw as Partial<BeatLibraryState>;
-  return {
-    listenLater: Array.isArray(candidate.listenLater) ? candidate.listenLater : [],
-    playlists: Array.isArray(candidate.playlists) ? candidate.playlists : [],
-  };
-}
-
-function getCachedState(cacheKey: string, raw: string | null) {
-  const cached = snapshotCache.get(cacheKey);
-  if (cached && cached.raw === raw) {
-    return cached.state;
-  }
-
-  const state = raw ? sanitizeState(JSON.parse(raw)) : defaultState;
-  snapshotCache.set(cacheKey, { raw, state });
-  return state;
-}
-
-function readLibraryState(userId?: number | null): BeatLibraryState {
-  if (!userId || typeof window === "undefined") {
-    return defaultState;
-  }
-  try {
-    const raw = window.localStorage.getItem(getStorageKey(userId));
-    return getCachedState(getStorageKey(userId), raw);
-  } catch {
-    return defaultState;
-  }
-}
-
-function writeLibraryState(userId: number, state: BeatLibraryState) {
-  if (typeof window === "undefined") {
+function emit(userId?: number | null) {
+  const store = getStore(userId);
+  if (!store) {
     return;
   }
-  const key = getStorageKey(userId);
-  const raw = JSON.stringify(state);
-  snapshotCache.set(key, { raw, state });
-  window.localStorage.setItem(key, raw);
-  window.dispatchEvent(new CustomEvent(LIBRARY_EVENT, { detail: { userId } }));
+  store.listeners.forEach((listener) => listener());
+}
+
+function setState(userId: number, next: BeatLibraryState) {
+  const store = getStore(userId);
+  if (!store) {
+    return;
+  }
+  store.state = next;
+  emit(userId);
+}
+
+async function fetchLibrary(userId: number, token: string) {
+  const payload = await apiRequest<{ listen_later: SavedBeatEntry[]; playlists: SavedPlaylist[] }>("/account/library/me/", { token });
+  setState(userId, {
+    listenLater: Array.isArray(payload.listen_later) ? payload.listen_later : [],
+    playlists: Array.isArray(payload.playlists) ? payload.playlists : [],
+    loading: false,
+  });
+}
+
+async function refreshLibrary(userId?: number | null, token?: string | null) {
+  if (!userId || !token) {
+    return;
+  }
+  const store = getStore(userId);
+  if (!store) {
+    return;
+  }
+  if (store.inflight) {
+    return store.inflight;
+  }
+  store.state = { ...store.state, loading: true };
+  emit(userId);
+  store.inflight = fetchLibrary(userId, token).finally(() => {
+    const current = getStore(userId);
+    if (current) {
+      current.inflight = undefined;
+    }
+  });
+  return store.inflight;
 }
 
 function subscribeToLibrary(userId: number | null | undefined, onChange: () => void) {
-  if (!userId || typeof window === "undefined") {
+  const store = getStore(userId);
+  if (!store) {
     return () => undefined;
   }
-
-  const handler = (event?: Event) => {
-    if (event instanceof CustomEvent && event.detail?.userId && event.detail.userId !== userId) {
-      return;
-    }
-    onChange();
-  };
-
-  window.addEventListener("storage", handler);
-  window.addEventListener(LIBRARY_EVENT, handler as EventListener);
+  store.listeners.add(onChange);
   return () => {
-    window.removeEventListener("storage", handler);
-    window.removeEventListener(LIBRARY_EVENT, handler as EventListener);
+    store.listeners.delete(onChange);
   };
 }
 
-function upsertBeat(list: SavedBeatEntry[], beat: SavedBeatEntry) {
-  const next = list.filter((item) => item.id !== beat.id);
-  next.unshift(beat);
-  return next;
-}
-
-function removeBeat(list: SavedBeatEntry[], beatId: number) {
-  return list.filter((item) => item.id !== beatId);
-}
-
-function normalizePlaylistName(value?: string) {
-  return (value ?? "").trim().replace(/\s+/g, " ");
-}
-
-export function useBeatLibrary(userId?: number | null) {
+export function useBeatLibrary(userId?: number | null, token?: string | null) {
   const subscribe = useCallback((onChange: () => void) => subscribeToLibrary(userId, onChange), [userId]);
-  const getSnapshot = useCallback(() => readLibraryState(userId), [userId]);
-
+  const getSnapshot = useCallback(() => getStore(userId)?.state ?? defaultState, [userId]);
   const state = useSyncExternalStore(subscribe, getSnapshot, () => defaultState);
 
-  const updateState = useCallback(
-    (updater: (current: BeatLibraryState) => BeatLibraryState) => {
-      if (!userId) {
-        return;
-      }
-      const next = updater(readLibraryState(userId));
-      writeLibraryState(userId, next);
-    },
-    [userId],
-  );
+  useEffect(() => {
+    void refreshLibrary(userId, token);
+  }, [userId, token]);
 
   const addToListenLater = useCallback(
-    (beat: SavedBeatEntry) => {
-      updateState((current) => ({
-        ...current,
-        listenLater: upsertBeat(current.listenLater, beat),
-      }));
+    async (beat: SavedBeatEntry) => {
+      if (!token) {
+        return;
+      }
+      await apiRequest("/account/library/listen-later/" + beat.id + "/", { method: "POST", token, body: {} });
+      await refreshLibrary(userId, token);
     },
-    [updateState],
+    [token, userId],
   );
 
   const removeFromListenLater = useCallback(
-    (beatId: number) => {
-      updateState((current) => ({
-        ...current,
-        listenLater: removeBeat(current.listenLater, beatId),
-      }));
+    async (beatId: number) => {
+      if (!token) {
+        return;
+      }
+      await apiRequest("/account/library/listen-later/" + beatId + "/", { method: "DELETE", token });
+      await refreshLibrary(userId, token);
     },
-    [updateState],
+    [token, userId],
   );
 
   const saveBeatCollections = useCallback(
-    (beat: SavedBeatEntry, payload: SaveBeatCollectionsPayload) => {
-      updateState((current) => {
-        const includeListenLater = Boolean(payload.includeListenLater);
-        const playlistIds = new Set(payload.playlistIds);
-        const newPlaylistName = normalizePlaylistName(payload.newPlaylistName);
-        const now = new Date().toISOString();
-
-        const nextPlaylists = current.playlists.map((playlist) => {
-          const shouldInclude = playlistIds.has(playlist.id);
-          const beats = shouldInclude ? upsertBeat(playlist.beats, beat) : removeBeat(playlist.beats, beat.id);
-          return { ...playlist, beats, updated_at: now };
-        });
-
-        if (newPlaylistName) {
-          const existing = nextPlaylists.find((playlist) => playlist.name.toLowerCase() === newPlaylistName.toLowerCase());
-          if (existing) {
-            existing.beats = upsertBeat(existing.beats, beat);
-            existing.updated_at = now;
-          } else {
-            nextPlaylists.unshift({
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              name: newPlaylistName,
-              beats: [beat],
-              created_at: now,
-              updated_at: now,
-            });
-          }
-        }
-
-        return {
-          listenLater: includeListenLater ? upsertBeat(current.listenLater, beat) : removeBeat(current.listenLater, beat.id),
-          playlists: nextPlaylists,
-        };
+    async (beat: SavedBeatEntry, payload: SaveBeatCollectionsPayload) => {
+      if (!token) {
+        return;
+      }
+      await apiRequest("/account/library/beats/" + beat.id + "/collections/", {
+        method: "POST",
+        token,
+        body: {
+          include_listen_later: payload.includeListenLater,
+          playlist_ids: payload.playlistIds,
+          new_playlist_name: payload.newPlaylistName ?? "",
+        },
       });
+      await refreshLibrary(userId, token);
     },
-    [updateState],
+    [token, userId],
   );
 
   const removeBeatFromPlaylist = useCallback(
-    (playlistId: string, beatId: number) => {
-      updateState((current) => ({
-        ...current,
-        playlists: current.playlists.map((playlist) =>
-          playlist.id === playlistId
-            ? { ...playlist, beats: removeBeat(playlist.beats, beatId), updated_at: new Date().toISOString() }
-            : playlist,
-        ),
-      }));
+    async (playlistId: number, beatId: number) => {
+      if (!token) {
+        return;
+      }
+      await apiRequest("/account/library/playlists/" + playlistId + "/beats/" + beatId + "/", { method: "DELETE", token });
+      await refreshLibrary(userId, token);
     },
-    [updateState],
+    [token, userId],
   );
 
   const createPlaylist = useCallback(
-    (name: string) => {
-      const playlistName = normalizePlaylistName(name);
-      if (!playlistName) {
+    async (name: string) => {
+      if (!token) {
         return;
       }
-      updateState((current) => {
-        if (current.playlists.some((playlist) => playlist.name.toLowerCase() === playlistName.toLowerCase())) {
-          return current;
-        }
-        const now = new Date().toISOString();
-        return {
-          ...current,
-          playlists: [
-            {
-              id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-              name: playlistName,
-              beats: [],
-              created_at: now,
-              updated_at: now,
-            },
-            ...current.playlists,
-          ],
-        };
-      });
+      const cleaned = name.trim().replace(/\s+/g, " ");
+      if (!cleaned) {
+        return;
+      }
+      await apiRequest("/account/library/playlists/", { method: "POST", token, body: { name: cleaned } });
+      await refreshLibrary(userId, token);
     },
-    [updateState],
+    [token, userId],
   );
 
-  const isInListenLater = useCallback(
-    (beatId: number) => state.listenLater.some((item) => item.id === beatId),
-    [state.listenLater],
-  );
+  const isInListenLater = useCallback((beatId: number) => state.listenLater.some((item) => item.id === beatId), [state.listenLater]);
+  const getPlaylistMembership = useCallback((beatId: number) => state.playlists.filter((playlist) => playlist.beats.some((item) => item.id === beatId)).map((playlist) => playlist.id), [state.playlists]);
 
-  const getPlaylistMembership = useCallback(
-    (beatId: number) => state.playlists.filter((playlist) => playlist.beats.some((item) => item.id === beatId)).map((playlist) => playlist.id),
-    [state.playlists],
-  );
-
-  return useMemo(
-    () => ({
-      listenLater: state.listenLater,
-      playlists: state.playlists,
-      addToListenLater,
-      removeFromListenLater,
-      saveBeatCollections,
-      removeBeatFromPlaylist,
-      createPlaylist,
-      isInListenLater,
-      getPlaylistMembership,
-    }),
-    [
-      addToListenLater,
-      createPlaylist,
-      getPlaylistMembership,
-      isInListenLater,
-      removeBeatFromPlaylist,
-      removeFromListenLater,
-      saveBeatCollections,
-      state.listenLater,
-      state.playlists,
-    ],
-  );
+  return useMemo(() => ({
+    listenLater: state.listenLater,
+    playlists: state.playlists,
+    loading: state.loading,
+    addToListenLater,
+    removeFromListenLater,
+    saveBeatCollections,
+    removeBeatFromPlaylist,
+    createPlaylist,
+    isInListenLater,
+    getPlaylistMembership,
+    refresh: () => refreshLibrary(userId, token),
+  }), [addToListenLater, createPlaylist, getPlaylistMembership, isInListenLater, removeBeatFromPlaylist, removeFromListenLater, saveBeatCollections, state.listenLater, state.loading, state.playlists, token, userId]);
 }

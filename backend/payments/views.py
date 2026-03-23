@@ -10,6 +10,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from orders.models import Order
+from common.permissions import ensure_producer_mode
 from payments.models import Payment, ProducerPayoutProfile, ProducerPlan, ProducerSubscription, ProducerWallet, Transaction
 from payments.serializers import (
     EsewaCompleteSerializer,
@@ -208,6 +209,7 @@ class ProducerWalletMeView(generics.RetrieveAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
+        ensure_producer_mode(self.request.user)
         wallet, _ = ProducerWallet.objects.get_or_create(producer=self.request.user)
         return wallet
 
@@ -256,8 +258,7 @@ class ProducerSubscriptionMeView(generics.RetrieveUpdateAPIView):
     http_method_names = ["get", "post", "patch"]
 
     def get_object(self):
-        if not self.request.user.is_producer:
-            raise PermissionDenied("Producer role required.")
+        ensure_producer_mode(self.request.user)
         subscription = ProducerSubscription.objects.filter(producer=self.request.user).first()
         if subscription:
             return subscription
@@ -290,7 +291,6 @@ class ProducerPayoutProfileMeView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get_object(self):
-        if not self.request.user.is_producer:
-            raise PermissionDenied("Producer role required.")
+        ensure_producer_mode(self.request.user)
         profile, _ = ProducerPayoutProfile.objects.get_or_create(producer=self.request.user)
         return profile

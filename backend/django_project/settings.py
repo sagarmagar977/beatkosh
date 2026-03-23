@@ -191,6 +191,8 @@ SIMPLE_JWT = {
     "AUTH_HEADER_TYPES": ("Bearer",),
 }
 
+GOOGLE_OAUTH_CLIENT_ID = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "").strip()
+
 SPECTACULAR_SETTINGS = {
     "TITLE": "BeatKosh API",
     "DESCRIPTION": "Backend API for BeatKosh marketplace and collaboration platform.",

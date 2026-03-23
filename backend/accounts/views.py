@@ -1,17 +1,27 @@
+from django.conf import settings
+from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
 from django.db.models import Count, Q
 from rest_framework import generics, permissions, status
-from rest_framework.exceptions import PermissionDenied
+from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from rest_framework_simplejwt.tokens import RefreshToken
 
-from accounts.models import ArtistProfile, BeatLike, ProducerFollow, ProducerProfile, ProducerSellerAgreement, UserNotification
+from accounts.google_auth import build_unique_username, verify_google_id_token
+from accounts.models import ArtistProfile, BeatLike, LibraryListenLater, LibraryPlaylist, LibraryPlaylistItem, ProducerFollow, ProducerProfile, ProducerSellerAgreement, UserNotification
 from beats.models import Beat
+from common.permissions import ensure_producer_mode
 from accounts.serializers import (
     ArtistProfileSerializer,
     BeatLikeSerializer,
     FeaturedProducerCandidateSerializer,
+    GoogleAuthSerializer,
+    LibraryBeatCollectionsSerializer,
+    LibraryPlaylistCreateSerializer,
+    LibraryPlaylistSerializer,
+    LibraryStateSerializer,
     ProducerDiscoveryCardSerializer,
     ProducerFollowSerializer,
     ProducerOnboardingStatusSerializer,
@@ -72,6 +82,21 @@ def _build_featured_producer_candidates(user: User):
     relation_rank = {"mutual": 0, "following": 1, "follows_you": 2}
     payload.sort(key=lambda item: (relation_rank[item["relation"]], item["producer_name"].lower()))
     return payload
+
+
+def _build_library_payload(user: User):
+    listen_later_entries = list(
+        LibraryListenLater.objects.filter(user=user)
+        .select_related("beat", "beat__producer", "beat__producer__producer_profile")
+        .prefetch_related("beat__available_licenses", "beat__likes", "beat__tags")
+    )
+    listen_later_beats = [entry.beat for entry in listen_later_entries if getattr(entry, "beat", None) and entry.beat.is_active]
+
+    playlists = list(LibraryPlaylist.objects.filter(owner=user).prefetch_related("items__beat__available_licenses", "items__beat__likes", "items__beat__tags", "items__beat__producer__producer_profile"))
+    return {
+        "listen_later": listen_later_beats,
+        "playlists": playlists,
+    }
 
 
 def build_producer_trust_summary(user: User):
@@ -166,6 +191,72 @@ class RegisterView(generics.CreateAPIView):
         return Response(output.data, status=status.HTTP_201_CREATED)
 
 
+class GoogleLoginView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        serializer = GoogleAuthSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        payload = verify_google_id_token(serializer.validated_data["credential"])
+        email = str(payload["email"]).strip().lower()
+        google_sub = str(payload["sub"]).strip()
+
+        user = User.objects.filter(google_sub=google_sub).first()
+        if not user:
+            user = User.objects.filter(email__iexact=email).first()
+
+        if user and user.google_sub and user.google_sub != google_sub:
+            raise ValidationError("This email is already linked to a different Google account.")
+
+        created = False
+        if not user:
+            user = User(
+                username=build_unique_username(email, str(payload.get("name", "")).strip()),
+                email=email,
+                first_name=str(payload.get("given_name", "")).strip(),
+                last_name=str(payload.get("family_name", "")).strip(),
+                is_artist=True,
+                is_producer=False,
+                active_role=User.ROLE_ARTIST,
+                auth_provider=User.AUTH_PROVIDER_GOOGLE,
+                google_sub=google_sub,
+            )
+            user.set_unusable_password()
+            user.save()
+            created = True
+        else:
+            update_fields = []
+            if not user.google_sub:
+                user.google_sub = google_sub
+                update_fields.append("google_sub")
+            if not user.first_name and payload.get("given_name"):
+                user.first_name = str(payload.get("given_name", "")).strip()
+                update_fields.append("first_name")
+            if not user.last_name and payload.get("family_name"):
+                user.last_name = str(payload.get("family_name", "")).strip()
+                update_fields.append("last_name")
+            if user.auth_provider == User.AUTH_PROVIDER_LOCAL and not user.has_usable_password():
+                user.auth_provider = User.AUTH_PROVIDER_GOOGLE
+                update_fields.append("auth_provider")
+            if update_fields:
+                user.save(update_fields=update_fields)
+
+        ArtistProfile.objects.get_or_create(user=user)
+
+        refresh = RefreshToken.for_user(user)
+        response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
+        return Response(
+            {
+                "access": str(refresh.access_token),
+                "refresh": str(refresh),
+                "user": UserMeSerializer(user).data,
+                "google_client_id_configured": bool(settings.GOOGLE_OAUTH_CLIENT_ID),
+            },
+            status=response_status,
+        )
+
+
 class MeView(generics.RetrieveUpdateAPIView):
     serializer_class = UserMeSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -238,6 +329,7 @@ class ProducerProfileMeView(generics.RetrieveUpdateAPIView):
     parser_classes = (JSONParser, MultiPartParser, FormParser)
 
     def get_object(self):
+        ensure_producer_mode(self.request.user)
         profile, _ = ProducerProfile.objects.get_or_create(user=self.request.user)
         return profile
 
@@ -271,8 +363,7 @@ class FeaturedProducerCandidatesView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if not request.user.is_producer:
-            raise PermissionDenied("Producer role required.")
+        ensure_producer_mode(request.user)
         payload = _build_featured_producer_candidates(request.user)
         return Response(FeaturedProducerCandidateSerializer(payload, many=True).data)
 
@@ -326,14 +417,14 @@ class ProducerSellerAgreementMeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
+        ensure_producer_mode(request.user)
         agreement = ProducerSellerAgreement.objects.filter(producer=request.user).first()
         if agreement:
             return Response(ProducerSellerAgreementSerializer(agreement).data)
         return Response({"accepted": False, "accepted_version": "v1", "accepted_at": None})
 
     def post(self, request):
-        if not request.user.is_producer:
-            raise PermissionDenied("Producer role required.")
+        ensure_producer_mode(request.user)
         agreement, _ = ProducerSellerAgreement.objects.get_or_create(
             producer=request.user,
             defaults={
@@ -351,8 +442,7 @@ class ProducerOnboardingStatusMeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        if not request.user.is_producer:
-            raise PermissionDenied("Producer role required.")
+        ensure_producer_mode(request.user)
         profile, _ = ProducerProfile.objects.get_or_create(user=request.user)
         trust_summary = build_producer_trust_summary(request.user)
         payout_profile = ProducerPayoutProfile.objects.filter(producer=request.user).first()
@@ -401,6 +491,77 @@ class ProducerOnboardingStatusMeView(APIView):
             "trust_summary": trust_summary,
         }
         return Response(ProducerOnboardingStatusSerializer(payload).data)
+
+
+class LibraryMeView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return Response(LibraryStateSerializer(_build_library_payload(request.user)).data)
+
+
+class LibraryPlaylistCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        serializer = LibraryPlaylistCreateSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        playlist, _created = LibraryPlaylist.objects.get_or_create(
+            owner=request.user,
+            name=serializer.validated_data["name"],
+        )
+        return Response(LibraryPlaylistSerializer(playlist).data, status=status.HTTP_201_CREATED)
+
+
+class LibraryBeatCollectionsView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, beat_id: int):
+        serializer = LibraryBeatCollectionsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        beat = get_object_or_404(Beat, id=beat_id, is_active=True)
+
+        if serializer.validated_data["include_listen_later"]:
+            LibraryListenLater.objects.get_or_create(user=request.user, beat=beat)
+        else:
+            LibraryListenLater.objects.filter(user=request.user, beat=beat).delete()
+
+        desired_ids = {int(value) for value in serializer.validated_data.get("playlist_ids", [])}
+        user_playlists = list(LibraryPlaylist.objects.filter(owner=request.user))
+        for playlist in user_playlists:
+            if playlist.id in desired_ids:
+                LibraryPlaylistItem.objects.get_or_create(playlist=playlist, beat=beat)
+            else:
+                LibraryPlaylistItem.objects.filter(playlist=playlist, beat=beat).delete()
+
+        new_playlist_name = serializer.validated_data.get("new_playlist_name", "")
+        if new_playlist_name:
+            playlist, _created = LibraryPlaylist.objects.get_or_create(owner=request.user, name=new_playlist_name)
+            LibraryPlaylistItem.objects.get_or_create(playlist=playlist, beat=beat)
+
+        return Response(LibraryStateSerializer(_build_library_payload(request.user)).data, status=status.HTTP_200_OK)
+
+
+class LibraryListenLaterBeatView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, beat_id: int):
+        beat = get_object_or_404(Beat, id=beat_id, is_active=True)
+        LibraryListenLater.objects.get_or_create(user=request.user, beat=beat)
+        return Response(LibraryStateSerializer(_build_library_payload(request.user)).data, status=status.HTTP_200_OK)
+
+    def delete(self, request, beat_id: int):
+        LibraryListenLater.objects.filter(user=request.user, beat_id=beat_id).delete()
+        return Response(LibraryStateSerializer(_build_library_payload(request.user)).data, status=status.HTTP_200_OK)
+
+
+class LibraryPlaylistBeatView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def delete(self, request, playlist_id: int, beat_id: int):
+        playlist = get_object_or_404(LibraryPlaylist, id=playlist_id, owner=request.user)
+        LibraryPlaylistItem.objects.filter(playlist=playlist, beat_id=beat_id).delete()
+        return Response(LibraryStateSerializer(_build_library_payload(request.user)).data, status=status.HTTP_200_OK)
 
 
 class ProducerTrustPublicView(APIView):

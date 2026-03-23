@@ -1,5 +1,6 @@
 import shutil
 from pathlib import Path
+from unittest.mock import patch
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import override_settings
 from django.urls import reverse
@@ -16,6 +17,7 @@ class AccountsFlowTests(APITestCase):
     def setUp(self):
         self.register_url = reverse("register")
         self.login_url = reverse("login")
+        self.google_login_url = reverse("google-login")
         self.switch_role_url = reverse("switch-role")
         self.me_url = reverse("me")
 
@@ -106,6 +108,55 @@ class AccountsFlowTests(APITestCase):
             self.assertEqual(avatar_response.data["producer_name"], "Sagar Producer Updated")
             self.assertIn("avatar_obj", avatar_response.data)
         shutil.rmtree(temp_media_root, ignore_errors=True)
+
+    @patch("accounts.views.verify_google_id_token")
+    def test_google_login_creates_user_and_returns_tokens(self, mock_verify_google_id_token):
+        mock_verify_google_id_token.return_value = {
+            "sub": "google-sub-001",
+            "email": "gmailuser@example.com",
+            "email_verified": True,
+            "given_name": "Gmail",
+            "family_name": "User",
+            "name": "Gmail User",
+        }
+
+        response = self.client.post(self.google_login_url, {"credential": "mock-google-token"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertIn("access", response.data)
+        self.assertIn("refresh", response.data)
+        self.assertEqual(response.data["user"]["email"], "gmailuser@example.com")
+        self.assertEqual(response.data["user"]["auth_provider"], "google")
+
+        user = User.objects.get(email="gmailuser@example.com")
+        self.assertEqual(user.google_sub, "google-sub-001")
+        self.assertFalse(user.has_usable_password())
+
+    @patch("accounts.views.verify_google_id_token")
+    def test_google_login_links_existing_email_account(self, mock_verify_google_id_token):
+        existing = User.objects.create_user(
+            username="existinguser",
+            email="existing@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        mock_verify_google_id_token.return_value = {
+            "sub": "google-sub-002",
+            "email": "existing@example.com",
+            "email_verified": True,
+            "given_name": "Existing",
+            "family_name": "User",
+            "name": "Existing User",
+        }
+
+        response = self.client.post(self.google_login_url, {"credential": "mock-google-token"}, format="json")
+
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        existing.refresh_from_db()
+        self.assertEqual(existing.google_sub, "google-sub-002")
+        self.assertEqual(existing.auth_provider, "local")
 
     def test_follow_and_like_flow(self):
         producer = User.objects.create_user(
@@ -214,6 +265,92 @@ class AccountsFlowTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual([item["relation"] for item in response.data], ["mutual", "following", "follows_you"])
         self.assertEqual({item["username"] for item in response.data}, {"mutualproducer", "followingproducer", "followsyouproducer"})
+
+
+    def test_producer_endpoints_require_active_producer_mode(self):
+        producer = User.objects.create_user(
+            username="modeproducer",
+            email="modeproducer@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=True,
+            active_role="artist",
+        )
+        login_response = self.client.post(
+            self.login_url,
+            {"username": "modeproducer", "password": "strong-pass-123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
+
+        profile_response = self.client.get(reverse("producer-profile-me"))
+        self.assertEqual(profile_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        onboarding_response = self.client.get(reverse("producer-onboarding-me"))
+        self.assertEqual(onboarding_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        seller_response = self.client.post(reverse("producer-seller-agreement-me"), {"accepted_version": "v1"}, format="json")
+        self.assertEqual(seller_response.status_code, status.HTTP_403_FORBIDDEN)
+
+        candidates_response = self.client.get(reverse("featured-producer-candidates"))
+        self.assertEqual(candidates_response.status_code, status.HTTP_403_FORBIDDEN)
+
+
+    def test_library_endpoints_persist_server_side(self):
+        producer = User.objects.create_user(
+            username="libraryproducer",
+            email="libraryproducer@example.com",
+            password="strong-pass-123",
+            is_artist=False,
+            is_producer=True,
+            active_role="producer",
+        )
+        artist = User.objects.create_user(
+            username="libraryartist",
+            email="libraryartist@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        beat = Beat.objects.create(producer=producer, title="Saved Beat", genre="LoFi", bpm=92, base_price="11.00")
+
+        login_response = self.client.post(
+            self.login_url,
+            {"username": "libraryartist", "password": "strong-pass-123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
+
+        create_playlist = self.client.post(reverse("library-playlist-create"), {"name": "Night Drive"}, format="json")
+        self.assertEqual(create_playlist.status_code, status.HTTP_201_CREATED)
+        playlist_id = create_playlist.data["id"]
+
+        save_response = self.client.post(
+            reverse("library-beat-collections", kwargs={"beat_id": beat.id}),
+            {"include_listen_later": True, "playlist_ids": [playlist_id], "new_playlist_name": ""},
+            format="json",
+        )
+        self.assertEqual(save_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(save_response.data["listen_later"]), 1)
+        self.assertEqual(len(save_response.data["playlists"]), 1)
+        self.assertEqual(save_response.data["playlists"][0]["beats"][0]["id"], beat.id)
+
+        remove_playlist_response = self.client.delete(
+            reverse("library-playlist-beat", kwargs={"playlist_id": playlist_id, "beat_id": beat.id})
+        )
+        self.assertEqual(remove_playlist_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(remove_playlist_response.data["playlists"][0]["beats"], [])
+
+        remove_listen_later_response = self.client.delete(
+            reverse("library-listen-later-beat", kwargs={"beat_id": beat.id})
+        )
+        self.assertEqual(remove_listen_later_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(remove_listen_later_response.data["listen_later"], [])
+
+        library_response = self.client.get(reverse("library-me"))
+        self.assertEqual(library_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(library_response.data["playlists"]), 1)
 
     def test_producer_profile_lookup_by_user(self):
         producer = User.objects.create_user(
