@@ -106,20 +106,6 @@ export default function BeatDetailPage() {
     window.setTimeout(() => setMessage(null), 1800);
   };
 
-  const sendPlayEvent = async (beatId: number, source: string) => {
-    if (!token) return;
-    try {
-      await apiRequest("/analytics/listening/play/", {
-        method: "POST",
-        token,
-        body: { beat_id: beatId, source },
-      });
-      setBeat((current) =>
-        current && current.id === beatId ? { ...current, play_count: (current.play_count ?? 0) + 1 } : current,
-      );
-    } catch {}
-  };
-
   const handlePlay = async (target: Beat, source: string) => {
     const playbackUrl = resolveMediaUrl(target.preview_audio_obj || target.audio_file_obj);
     if (!playbackUrl) {
@@ -150,8 +136,8 @@ export default function BeatDetailPage() {
       beatUrl: `/beats/${target.id}`,
       defaultLicenseId: target.licenses?.[0]?.id ?? null,
       audioUrl: playbackUrl,
+      source,
     });
-    await sendPlayEvent(target.id, source);
   };
 
   const handleShare = async () => {

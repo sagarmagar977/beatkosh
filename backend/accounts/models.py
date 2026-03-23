@@ -96,8 +96,10 @@ class BeatLike(models.Model):
 
 class UserNotification(models.Model):
     TYPE_BEAT_LIKED = "beat_liked"
+    TYPE_PRODUCER_FOLLOWED = "producer_followed"
     TYPE_CHOICES = (
         (TYPE_BEAT_LIKED, "Beat liked"),
+        (TYPE_PRODUCER_FOLLOWED, "Producer followed"),
     )
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="notifications")

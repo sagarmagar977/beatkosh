@@ -118,7 +118,7 @@ class CartItemSerializer(serializers.ModelSerializer):
 
 
 class CartSerializer(serializers.ModelSerializer):
-    items = CartItemSerializer(many=True, read_only=True)
+    items = serializers.SerializerMethodField()
     beat_total = serializers.SerializerMethodField()
     beat_total_display = serializers.SerializerMethodField()
     soundkit_total = serializers.SerializerMethodField()
@@ -155,6 +155,10 @@ class CartSerializer(serializers.ModelSerializer):
             "updated_at",
         )
         read_only_fields = fields
+
+    def get_items(self, obj):
+        items = obj.items.order_by("created_at", "id")
+        return CartItemSerializer(items, many=True).data
 
     def _totals(self, obj):
         return cart_totals(obj)

@@ -127,6 +127,7 @@ class BeatLikeSerializer(serializers.ModelSerializer):
 
 
 class UserNotificationSerializer(serializers.ModelSerializer):
+    actor_id = serializers.IntegerField(source="actor.id", read_only=True)
     actor_username = serializers.CharField(source="actor.username", read_only=True)
     beat_id = serializers.IntegerField(source="beat.id", read_only=True, allow_null=True)
     beat_title = serializers.CharField(source="beat.title", read_only=True, allow_null=True)
@@ -139,6 +140,7 @@ class UserNotificationSerializer(serializers.ModelSerializer):
             "message",
             "is_read",
             "created_at",
+            "actor_id",
             "actor_username",
             "beat_id",
             "beat_title",

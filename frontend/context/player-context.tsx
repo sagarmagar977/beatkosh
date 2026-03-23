@@ -3,6 +3,7 @@
 import { createContext, useContext, useEffect, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { apiRequest } from "@/lib/api";
 
 export type PlayerTrack = {
   id: number;
@@ -19,6 +20,7 @@ export type PlayerTrack = {
   beatUrl?: string;
   defaultLicenseId?: number | null;
   audioUrl: string;
+  source?: string;
 };
 
 type PlayTrackOptions = {
@@ -48,6 +50,11 @@ type PlayerContextType = {
   stopPlayback: (clearTrack?: boolean) => void;
 };
 
+type ActiveSession = {
+  sessionId: number;
+  trackId: number;
+};
+
 const PlayerContext = createContext<PlayerContextType | undefined>(undefined);
 
 function clamp(num: number, min: number, max: number) {
@@ -61,10 +68,15 @@ function buildQueueStartIndex(track: PlayerTrack, queue: PlayerTrack[]) {
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const { token, loading } = useAuth();
+  const tokenRef = useRef<string | null>(token);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const queueRef = useRef<PlayerTrack[]>([]);
   const queueIndexRef = useRef(-1);
   const isShufflingRef = useRef(false);
+  const currentTrackRef = useRef<PlayerTrack | null>(null);
+  const currentTimeRef = useRef(0);
+  const durationRef = useRef(0);
+  const activeSessionRef = useRef<ActiveSession | null>(null);
   const [currentTrack, setCurrentTrack] = useState<PlayerTrack | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLooping, setIsLooping] = useState(false);
@@ -75,6 +87,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(0.8);
   const canPlay = Boolean(token);
+
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
 
   useEffect(() => {
     queueRef.current = queue;
@@ -89,6 +105,65 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
   }, [isShuffling]);
 
   useEffect(() => {
+    currentTrackRef.current = currentTrack;
+  }, [currentTrack]);
+
+  useEffect(() => {
+    currentTimeRef.current = currentTime;
+  }, [currentTime]);
+
+  useEffect(() => {
+    durationRef.current = duration;
+  }, [duration]);
+
+  const finalizeCurrentSession = async (endReason: "switch" | "pause" | "ended" | "close" | "unknown") => {
+    const activeSession = activeSessionRef.current;
+    const currentToken = tokenRef.current;
+    if (!activeSession || !currentToken) {
+      activeSessionRef.current = null;
+      return;
+    }
+
+    activeSessionRef.current = null;
+    try {
+      await apiRequest("/analytics/listening/session/finish/", {
+        method: "POST",
+        token: currentToken,
+        body: {
+          session_id: activeSession.sessionId,
+          listened_seconds: Math.floor(currentTimeRef.current || 0),
+          duration_seconds: Math.floor(durationRef.current || 0),
+          end_reason: endReason,
+        },
+      });
+    } catch {
+      // Ignore analytics failures so playback stays responsive.
+    }
+  };
+
+  const startSession = async (track: PlayerTrack, options?: { resume?: boolean }) => {
+    const currentToken = tokenRef.current;
+    if (!currentToken) {
+      activeSessionRef.current = null;
+      return;
+    }
+    try {
+      const session = await apiRequest<{ id: number }>("/analytics/listening/session/start/", {
+        method: "POST",
+        token: currentToken,
+        body: {
+          beat_id: track.id,
+          source: track.source || "global-player",
+          resume: Boolean(options?.resume),
+        },
+      });
+      activeSessionRef.current = { sessionId: session.id, trackId: track.id };
+    } catch {
+      activeSessionRef.current = null;
+    }
+  };
+
+  useEffect(() => {
     const audio = new Audio();
     audio.preload = "metadata";
     audio.volume = 0.8;
@@ -99,7 +174,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     const onLoaded = () => setDuration(audio.duration || 0);
     const onPlay = () => setIsPlaying(true);
     const onPause = () => setIsPlaying(false);
-    const onEnded = () => setIsPlaying(false);
+    const onEnded = () => {
+      setIsPlaying(false);
+      void finalizeCurrentSession("ended");
+    };
 
     audio.addEventListener("timeupdate", onTimeUpdate);
     audio.addEventListener("loadedmetadata", onLoaded);
@@ -108,6 +186,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     audio.addEventListener("ended", onEnded);
 
     return () => {
+      void finalizeCurrentSession("close");
       audio.pause();
       audio.src = "";
       audio.removeEventListener("timeupdate", onTimeUpdate);
@@ -137,6 +216,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       return;
     }
 
+    void finalizeCurrentSession("close");
     audio.pause();
     audio.currentTime = 0;
     setCurrentTime(0);
@@ -161,6 +241,7 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       if (!audio) {
         return;
       }
+      void finalizeCurrentSession("close");
       audio.pause();
       audio.currentTime = 0;
       setCurrentTime(0);
@@ -199,7 +280,10 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
       setQueueIndex(0);
     }
 
-    const switchingTrack = currentTrack?.id !== track.id || audio.src !== track.audioUrl;
+    const switchingTrack = currentTrackRef.current?.id !== track.id || audio.src !== track.audioUrl;
+    if (switchingTrack && activeSessionRef.current) {
+      await finalizeCurrentSession("switch");
+    }
     if (switchingTrack) {
       setCurrentTrack(track);
       setCurrentTime(0);
@@ -210,6 +294,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
     try {
       await audio.play();
+      if (switchingTrack) {
+        await startSession(track);
+      }
     } catch {
       setIsPlaying(false);
     }
@@ -260,17 +347,21 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     }
 
     const audio = audioRef.current;
-    if (!audio || !currentTrack) {
+    if (!audio || !currentTrackRef.current) {
       return;
     }
     if (audio.paused) {
       try {
         await audio.play();
+        if (!activeSessionRef.current) {
+          await startSession(currentTrackRef.current, { resume: true });
+        }
       } catch {
         setIsPlaying(false);
       }
       return;
     }
+    await finalizeCurrentSession("pause");
     audio.pause();
   };
 

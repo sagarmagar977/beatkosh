@@ -1,11 +1,13 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { Clock3, Compass, Droplets, FileText, Heart, MessageSquareMore, Search, SlidersHorizontal, Upload, UserPlus, Users } from "lucide-react";
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { BookOpen, Clock3, Compass, Droplets, FileText, Heart, MessageSquareMore, Package2, Search, SlidersHorizontal, Upload, Users } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import { useBeatLibrary } from "@/lib/beat-library";
 
 type FollowItem = {
   id: number;
@@ -54,10 +56,14 @@ type ShelfSection = {
 
 type SidebarMode =
   | "browse"
+  | "kits"
+  | "resources"
+  | "hiring"
   | "liked"
   | "history"
   | "drops"
   | "following"
+  | "playlists"
   | "studio"
   | "uploads"
   | "briefs"
@@ -79,19 +85,20 @@ const accentClasses = [
 ];
 
 export default function ActivityPage() {
-  const { token } = useAuth();
+  const router = useRouter();
+  const { token, user } = useAuth();
   const [follows, setFollows] = useState<FollowItem[]>([]);
   const [likes, setLikes] = useState<LikeItem[]>([]);
   const [drops, setDrops] = useState<DropItem[]>([]);
   const [beats, setBeats] = useState<Beat[]>([]);
-  const [producerId, setProducerId] = useState("");
-  const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [selectedBeatId, setSelectedBeatId] = useState<number | null>(null);
   const [query, setQuery] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<ShelfSectionKey | null>(null);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("browse");
+  const library = useBeatLibrary(user?.id, token);
+  const isProducerMode = user?.active_role === "producer";
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -113,21 +120,10 @@ export default function ActivityPage() {
   }, [token]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
   }, [load]);
 
-  const onFollow = async (e: FormEvent) => {
-    e.preventDefault();
-    if (!token || !producerId) return;
-    try {
-      await apiRequest(`/account/follows/producers/${producerId}/`, { method: "POST", token, body: {} });
-      setMessage("Producer followed.");
-      setProducerId("");
-      await load();
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to follow producer");
-    }
-  };
 
   const availableGenres = useMemo(() => {
     return Array.from(new Set(beats.map((beat) => beat.genre?.trim()).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b));
@@ -189,31 +185,44 @@ export default function ActivityPage() {
     ];
   }, [selectedGenreBeats]);
 
-  const sidebarActions = [
-    { key: "browse" as const, label: "Genre Browse", icon: Compass, description: "Default discovery by genre" },
-    { key: "briefs" as const, label: "Open Briefs", icon: FileText, description: "Hub CTA for project briefs" },
-    { key: "liked" as const, label: "Liked", icon: Heart, description: "Your saved beat picks" },
-    { key: "history" as const, label: "Play History", icon: Clock3, description: "Recent listening lane" },
-    { key: "studio" as const, label: "Studio", icon: SlidersHorizontal, description: "Producer workspace CTA" },
-    { key: "uploads" as const, label: "Media Uploads", icon: Upload, description: "Upload and draft CTA" },
-    { key: "negotiations" as const, label: "Negotiations", icon: MessageSquareMore, description: "Active collab threads" },
-    { key: "drops" as const, label: "Follower Drops", icon: Droplets, description: "Latest producer activity" },
-    { key: "following" as const, label: "Followed By You", icon: Users, description: "People you follow" },
-  ];
+  const sidebarActions = useMemo(() => {
+    const baseActions = [
+      { key: "browse" as const, label: "Genre Browse", icon: Compass },
+      { key: "kits" as const, label: "Sound Kits", icon: Package2, href: "/catalog" },
+      { key: "hiring" as const, label: "Hiring", icon: FileText, href: "/projects" },
+      { key: "resources" as const, label: "Resources", icon: BookOpen, href: "/resources" },
+      { key: "liked" as const, label: "Liked", icon: Heart },
+      { key: "history" as const, label: "Play History", icon: Clock3 },
+      { key: "playlists" as const, label: "Playlists", icon: Clock3 },
+      { key: "drops" as const, label: "Follower Drops", icon: Droplets },
+      { key: "following" as const, label: "Followed By You", icon: Users },
+    ];
+
+    if (isProducerMode) {
+      return [
+        ...baseActions,
+        { key: "studio" as const, label: "Studio", icon: SlidersHorizontal },
+        { key: "uploads" as const, label: "Media Uploads", icon: Upload },
+        { key: "negotiations" as const, label: "Negotiations", icon: MessageSquareMore },
+      ];
+    }
+
+    return baseActions;
+  }, [isProducerMode]);
 
   return (
     <div className="min-h-[calc(100vh-7rem)] rounded-[34px] border border-white/8 bg-[#090909] p-3 text-white shadow-[0_30px_120px_rgba(0,0,0,0.42)]">
       <div className="grid gap-3 xl:grid-cols-[280px_minmax(0,1fr)]">
-        <aside className="rounded-[24px] bg-[#121212] p-4">
+        <aside className="xl:sticky xl:top-24 xl:self-start">
+          <div className="rounded-[24px] bg-[#121212] p-4 xl:flex xl:h-[calc(100vh-10rem)] xl:flex-col xl:overflow-hidden">
           <div className="flex items-center justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-white">Hub shortcuts</p>
-              <p className="mt-1 text-xs text-white/45">Switch the middle panel view</p>
             </div>
             <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-white/75">{follows.length} follows</span>
           </div>
 
-          <div className="mt-5 space-y-2">
+          <div className="mt-5 grid gap-2 xl:flex-1 xl:content-start">
             {sidebarActions.map((action) => {
               const Icon = action.icon;
               const active = sidebarMode === action.key;
@@ -221,69 +230,23 @@ export default function ActivityPage() {
                 <button
                   key={action.key}
                   type="button"
-                  onClick={() => setSidebarMode(action.key)}
-                  className={`flex w-full items-start gap-3 rounded-[18px] border px-3 py-3 text-left transition ${active ? "border-white/18 bg-white/[0.08]" : "border-white/8 bg-white/[0.03] hover:bg-white/[0.05]"}`}
+                  onClick={() => {
+                    if ("href" in action && action.href) {
+                      router.push(action.href);
+                      return;
+                    }
+                    setSidebarMode(action.key);
+                  }}
+                  className={`flex w-full items-center gap-3 rounded-[18px] border px-3 py-2.5 text-left transition ${active ? "border-white/18 bg-white/[0.08]" : "border-white/8 bg-white/[0.03] hover:bg-white/[0.05]"}`}
                 >
-                  <div className={`mt-0.5 flex h-10 w-10 items-center justify-center rounded-[14px] ${active ? "bg-[#8f5cff]/20 text-[#b598ff]" : "bg-white/[0.04] text-white/68"}`}>
+                  <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] ${active ? "bg-[#8f5cff]/20 text-[#b598ff]" : "bg-white/[0.04] text-white/68"}`}>
                     <Icon className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
                   </div>
-                  <div className="min-w-0">
-                    <p className="text-sm font-medium text-white">{action.label}</p>
-                    <p className="mt-1 text-xs text-white/45">{action.description}</p>
-                  </div>
+                  <p className="min-w-0 truncate text-sm font-medium text-white">{action.label}</p>
                 </button>
               );
             })}
           </div>
-
-          <form onSubmit={onFollow} className="mt-4 flex gap-2">
-            <input
-              className="min-w-0 flex-1 rounded-full border border-white/10 bg-white/5 px-4 py-2.5 text-sm text-white outline-none placeholder:text-white/30"
-              placeholder="Producer ID"
-              value={producerId}
-              onChange={(e) => setProducerId(e.target.value)}
-            />
-            <button className="inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-black transition hover:scale-[1.03]">
-              <UserPlus className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-            </button>
-          </form>
-
-          <div className="mt-6 space-y-3">
-            {follows.slice(0, 8).map((item) => (
-              <div key={item.id} className="flex items-center gap-3 rounded-[18px] px-2 py-2 transition hover:bg-white/5">
-                <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[radial-gradient(circle_at_top,_rgba(255,129,61,0.82),_rgba(37,37,37,0.95)_70%)] text-lg font-semibold text-white">
-                  {item.producer_username.slice(0, 1).toUpperCase()}
-                </div>
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-white">{item.producer_username}</p>
-                  <p className="truncate text-xs text-white/45">Producer #{item.producer}</p>
-                </div>
-              </div>
-            ))}
-            {follows.length === 0 ? <p className="rounded-[18px] bg-white/4 px-4 py-3 text-sm text-white/55">No followed producers yet.</p> : null}
-          </div>
-
-          <div className="mt-6 border-t border-white/8 pt-4">
-            <p className="text-xs uppercase tracking-[0.24em] text-white/35">Liked beats</p>
-            <div className="mt-3 space-y-2">
-              {likes.slice(0, 5).map((item) => (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setSelectedBeatId(item.beat.id)}
-                  className="flex w-full items-center gap-3 rounded-[16px] px-2 py-2 text-left transition hover:bg-white/5"
-                >
-                  <div className="flex h-11 w-11 items-center justify-center rounded-[14px] bg-[#1db954]/15 text-[#1ed760]">
-                    <Heart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-                  </div>
-                  <div className="min-w-0">
-                    <p className="truncate text-sm text-white">{item.beat.title}</p>
-                    <p className="truncate text-xs text-white/45">{item.beat.producer_username}</p>
-                  </div>
-                </button>
-              ))}
-              {likes.length === 0 ? <p className="text-sm text-white/55">No liked beats yet.</p> : null}
-            </div>
           </div>
         </aside>
 
@@ -447,8 +410,12 @@ export default function ActivityPage() {
                 <p className="mt-3 max-w-2xl text-sm text-white/68">
                   {sidebarMode === "liked" && "Jump through the beats you already saved and keep discovery anchored around your taste."}
                   {sidebarMode === "history" && "Use recent activity as a quick-return lane for replaying beats you were exploring."}
+                  {sidebarMode === "playlists" && "Open your backend-saved Listen later queue and custom playlists without switching into producer tools."}
                   {sidebarMode === "drops" && "Track the latest producer drops and new beat activity from the people you follow."}
                   {sidebarMode === "following" && "Keep your followed producers visible so you can move back into discovery fast."}
+                  {sidebarMode === "kits" && "Browse sound kits from the sidebar instead of relying on the old top navigation tab."}
+                  {sidebarMode === "resources" && "Open learning and support content directly from the browse sidebar."}
+                  {sidebarMode === "hiring" && "Move into the hiring workspace from the browse sidebar when you want to post or review briefs."}
                   {sidebarMode === "studio" && "Open the producer studio workflow from here instead of relying on the top navigation Hub entry."}
                   {sidebarMode === "uploads" && "Manage upload and media workflow shortcuts from the left sidebar Hub CTA area."}
                   {sidebarMode === "briefs" && "Use the Hub CTA to move into active briefs and project request flow."}
@@ -459,8 +426,12 @@ export default function ActivityPage() {
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {(sidebarMode === "liked" ? beats.filter((beat) => likes.some((item) => item.beat.id === beat.id)) :
                   sidebarMode === "history" ? [...beats].sort((a, b) => (b.play_count ?? 0) - (a.play_count ?? 0)) :
+                  sidebarMode === "playlists" ? [] :
                   sidebarMode === "drops" ? [] :
                   sidebarMode === "following" ? [] :
+                  sidebarMode === "kits" ? [] :
+                  sidebarMode === "resources" ? [] :
+                  sidebarMode === "hiring" ? [] :
                   sidebarMode === "studio" ? [] :
                   sidebarMode === "uploads" ? [] :
                   sidebarMode === "briefs" ? [] :
@@ -496,20 +467,69 @@ export default function ActivityPage() {
                 </div>
               ) : null}
 
+              {sidebarMode === "playlists" ? (
+                <div className="space-y-4">
+                  <div className="rounded-[18px] bg-white/[0.04] p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-medium text-white">Listen later</p>
+                        <p className="mt-1 text-xs text-white/45">Backend-saved for this signed-in user.</p>
+                      </div>
+                      <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-white/70">{library.listenLater.length} beats</span>
+                    </div>
+                    <div className="mt-3 space-y-2">
+                      {library.listenLater.slice(0, 5).map((beat) => (
+                        <button key={`listen-later-${beat.id}`} type="button" onClick={() => setSelectedBeatId(beat.id)} className="flex w-full items-center justify-between rounded-[14px] bg-white/[0.03] px-3 py-2 text-left transition hover:bg-white/[0.06]">
+                          <div>
+                            <p className="text-sm text-white">{beat.title}</p>
+                            <p className="mt-1 text-xs text-white/45">{beat.producer_username}</p>
+                          </div>
+                          <span className="text-xs text-white/35">Play</span>
+                        </button>
+                      ))}
+                      {library.listenLater.length === 0 ? <p className="text-sm text-white/55">No beats in Listen later yet.</p> : null}
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {library.playlists.map((playlist) => (
+                      <div key={playlist.id} className="rounded-[18px] bg-white/[0.04] p-4">
+                        <p className="text-base font-medium text-white">{playlist.name}</p>
+                        <p className="mt-1 text-sm text-white/55">{playlist.beats.length} beats</p>
+                      </div>
+                    ))}
+                    {library.playlists.length === 0 ? <p className="rounded-[18px] bg-white/[0.04] p-4 text-sm text-white/55 md:col-span-2">No custom playlists yet. Use the three-dot menu on any beat to save one.</p> : null}
+                  </div>
+                </div>
+              ) : null}
+
               {sidebarMode === "following" ? (
                 <div className="grid gap-3 md:grid-cols-2">
                   {follows.map((item) => (
                     <div key={item.id} className="rounded-[18px] bg-white/[0.04] p-4">
                       <p className="text-base font-medium text-white">{item.producer_username}</p>
-                      <p className="mt-1 text-sm text-white/55">Producer #{item.producer}</p>
+                      
                     </div>
                   ))}
                 </div>
               ) : null}
 
-              {["studio", "uploads", "briefs", "negotiations"].includes(sidebarMode) ? (
+              {["kits", "resources", "hiring", "studio", "uploads", "briefs", "negotiations"].includes(sidebarMode) ? (
                 <div className="grid gap-4 md:grid-cols-2">
-                  <Link href={sidebarMode === "studio" ? "/producer/studio" : sidebarMode === "uploads" ? "/producer/media-uploads" : "/projects"} className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]">
+                  <Link
+                    href={
+                      sidebarMode === "kits"
+                        ? "/catalog"
+                        : sidebarMode === "resources"
+                          ? "/resources"
+                          : sidebarMode === "hiring" || sidebarMode === "briefs" || sidebarMode === "negotiations"
+                            ? "/projects"
+                            : sidebarMode === "studio"
+                              ? "/producer/studio"
+                              : "/producer/media-uploads"
+                    }
+                    className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]"
+                  >
                     <p className="text-lg font-semibold text-white">Open {sidebarActions.find((item) => item.key === sidebarMode)?.label}</p>
                     <p className="mt-2 text-sm text-white/58">Jump straight into the dedicated page from this Hub CTA area.</p>
                   </Link>
@@ -520,8 +540,9 @@ export default function ActivityPage() {
         </main>
       </div>
 
-      {message ? <p className="mt-4 text-sm text-[#9ee8dc]">{message}</p> : null}
       {error ? <p className="mt-4 text-sm text-[#ffb4a9]">{error}</p> : null}
     </div>
   );
 }
+
+

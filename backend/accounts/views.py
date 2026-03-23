@@ -343,7 +343,14 @@ class FollowProducerView(APIView):
             raise PermissionDenied("Target user is not a producer.")
         if request.user.id == producer.id:
             raise PermissionDenied("You cannot follow yourself.")
-        follow, _ = ProducerFollow.objects.get_or_create(artist=request.user, producer=producer)
+        follow, created = ProducerFollow.objects.get_or_create(artist=request.user, producer=producer)
+        if created:
+            UserNotification.objects.create(
+                user=producer,
+                actor=request.user,
+                notification_type=UserNotification.TYPE_PRODUCER_FOLLOWED,
+                message=f"{request.user.username} followed your producer profile.",
+            )
         return Response(ProducerFollowSerializer(follow).data, status=status.HTTP_201_CREATED)
 
     def delete(self, request, producer_id: int):

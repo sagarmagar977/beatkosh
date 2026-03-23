@@ -197,6 +197,19 @@ class AccountsFlowTests(APITestCase):
         self.assertEqual(following_response.status_code, status.HTTP_200_OK)
         self.assertEqual(len(following_response.data), 1)
 
+        producer_login = self.client.post(
+            self.login_url,
+            {"username": "socialproducer", "password": "strong-pass-123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {producer_login.data['access']}")
+        notifications_response = self.client.get(reverse("notifications-me"))
+        self.assertEqual(notifications_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(notifications_response.data[0]["notification_type"], "producer_followed")
+        self.assertEqual(notifications_response.data[0]["actor_username"], "socialartist")
+        self.assertEqual(notifications_response.data[0]["actor_id"], artist.id)
+
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login_response.data['access']}")
         like_response = self.client.post(reverse("beat-like", kwargs={"beat_id": beat.id}), {}, format="json")
         self.assertEqual(like_response.status_code, status.HTTP_201_CREATED)
 

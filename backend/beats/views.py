@@ -17,8 +17,15 @@ from beats.metadata_choices import (
     MOOD_VALUES,
     PUBLISHING_RIGHTS_VALUES,
 )
-from beats.models import Beat, BeatTag, BeatUploadDraft, FeaturedCoverPhoto, LicenseType
-from beats.serializers import BeatSerializer, BeatUploadDraftSerializer, FeaturedCoverPhotoSerializer, LicenseTypeSerializer
+from beats.models import Beat, BeatTag, BeatTrendSnapshot, BeatUploadDraft, FeaturedCoverPhoto, LicenseType
+from beats.serializers import (
+    BeatSerializer,
+    BeatTrendSnapshotSerializer,
+    BeatUploadDraftSerializer,
+    FeaturedCoverPhotoSerializer,
+    LicenseTypeSerializer,
+)
+from beats.services.trending import TREND_LIMIT
 from common.permissions import IsProducerOrReadOnly
 
 
@@ -98,11 +105,49 @@ class BeatDetailView(generics.RetrieveAPIView):
     serializer_class = BeatSerializer
 
 
-class TrendingBeatsView(generics.ListAPIView):
-    queryset = Beat.objects.filter(is_active=True).select_related("producer", "producer__producer_profile", "featured_cover_photo").prefetch_related(
-        "available_licenses", "likes"
-    )[:10]
-    serializer_class = BeatSerializer
+class BaseTrendingBeatsView(generics.ListAPIView):
+    serializer_class = BeatTrendSnapshotSerializer
+    permission_classes = [permissions.AllowAny]
+    period = BeatTrendSnapshot.PERIOD_WEEKLY
+
+    def get_queryset(self):
+        return (
+            BeatTrendSnapshot.objects.filter(period=self.period, beat__is_active=True)
+            .select_related("beat", "beat__producer")
+            .only(
+                "beat_id",
+                "period",
+                "rank",
+                "score",
+                "plays",
+                "likes",
+                "purchases",
+                "calculated_at",
+                "beat__id",
+                "beat__title",
+                "beat__producer_id",
+                "beat__producer__username",
+                "beat__genre",
+                "beat__bpm",
+                "beat__base_price",
+                "beat__cover_art_obj",
+                "beat__preview_audio_obj",
+                "beat__created_at",
+            )
+            .order_by("rank", "-score")[:TREND_LIMIT]
+        )
+
+
+class TrendingBeatsView(BaseTrendingBeatsView):
+    period = BeatTrendSnapshot.PERIOD_WEEKLY
+
+
+class DailyTrendingBeatsView(BaseTrendingBeatsView):
+    period = BeatTrendSnapshot.PERIOD_DAILY
+
+
+class WeeklyTrendingBeatsView(BaseTrendingBeatsView):
+    period = BeatTrendSnapshot.PERIOD_WEEKLY
 
 
 class FeaturedCoverPhotoListView(generics.ListAPIView):

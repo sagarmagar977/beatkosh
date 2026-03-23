@@ -4,6 +4,7 @@ import { Pencil, ShieldCheck, ShoppingCart, Trash2, X } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { OrdersPageSkeleton } from "@/app/page-skeletons";
 import { useCart } from "@/context/cart-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 
@@ -140,15 +141,26 @@ export default function OrdersPage() {
 
   const licenseOptions = useMemo(() => {
     if (!editBeat?.licenses) return [] as Array<{ id: number; label: string; price: string }>;
-    return editBeat.licenses.map((license) => {
-      const price = license.is_exclusive
-        ? editBeat.exclusive_license_fee || editBeat.base_price
-        : license.includes_stems
-          ? editBeat.non_exclusive_stems_fee || editBeat.base_price
-          : editBeat.non_exclusive_wav_fee || editBeat.base_price;
-      return { id: license.id, label: license.name, price };
-    });
+
+    const rankLicense = (license: License) => {
+      if (license.is_exclusive) return 3;
+      if (license.includes_stems) return 2;
+      return 1;
+    };
+
+    return [...editBeat.licenses]
+      .sort((a, b) => rankLicense(a) - rankLicense(b) || a.name.localeCompare(b.name))
+      .map((license) => {
+        const price = license.is_exclusive
+          ? editBeat.exclusive_license_fee || editBeat.base_price
+          : license.includes_stems
+            ? editBeat.non_exclusive_stems_fee || editBeat.base_price
+            : editBeat.non_exclusive_wav_fee || editBeat.base_price;
+        return { id: license.id, label: license.name, price };
+      });
   }, [editBeat]);
+  const selectedLicense = licenseOptions.find((item) => item.id === selectedLicenseId) ?? null;
+  const editBeatCoverUrl = editBeat?.cover_art_obj ? resolveMediaUrl(editBeat.cover_art_obj) : null;
 
   const openEdit = async (item: CartItem) => {
     if (!token || item.product_type !== "beat") {
@@ -204,6 +216,10 @@ export default function OrdersPage() {
     }
   };
 
+  if (loading) {
+    return <OrdersPageSkeleton />;
+  }
+
   const handleCheckout = async () => {
     if (!token) return;
     setBusyItemId(-1);
@@ -236,100 +252,74 @@ export default function OrdersPage() {
   };
 
   return (
-    <div className="space-y-6 pb-24">
-      <section className="theme-surface rounded-[28px] p-5">
-        <h1 className="theme-text-main text-3xl font-semibold uppercase tracking-tight">My Cart</h1>
-        <p className="theme-text-muted mt-2 text-sm">Select licenses, review prices, and continue to eSewa UAT checkout.</p>
+    <div className="flex h-full min-h-0 flex-col gap-3 overflow-hidden">
+      <section>
+        <h1 className="theme-text-main text-3xl font-bold uppercase tracking-tight">My Cart</h1>
       </section>
-
-      <section className="grid gap-6 xl:grid-cols-[1.45fr_0.55fr]">
-        <div className="theme-surface rounded-[28px] p-5">
-          <div className="theme-text-faint grid grid-cols-[1.3fr_0.7fr_0.5fr_0.4fr_0.5fr_0.3fr] gap-4 border-b pb-3 text-sm" style={{ borderColor: "var(--line)" }}>
-            <span>Items</span>
-            <span>License</span>
-            <span>License Fee</span>
-            <span>Discount</span>
-            <span>Net Fee</span>
-            <span>Actions</span>
+      <section className="grid min-h-0 flex-1 gap-5 xl:grid-cols-[minmax(0,1.72fr)_320px]">
+        <div className="theme-surface flex min-h-0 flex-col overflow-hidden rounded-[28px] p-5 xl:h-full">
+          <div className="theme-text-faint grid grid-cols-[minmax(0,1.95fr)_190px_170px_96px] gap-4 border-b pb-3 text-[13px]" style={{ borderColor: "var(--line)" }}>
+            <span className="pl-2">Items</span>
+            <span className="text-center">License</span>
+            <span className="text-center">Fee Only</span>
+            <span className="text-center">Actions</span>
           </div>
+          <div className="no-scrollbar flex-1 overflow-y-auto pt-4 pr-1">
+            {!loading && cart && cart.items.length === 0 ? <p className="theme-text-muted py-6 text-sm">Cart is empty. Add some beats first.</p> : null}
 
-          {loading ? <p className="theme-text-muted py-6 text-sm">Loading cart...</p> : null}
-          {!loading && cart && cart.items.length === 0 ? <p className="theme-text-muted py-6 text-sm">Cart is empty. Add some beats first.</p> : null}
-
-          <div className="space-y-4 pt-4">
-            {cart?.items.map((item) => {
-              const coverUrl = resolveMediaUrl(item.product.cover_art_obj);
-              return (
-                <article key={item.id} className="theme-soft grid grid-cols-[1.3fr_0.7fr_0.5fr_0.4fr_0.5fr_0.3fr] items-center gap-4 rounded-[22px] p-4">
-                  <div className="flex items-center gap-3">
-                    {coverUrl ? (
-                      <img src={coverUrl} alt={item.product_title} className="h-14 w-14 rounded-md object-cover" />
-                    ) : (
-                      <div className="theme-avatar flex h-14 w-14 items-center justify-center rounded-md text-sm font-semibold">
-                        {item.product_title.slice(0, 2).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <p className="theme-text-main text-2xl font-semibold leading-none">{item.product_title}</p>
-                      <div className="theme-text-muted mt-2 flex flex-wrap items-center gap-2 text-sm">
-                        <span>{item.product.producer_name || "Producer"}</span>
-                        {item.product.product_badge ? <span className="theme-pill rounded-full px-2 py-0.5 text-[10px] uppercase tracking-wider">{item.product.product_badge}</span> : null}
-                        {item.product.bpm ? <span className="font-semibold text-[#d5c17c]">{item.product.bpm} BPM</span> : null}
+            <div className="space-y-4">
+              {cart?.items.map((item) => {
+                const coverUrl = resolveMediaUrl(item.product.cover_art_obj);
+                return (
+                  <article key={item.id} className="theme-soft grid grid-cols-[minmax(0,1.95fr)_190px_170px_96px] items-center gap-4 rounded-[18px] px-4 py-3">
+                    <div className="flex min-w-0 items-center gap-3">
+                      {coverUrl ? (
+                        <img src={coverUrl} alt={item.product_title} className="h-12 w-12 rounded-lg object-cover" />
+                      ) : (
+                        <div className="theme-avatar flex h-12 w-12 items-center justify-center rounded-lg text-[10px] font-semibold">
+                          {item.product_title.slice(0, 2).toUpperCase()}
+                        </div>
+                      )}
+                      <div className="min-w-0">
+                        <p className="theme-text-main line-clamp-1 text-[1.35rem] font-semibold leading-tight">{item.product_title}</p>
+                        <div className="theme-text-muted mt-1.5 flex flex-wrap items-center gap-1.5 text-[12px]">
+                          <span>{item.product.producer_name || "Producer"}</span>
+                          {item.product.product_badge ? <span className="theme-pill rounded-full px-1.5 py-0.5 text-[8px] uppercase tracking-[0.16em]">{item.product.product_badge}</span> : null}
+                          {item.product.bpm ? <span className="font-semibold text-[#d5c17c]">{item.product.bpm} BPM</span> : null}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                  <div>
-                    <span className="theme-soft inline-flex rounded-xl border-[#5eb5ff]/50 px-4 py-2 text-lg font-semibold text-[#8cc5ff]">{item.license_name || "Standard"}</span>
-                  </div>
-                  <div className="theme-text-main text-xl font-semibold">{cartPrice(item.price_display, item.price)}</div>
-                  <div className="theme-text-main text-xl font-semibold">Rs 0</div>
-                  <div className="theme-text-main text-xl font-semibold">{cartPrice(item.price_display, item.price)}</div>
-                  <div className="theme-text-soft flex items-center gap-3">
-                    <button type="button" disabled={busyItemId === item.id || item.product_type !== "beat"} onClick={() => void openEdit(item)} className="disabled:opacity-40">
-                      <Pencil className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
-                    </button>
-                    <button type="button" disabled={busyItemId === item.id} onClick={() => void removeItem(item.id)} className="disabled:opacity-40">
-                      <Trash2 className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
-                    </button>
-                  </div>
-                </article>
-              );
-            })}
+                    <div className="flex w-[190px] justify-center">
+                      <span className="theme-soft inline-flex min-w-[142px] items-center justify-center rounded-lg border-[#5eb5ff]/50 px-3 py-2 text-[15px] font-semibold text-[#8cc5ff]">{item.license_name || "Standard"}</span>
+                    </div>
+                    <div className="flex w-[170px] justify-center">
+                      <span className="theme-text-main whitespace-nowrap text-[1.4rem] font-semibold">{cartPrice(item.price_display, item.price)}</span>
+                    </div>
+                    <div className="theme-text-soft flex w-[96px] items-center justify-center gap-2.5">
+                      <button type="button" disabled={busyItemId === item.id || item.product_type !== "beat"} onClick={() => void openEdit(item)} className="disabled:opacity-40">
+                        <Pencil className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                      </button>
+                      <button type="button" disabled={busyItemId === item.id} onClick={() => void removeItem(item.id)} className="disabled:opacity-40">
+                        <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                      </button>
+                    </div>
+                  </article>
+                );
+              })}
+            </div>
           </div>
         </div>
-
-        <aside className="theme-surface rounded-[28px] p-5">
-          <button type="button" className="brand-btn w-full px-4 py-3 text-lg font-semibold">Apply Coupon Code</button>
-
-          <div className="theme-text-main mt-8 space-y-5 text-xl">
-            <div className="flex items-center justify-between"><span>Total of Beats</span><span>{cartPrice(cart?.beat_total_display, cart?.beat_total)}</span></div>
-            <div className="flex items-center justify-between"><span>Total of Sound kits</span><span>{cartPrice(cart?.soundkit_total_display, cart?.soundkit_total)}</span></div>
-            <div className="border-t pt-5" style={{ borderColor: "var(--line)" }}>
-              <div className="flex items-center justify-between font-semibold"><span>Sub total</span><span>{cartPrice(cart?.subtotal_display, cart?.subtotal)}</span></div>
-              <div className="mt-4 flex items-center justify-between text-[#9d8fff]"><span>Discount on Beats</span><span>Rs 0</span></div>
-              <div className="mt-3 flex items-center justify-between text-[#9d8fff]"><span>Discount on Sound kits</span><span>Rs 0</span></div>
-              <div className="mt-4 flex items-center justify-between"><span>Platform Fee</span><span>{cartPrice(cart?.platform_fee_display, cart?.platform_fee)}</span></div>
+        <aside className="theme-surface h-fit self-start rounded-[24px] p-4">
+          <div className="space-y-4">
+            <div className="space-y-3 text-lg">
+              <div className="flex items-center justify-between gap-4"><span className="theme-text-muted">Total of Beats</span><span className="theme-text-main font-semibold">{cartPrice(cart?.beat_total_display, cart?.beat_total)}</span></div>
+              <div className="flex items-center justify-between gap-4"><span className="theme-text-muted">Total of Sound kits</span><span className="theme-text-main font-semibold">{cartPrice(cart?.soundkit_total_display, cart?.soundkit_total)}</span></div>
+              <div className="flex items-center justify-between gap-4 border-t pt-4" style={{ borderColor: "var(--line)" }}><span className="theme-text-main font-semibold">Total Fee</span><span className="text-[1.9rem] font-semibold text-[#35f04b]">{cartPrice(cart?.total_display, cart?.total)}</span></div>
             </div>
-            <div className="border-t pt-5" style={{ borderColor: "var(--line)" }}>
-              <div className="flex items-center justify-between text-[28px] font-semibold text-[#35f04b]"><span>Total</span><span>{cartPrice(cart?.total_display, cart?.total)}</span></div>
-            </div>
-          </div>
-
-          <button type="button" disabled={!cart?.item_count || busyItemId === -1} onClick={() => void handleCheckout()} className="mt-7 inline-flex w-full items-center justify-center gap-3 rounded-xl bg-[#27cc33] px-4 py-4 text-xl font-black uppercase tracking-wide text-black disabled:opacity-50">
-            <ShieldCheck className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
-            Checkout with eSewa UAT
-          </button>
-
-          <p className="theme-text-quiet mt-3 text-xs uppercase tracking-[0.18em]">This sends the exact cart total to eSewa test mode and waits for verified success before granting downloads.</p>
-
-          <div className="mt-5 rounded-2xl bg-[linear-gradient(180deg,#0c63ff_0%,#0941a8_100%)] p-4 text-white">
-            <div className="flex items-start gap-3">
-              <ShieldCheck className="mt-1 h-10 w-10" strokeWidth={1.8} aria-hidden="true" />
-              <div>
-                <p className="theme-text-main text-xl font-semibold">Secured by 14-Day Purchase Protection Policy</p>
-                <p className="mt-1 text-sm text-white/88 underline underline-offset-2">Learn more</p>
-              </div>
-            </div>
+            <button type="button" disabled={!cart?.item_count || busyItemId === -1} onClick={() => void handleCheckout()} className="inline-flex w-full items-center justify-center gap-3 rounded-xl bg-[#27cc33] px-4 py-4 text-lg font-black uppercase tracking-wide text-black disabled:opacity-50">
+              <ShieldCheck className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+              Checkout with eSewa
+            </button>
           </div>
         </aside>
       </section>
@@ -339,46 +329,53 @@ export default function OrdersPage() {
 
       {editItem && editBeat ? (
         <div className="theme-overlay fixed inset-0 z-[150] flex items-start justify-center px-4 pt-24 backdrop-blur-sm" onClick={() => { setEditItem(null); setEditBeat(null); }}>
-          <section className="theme-floating w-full max-w-[980px] rounded-2xl p-5" onClick={(event) => event.stopPropagation()}>
-            <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+          <section className="theme-floating w-full max-w-[980px] rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(28,23,34,0.98)_0%,rgba(21,17,28,0.98)_100%)] p-6 shadow-[0_30px_80px_rgba(0,0,0,0.45)]" onClick={(event) => event.stopPropagation()}>
+            <div className="grid gap-6 lg:grid-cols-[320px_1fr]">
               <div>
-                <div className="mb-4 flex items-start justify-between">
+                <div className="mb-5 flex items-start justify-between">
                   <div>
-                    <h3 className="theme-text-main text-4xl font-semibold">Select License Type</h3>
-                    <p className="theme-text-muted">Understand Licensing here!</p>
+                    <p className="theme-text-muted text-xs font-semibold uppercase tracking-[0.28em]">Choose a license</p>
+                    <h3 className="theme-text-main mt-3 text-4xl font-bold leading-tight">Select License Type</h3>
+                    <p className="theme-text-muted mt-2 text-base">Pick the version that fits your release and usage goals.</p>
                   </div>
                 </div>
-                <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--line)" }}>
+                <div className="overflow-hidden rounded-2xl border border-white/10 bg-white/[0.03]" style={{ borderColor: "var(--line)" }}>
                   {licenseOptions.map((item) => (
-                    <button key={item.id} type="button" onClick={() => setSelectedLicenseId(item.id)} className={`block w-full border-b px-4 py-3 text-left text-2xl ${selectedLicenseId === item.id ? "bg-[#8b28ff] text-white" : "theme-text-soft bg-transparent"}`} style={{ borderColor: "var(--line)" }}>
-                      {item.label}
+                    <button key={item.id} type="button" onClick={() => setSelectedLicenseId(item.id)} className={`block w-full border-b px-5 py-4 text-left transition ${selectedLicenseId === item.id ? "bg-[linear-gradient(90deg,#6f1dff_0%,#b238ff_100%)] text-white" : "theme-text-soft bg-transparent hover:bg-white/[0.03]"}`} style={{ borderColor: "var(--line)" }}>
+                      <span className="block text-[1.9rem] font-semibold leading-none">{item.label}</span>
+                      <span className={`mt-2 block text-sm ${selectedLicenseId === item.id ? "text-white/80" : "theme-text-muted"}`}>{currency(item.price)}</span>
                     </button>
                   ))}
                 </div>
               </div>
               <div>
                 <button type="button" onClick={() => { setEditItem(null); setEditBeat(null); }} className="theme-text-soft float-right inline-flex items-center justify-center"><X className="h-6 w-6" strokeWidth={1.8} aria-hidden="true" /></button>
-                <div className="mb-4 flex items-center gap-3">
-                  <div className="theme-avatar flex h-20 w-20 items-center justify-center rounded-md text-sm font-bold">
-                    {editBeat.title.slice(0, 2).toUpperCase()}
-                  </div>
+                <div className="mb-6 flex items-center gap-4 pr-10">
+                  {editBeatCoverUrl ? (
+                    <img src={editBeatCoverUrl} alt={editBeat.title} className="h-24 w-24 rounded-2xl object-cover shadow-[0_14px_30px_rgba(0,0,0,0.28)]" />
+                  ) : (
+                    <div className="theme-avatar flex h-24 w-24 items-center justify-center rounded-2xl text-xl font-bold">
+                      {editBeat.title.slice(0, 2).toUpperCase()}
+                    </div>
+                  )}
                   <div>
-                    <p className="theme-text-main text-4xl font-semibold">{editBeat.title}</p>
-                    <p className="theme-text-muted text-xl">{editBeat.producer_username}</p>
+                    <p className="theme-text-main text-[3rem] font-bold leading-none">{editBeat.title}</p>
+                    <p className="theme-text-muted mt-2 text-xl">{editBeat.producer_username}</p>
+                    <p className="theme-text-muted mt-3 text-sm uppercase tracking-[0.22em]">{selectedLicense?.label || "WAV"} license selected</p>
                   </div>
                 </div>
-                <div className="theme-surface-muted rounded-xl p-4 text-lg">
-                  <div className="grid grid-cols-2 gap-3">
-                    <p className="theme-text-muted">License Usage</p><p className="theme-text-main text-right">Unlimited Streaming</p>
-                    <p className="theme-text-muted">Format & Files</p><p className="theme-text-main text-right">{licenseOptions.find((item) => item.id === selectedLicenseId)?.label || "WAV"}</p>
-                    <p className="theme-text-muted">Nature</p><p className="theme-text-main text-right">{licenseOptions.find((item) => item.id === selectedLicenseId)?.label?.toLowerCase().includes("exclusive") ? "Exclusive" : "Non-Exclusive"}</p>
-                    <p className="theme-text-muted">Distribution</p><p className="theme-text-main text-right">Unlimited Copies</p>
+                <div className="rounded-2xl border border-white/8 bg-white/[0.04] p-5">
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-4 text-lg">
+                    <p className="theme-text-muted text-base">License Usage</p><p className="theme-text-main text-right text-[1.15rem] font-semibold">Unlimited Streaming</p>
+                    <p className="theme-text-muted text-base">Format & Files</p><p className="theme-text-main text-right text-[1.15rem] font-semibold">{selectedLicense?.label || "WAV"}</p>
+                    <p className="theme-text-muted text-base">Nature</p><p className="theme-text-main text-right text-[1.15rem] font-semibold">{selectedLicense?.label?.toLowerCase().includes("exclusive") ? "Exclusive" : "Non-Exclusive"}</p>
+                    <p className="theme-text-muted text-base">Distribution</p><p className="theme-text-main text-right text-[1.15rem] font-semibold">Unlimited Copies</p>
                   </div>
                 </div>
-                <div className="mt-4 flex justify-end">
-                  <button type="button" onClick={() => void saveLicense()} className="brand-btn inline-flex items-center gap-2 px-8 py-3 text-3xl font-semibold">
+                <div className="mt-5 flex justify-end">
+                  <button type="button" onClick={() => void saveLicense()} className="brand-btn inline-flex items-center gap-3 rounded-2xl px-8 py-4 text-3xl font-bold shadow-[0_18px_36px_rgba(102,30,255,0.32)]">
                     <ShoppingCart className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
-                    {currency(licenseOptions.find((item) => item.id === selectedLicenseId)?.price || editBeat.base_price)}
+                    {currency(selectedLicense?.price || editBeat.base_price)}
                   </button>
                 </div>
               </div>
@@ -389,4 +386,6 @@ export default function OrdersPage() {
     </div>
   );
 }
+
+
 

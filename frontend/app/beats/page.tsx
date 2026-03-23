@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { BeatListRowSkeleton } from "@/components/beat-list-row-skeleton";
 import { BeatListRow } from "@/components/beat-list-row";
 import { useCart } from "@/context/cart-context";
 import { usePlayer } from "@/context/player-context";
@@ -260,7 +261,14 @@ export default function BeatsPage() {
       {!token ? <section className="theme-surface rounded-[26px] border-[#8b28ff]/20 p-4 text-sm theme-text-soft">Login is required to preview beats, save playlists, and use the cart.</section> : null}
 
       <section className="space-y-3">
-        {loading ? <p className="theme-text-muted text-sm">Loading beats...</p> : null}
+        {loading ? (
+          <>
+            <p className="theme-text-muted text-sm">Loading beats...</p>
+            {Array.from({ length: 6 }).map((_, index) => (
+              <BeatListRowSkeleton key={index} />
+            ))}
+          </>
+        ) : null}
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         {!loading && !error ? (
           <>

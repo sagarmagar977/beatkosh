@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ChevronDown, Minus, Music2, Plus, Sparkles, Wand2 } from "lucide-react";
@@ -325,7 +325,7 @@ export default function ProjectsPage() {
                 </div>
                 <label className="min-w-[220px] space-y-2 text-sm text-white/75">
                   <span className="text-xs uppercase tracking-[0.24em] text-[#bcaee6]">Producer</span>
-                  <input value={selectedProducerId} onChange={(event) => setSelectedProducerId(event.target.value)} placeholder="Producer user ID" className="h-12 w-full rounded-[18px] border border-white/10 bg-[#2a223a] px-4 text-white outline-none placeholder:text-white/30 focus:border-[#b18cff]" />
+                  <input value={selectedProducerId} onChange={(event) => setSelectedProducerId(event.target.value)} placeholder="Producer" className="h-12 w-full rounded-[18px] border border-white/10 bg-[#2a223a] px-4 text-white outline-none placeholder:text-white/30 focus:border-[#b18cff]" />
                 </label>
               </div>
               {selectedProducer ? (
@@ -470,7 +470,7 @@ export default function ProjectsPage() {
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <p className="font-medium text-white">{project.title}</p>
-                  <p className="mt-1 text-sm text-white/62">{formatProjectType(project.project_type)} | Budget Rs {formatCurrency(project.budget)} | Offer Rs {formatCurrency(project.offer_price)} | Producer #{project.producer}</p>
+                  <p className="mt-1 text-sm text-white/62">{formatProjectType(project.project_type)} | Budget Rs {formatCurrency(project.budget)} | Offer Rs {formatCurrency(project.offer_price)} {project.producer_username ? `| ${project.producer_username}` : ""}</p>
                   <p className="mt-2 text-sm text-white/58">{project.target_genre_style || project.description}</p>
                 </div>
                 <span className="rounded-full border border-[#77d6c8]/25 bg-[#77d6c8]/10 px-3 py-1 text-xs uppercase tracking-[0.18em] text-[#9ee8dc]">{project.workflow_summary?.stage_label || project.workflow_stage}</span>
@@ -523,4 +523,5 @@ export default function ProjectsPage() {
     </div>
   );
 }
+
 

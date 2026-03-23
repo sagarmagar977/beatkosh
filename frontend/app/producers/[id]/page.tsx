@@ -62,6 +62,12 @@ type DashboardSummary = {
   conversion_rate: number;
 };
 
+type FollowItem = {
+  id: number;
+  producer: number;
+  producer_username: string;
+};
+
 type TrackView = "popular" | "liked" | "recent";
 
 function formatCompact(value: number) {
@@ -83,6 +89,7 @@ function buildPlayerTrack(beat: Beat, fallbackArtist: string): PlayerTrack {
     id: beat.id,
     title: beat.title,
     artist: beat.producer_username || fallbackArtist,
+    source: "producer-public-profile",
     bpm: beat.bpm,
     playCount: beat.play_count,
     key: beat.key,
@@ -146,7 +153,7 @@ function ProducerCard({ producer }: { producer: FeaturedProducer }) {
 export default function ProducerProfilePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
   const userId = Number(params.id);
   const [profile, setProfile] = useState<ProducerProfile | null>(null);
@@ -154,33 +161,41 @@ export default function ProducerProfilePage() {
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [isFollowing, setIsFollowing] = useState(false);
+  const [followBusy, setFollowBusy] = useState(false);
   const [trackView, setTrackView] = useState<TrackView>("popular");
   const [showAllTop, setShowAllTop] = useState(false);
 
   useEffect(() => {
     const run = async () => {
       try {
-        const [profileResult, beatsResult, dashboardResult] = await Promise.all([
+        const requests: [Promise<ProducerProfile>, Promise<Beat[]>, Promise<DashboardSummary>, Promise<FollowItem[]>?] = [
           apiRequest<ProducerProfile>(`/account/producers/by-user/${userId}/`),
           apiRequest<Beat[]>(`/beats/?producer=${userId}`),
           apiRequest<DashboardSummary>(`/analytics/producer/${userId}/dashboard-summary/`),
-        ]);
+        ];
+        if (token) {
+          requests.push(apiRequest<FollowItem[]>("/account/follows/me/", { token }));
+        }
+        const [profileResult, beatsResult, dashboardResult, followResult] = await Promise.all(requests);
         setProfile(profileResult);
         setBeats(beatsResult);
         setDashboard(dashboardResult);
+        setIsFollowing(Boolean(followResult?.some((item) => item.producer === userId)));
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load producer profile");
       }
     };
     void run();
-  }, [userId]);
+  }, [token, userId]);
 
   const producerName = profile?.producer_name || "Producer";
   const profileInitial = producerName.slice(0, 1).toUpperCase() || "P";
   const profileAvatarUrl = resolveMediaUrl(profile?.avatar_obj);
   const isVerified = Boolean(dashboard?.verified || profile?.verified);
   const profileGenres = profile?.genres ? profile.genres.split(",").map((item) => item.trim()).filter(Boolean) : [];
+  const isOwnProfile = user?.id === userId;
 
   const rankedBeats = useMemo(() => ({
     popular: [...beats].sort((a, b) => (b.play_count ?? 0) - (a.play_count ?? 0)),
@@ -245,7 +260,33 @@ export default function ProducerProfilePage() {
       // ignore analytics failures in UI flow
     }
   };
-
+  const handleFollowToggle = async () => {
+    if (!token) {
+      router.push("/auth/login");
+      return;
+    }
+    if (isOwnProfile) {
+      return;
+    }
+    setFollowBusy(true);
+    try {
+      if (isFollowing) {
+        await apiRequest(`/account/follows/producers/${userId}/`, { method: "DELETE", token });
+        setIsFollowing(false);
+        setDashboard((current) => (current ? { ...current, follower_count: Math.max(0, current.follower_count - 1) } : current));
+        notify("Unfollowed producer.");
+      } else {
+        await apiRequest(`/account/follows/producers/${userId}/`, { method: "POST", token, body: {} });
+        setIsFollowing(true);
+        setDashboard((current) => (current ? { ...current, follower_count: current.follower_count + 1 } : current));
+        notify("Producer followed.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to update follow status");
+    } finally {
+      setFollowBusy(false);
+    }
+  };
   const handlePlay = async (beat: Beat, queue: Beat[]) => {
     const track = buildPlayerTrack(beat, producerName);
     if (!track.audioUrl) {
@@ -348,6 +389,16 @@ export default function ProducerProfilePage() {
                 <button type="button" onClick={() => router.push(`/projects?producer=${userId}`)} className="inline-flex items-center gap-2 rounded-full bg-[#af89ff] px-5 py-3 text-sm font-semibold text-[#140f20]">
                   Hire producer
                 </button>
+                {!isOwnProfile ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleFollowToggle()}
+                    disabled={followBusy}
+                    className={`inline-flex items-center gap-2 rounded-full px-5 py-3 text-sm font-semibold transition ${isFollowing ? "border border-white/18 bg-white/[0.06] text-white" : "bg-white text-black"} disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {followBusy ? "Updating..." : isFollowing ? "Following" : "Follow"}
+                  </button>
+                ) : null}
                 <button type="button" onClick={() => setShowAllTop((current) => !current)} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-3 text-sm text-white/85">
                   {showAllTop ? "Show top 5" : "See all tracks"}
                   <ChevronRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
@@ -479,4 +530,3 @@ export default function ProducerProfilePage() {
     </div>
   );
 }
-

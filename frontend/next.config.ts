@@ -5,28 +5,29 @@ const allowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS ?? "")
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-function resolveRemoteImagePatterns() {
+type RemotePattern = Exclude<NonNullable<NextConfig["images"]>["remotePatterns"], undefined>[number];
+
+function resolveProtocol(value: string): "http" | "https" {
+  return value === "https:" ? "https" : "http";
+}
+
+function createRemotePattern(protocol: "http" | "https", hostname: string, port: string): RemotePattern {
+  return {
+    protocol,
+    hostname,
+    port,
+    pathname: "/media/**",
+  };
+}
+
+function resolveRemoteImagePatterns(): RemotePattern[] {
   const backendOrigin = (process.env.NEXT_PUBLIC_BACKEND_ORIGIN ?? "http://127.0.0.1:8000").replace(/\/$/, "");
 
   try {
     const url = new URL(backendOrigin);
-    return [
-      {
-        protocol: url.protocol.replace(":", ""),
-        hostname: url.hostname,
-        port: url.port,
-        pathname: "/media/**",
-      },
-    ];
+    return [createRemotePattern(resolveProtocol(url.protocol), url.hostname, url.port)];
   } catch {
-    return [
-      {
-        protocol: "http",
-        hostname: "127.0.0.1",
-        port: "8000",
-        pathname: "/media/**",
-      },
-    ];
+    return [createRemotePattern("http", "127.0.0.1", "8000")];
   }
 }
 

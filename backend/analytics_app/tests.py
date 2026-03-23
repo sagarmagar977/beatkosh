@@ -3,6 +3,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import ProducerFollow, User
+from analytics_app.models import ListeningHistory, ListeningSession
 from beats.models import Beat
 
 
@@ -224,3 +225,88 @@ class AnalyticsApiTests(APITestCase):
         self.assertEqual(len(response.data["revenue_series"]), 7)
         self.assertIn("top_beats", response.data)
         self.assertEqual(sum(point["plays"] for point in response.data["performance_series"]), 1)
+
+    def test_home_feed_uses_history_for_recent_and_sessions_for_jump_back(self):
+        producer = User.objects.create_user(
+            username="shelfproducer",
+            email="shelfproducer@example.com",
+            password="strong-pass-123",
+            is_artist=False,
+            is_producer=True,
+            active_role="producer",
+        )
+        artist = User.objects.create_user(
+            username="shelfartist",
+            email="shelfartist@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        beat_recent = Beat.objects.create(producer=producer, title="Recent Shelf Beat", genre="Trap", bpm=120, base_price="15.00")
+        beat_jump = Beat.objects.create(producer=producer, title="Jump Shelf Beat", genre="LoFi", bpm=90, base_price="12.00")
+
+        login = self.client.post(reverse("login"), {"username": "shelfartist", "password": "strong-pass-123"}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+
+        self.client.post(reverse("listening-play"), {"beat_id": beat_recent.id}, format="json")
+
+        start_response = self.client.post(
+            reverse("listening-session-start"),
+            {"beat_id": beat_jump.id, "source": "test-player"},
+            format="json",
+        )
+        self.assertEqual(start_response.status_code, status.HTTP_201_CREATED)
+        finish_response = self.client.post(
+            reverse("listening-session-finish"),
+            {
+                "session_id": start_response.data["id"],
+                "listened_seconds": 24,
+                "duration_seconds": 100,
+                "end_reason": "pause",
+            },
+            format="json",
+        )
+        self.assertEqual(finish_response.status_code, status.HTTP_200_OK)
+
+        home_response = self.client.get(reverse("listening-home"))
+        self.assertEqual(home_response.status_code, status.HTTP_200_OK)
+        shelves = {entry["key"]: entry for entry in home_response.data["shelves"]}
+
+        self.assertIn("recently-played", shelves)
+        self.assertIn("jump-back-in", shelves)
+        self.assertEqual(shelves["recently-played"]["beats"][0]["beat"]["id"], beat_jump.id)
+        self.assertTrue(any(item["beat"]["id"] == beat_recent.id for item in shelves["recently-played"]["beats"]))
+        self.assertEqual(shelves["jump-back-in"]["beats"][0]["beat"]["id"], beat_jump.id)
+        self.assertEqual(shelves["jump-back-in"]["beats"][0]["session"]["is_completed"], False)
+
+    def test_resume_session_start_does_not_increment_history(self):
+        producer = User.objects.create_user(
+            username="resumeproducer",
+            email="resumeproducer@example.com",
+            password="strong-pass-123",
+            is_artist=False,
+            is_producer=True,
+            active_role="producer",
+        )
+        artist = User.objects.create_user(
+            username="resumeartist",
+            email="resumeartist@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        beat = Beat.objects.create(producer=producer, title="Resume Beat", genre="Trap", bpm=110, base_price="11.00")
+
+        login = self.client.post(reverse("login"), {"username": "resumeartist", "password": "strong-pass-123"}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+
+        first_start = self.client.post(reverse("listening-session-start"), {"beat_id": beat.id}, format="json")
+        self.assertEqual(first_start.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ListeningHistory.objects.get(user=artist, beat=beat).play_count, 1)
+
+        resume_start = self.client.post(reverse("listening-session-start"), {"beat_id": beat.id, "resume": True}, format="json")
+        self.assertEqual(resume_start.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(ListeningHistory.objects.get(user=artist, beat=beat).play_count, 1)
+        self.assertEqual(ListeningSession.objects.filter(user=artist, beat=beat).count(), 2)

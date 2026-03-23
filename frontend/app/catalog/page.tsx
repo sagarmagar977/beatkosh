@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 
+import { CatalogCardSkeleton } from "@/components/catalog-card-skeleton";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 
 type SoundKit = {
@@ -64,7 +65,16 @@ export default function CatalogPage() {
       </section>
 
       <section className="surface-panel rounded-xl p-4">
-        {loading ? <p className="text-sm text-white/60">Loading sound kits...</p> : null}
+        {loading ? (
+          <>
+            <p className="text-sm text-white/60">Loading sound kits...</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <CatalogCardSkeleton key={index} />
+              ))}
+            </div>
+          </>
+        ) : null}
         {error ? <p className="text-sm text-rose-300">{error}</p> : null}
         {!loading && !error ? (
           <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">

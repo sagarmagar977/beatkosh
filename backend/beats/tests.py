@@ -1,13 +1,19 @@
+from datetime import timedelta
+from io import StringIO
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
+from django.core.management import call_command
 from django.urls import reverse
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.test import APITestCase
 
-from accounts.models import User
-from beats.models import FeaturedCoverPhoto, LicenseType
+from accounts.models import BeatLike, User
+from analytics_app.models import AnalyticsEvent
+from beats.models import Beat, BeatTrendSnapshot, FeaturedCoverPhoto, LicenseType
+from orders.models import Order, OrderItem, PurchaseLicense
 
 
 class BeatsApiTests(APITestCase):
@@ -249,3 +255,119 @@ class FeaturedCoverPhotoAdminTests(APITestCase):
         self.assertEqual(response.status_code, status.HTTP_200_OK)
         self.assertEqual(FeaturedCoverPhoto.objects.count(), 1)
         self.assertTrue(FeaturedCoverPhoto.objects.first().checksum)
+
+
+class BeatTrendingSnapshotTests(APITestCase):
+    def setUp(self):
+        self.producer = User.objects.create_user(
+            username="trendproducer",
+            email="trendproducer@example.com",
+            password="strong-pass-123",
+            is_artist=False,
+            is_producer=True,
+            active_role="producer",
+        )
+        self.artist = User.objects.create_user(
+            username="trendartist",
+            email="trendartist@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        now = timezone.now()
+        self.daily_beat = Beat.objects.create(
+            producer=self.producer,
+            title="Fresh Heat",
+            genre="Hip Hop",
+            bpm=98,
+            base_price="15.00",
+        )
+        self.weekly_beat = Beat.objects.create(
+            producer=self.producer,
+            title="Week Runner",
+            genre="Trap",
+            bpm=140,
+            base_price="20.00",
+        )
+        Beat.objects.filter(id=self.daily_beat.id).update(created_at=now - timedelta(hours=6))
+        Beat.objects.filter(id=self.weekly_beat.id).update(created_at=now - timedelta(days=3))
+        self.daily_beat.refresh_from_db()
+        self.weekly_beat.refresh_from_db()
+
+        daily_like = BeatLike.objects.create(user=self.artist, beat=self.daily_beat)
+        BeatLike.objects.filter(id=daily_like.id).update(created_at=now - timedelta(hours=4))
+        weekly_like = BeatLike.objects.create(
+            user=User.objects.create_user(
+                username="weekliker",
+                email="weekliker@example.com",
+                password="strong-pass-123",
+                is_artist=True,
+                is_producer=False,
+                active_role="artist",
+            ),
+            beat=self.weekly_beat,
+        )
+        BeatLike.objects.filter(id=weekly_like.id).update(created_at=now - timedelta(days=2))
+
+        for offset_hours in (1, 2, 3, 4, 5, 6):
+            event = AnalyticsEvent.objects.create(
+                event_type=AnalyticsEvent.EVENT_PLAY,
+                user=self.artist,
+                producer_id=self.producer.id,
+                beat_id=self.daily_beat.id,
+            )
+            AnalyticsEvent.objects.filter(id=event.id).update(created_at=now - timedelta(hours=offset_hours))
+        for offset_hours in (36, 40, 44, 48, 52, 56, 60, 64):
+            event = AnalyticsEvent.objects.create(
+                event_type=AnalyticsEvent.EVENT_PLAY,
+                user=self.artist,
+                producer_id=self.producer.id,
+                beat_id=self.weekly_beat.id,
+            )
+            AnalyticsEvent.objects.filter(id=event.id).update(created_at=now - timedelta(hours=offset_hours))
+
+        order = Order.objects.create(buyer=self.artist, total_price="15.00", status=Order.STATUS_PAID)
+        order_item = OrderItem.objects.create(
+            order=order,
+            product_type=OrderItem.PRODUCT_BEAT,
+            product_id=self.daily_beat.id,
+            product_title=self.daily_beat.title,
+            price="15.00",
+        )
+        purchase = PurchaseLicense.objects.create(
+            buyer=self.artist,
+            beat=self.daily_beat,
+            license_type=LicenseType.objects.create(name="Trend License"),
+            order_item=order_item,
+        )
+        PurchaseLicense.objects.filter(id=purchase.id).update(created_at=now - timedelta(hours=3))
+
+    def test_refresh_command_builds_daily_and_weekly_snapshots(self):
+        output = StringIO()
+        call_command("refresh_beat_trends", stdout=output)
+
+        daily_rows = BeatTrendSnapshot.objects.filter(period=BeatTrendSnapshot.PERIOD_DAILY).order_by("rank")
+        weekly_rows = BeatTrendSnapshot.objects.filter(period=BeatTrendSnapshot.PERIOD_WEEKLY).order_by("rank")
+
+        self.assertEqual(daily_rows.count(), 1)
+        self.assertEqual(daily_rows.first().beat_id, self.daily_beat.id)
+        self.assertGreaterEqual(weekly_rows.count(), 2)
+        self.assertEqual(weekly_rows.first().beat_id, self.daily_beat.id)
+        self.assertIn("Refreshed daily beat trends", output.getvalue())
+
+    def test_daily_and_weekly_endpoints_return_ranked_snapshots(self):
+        call_command("refresh_beat_trends")
+
+        daily_response = self.client.get(reverse("beat-trending-daily"))
+        weekly_response = self.client.get(reverse("beat-trending-weekly"))
+        default_response = self.client.get(reverse("beat-trending"))
+
+        self.assertEqual(daily_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(weekly_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(default_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(daily_response.data), 1)
+        self.assertEqual(daily_response.data[0]["beat_id"], self.daily_beat.id)
+        self.assertEqual(daily_response.data[0]["play_count"], 6)
+        self.assertEqual(weekly_response.data[0]["rank"], 1)
+        self.assertEqual(default_response.data[0]["beat_id"], weekly_response.data[0]["beat_id"])

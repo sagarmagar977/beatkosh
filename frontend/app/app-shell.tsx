@@ -1,64 +1,18 @@
 "use client";
 
-import {
-  BookOpen,
-  Compass,
-  CircleDollarSign,
-  CircleHelp,
-  Clock3,
-  Download,
-  Droplets,
-  Headphones,
-  Headset,
-  Heart,
-  History,
-  Home,
-  MessageSquareMore,
-  Music4,
-  Newspaper,
-  Search,
-  ShoppingCart,
-  SlidersHorizontal,
-  TrendingUp,
-  Users,
-} from "lucide-react";
+import { Compass, Home, Search, ShoppingCart } from "lucide-react";
 import { SunMoon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
+import { AppBootSkeleton } from "@/app/page-skeletons";
 import { useTheme } from "@/app/providers";
 import { GlobalPlayer } from "@/components/global-player";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 
-type MenuIconKind =
-  | "headphones"
-  | "cash"
-  | "beat"
-  | "trend"
-  | "clock"
-  | "cart"
-  | "heart"
-  | "history"
-  | "download"
-  | "studio"
-  | "negotiation"
-  | "group"
-  | "drop"
-  | "tutorial"
-  | "help"
-  | "blog"
-  | "support";
-
-type MenuItem = {
-  label: string;
-  href: string;
-  icon: MenuIconKind;
-};
-
-type NavLink = { href: string; label: string; menuKey?: string; menu?: MenuItem[] };
 const GLOBAL_FLASH_SESSION_KEY = "beatkosh-global-flash";
 
 type AppNotification = {
@@ -67,86 +21,11 @@ type AppNotification = {
   message: string;
   is_read: boolean;
   created_at: string;
+  actor_id: number;
   actor_username: string;
   beat_id?: number | null;
   beat_title?: string | null;
 };
-
-function MenuIcon({ kind }: { kind: MenuIconKind }) {
-  const common = "h-5 w-5 flex-none text-[#8f5cff]";
-  switch (kind) {
-    case "headphones":
-      return <Headphones className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "cash":
-      return <CircleDollarSign className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "beat":
-      return <Music4 className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "trend":
-      return <TrendingUp className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "clock":
-      return <Clock3 className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "cart":
-      return <ShoppingCart className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "heart":
-      return <Heart className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "history":
-      return <History className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "download":
-      return <Download className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "studio":
-      return <SlidersHorizontal className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "negotiation":
-      return <MessageSquareMore className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "group":
-      return <Users className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "drop":
-      return <Droplets className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "tutorial":
-      return <BookOpen className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "help":
-      return <CircleHelp className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "blog":
-      return <Newspaper className={common} strokeWidth={1.8} aria-hidden="true" />;
-    case "support":
-      return <Headset className={common} strokeWidth={1.8} aria-hidden="true" />;
-    default:
-      return null;
-  }
-}
-
-const dashboardMenu: MenuItem[] = [
-  { label: "Listening", href: "/dashboard/listening", icon: "headphones" },
-  { label: "Selling", href: "/dashboard/selling", icon: "cash" },
-];
-
-const beatsMenu: MenuItem[] = [
-  { label: "All Beats", href: "/beats", icon: "beat" },
-  { label: "Trending Beats", href: "/beats-trending", icon: "trend" },
-  { label: "Latest Beats", href: "/beats-latest", icon: "clock" },
-  { label: "For Hip-Hop Artists", href: "/beats-hip-hop", icon: "beat" },
-  { label: "For Pop Artists", href: "/beats-pop", icon: "beat" },
-];
-
-const hiringMenu: MenuItem[] = [
-  { label: "Hiring Workspace", href: "/projects", icon: "negotiation" },
-  { label: "Open Briefs", href: "/projects", icon: "clock" },
-  { label: "Project Pipeline", href: "/projects", icon: "group" },
-];
-
-const resourcesMenu: MenuItem[] = [
-  { label: "Tutorials", href: "/resources?category=tutorials", icon: "tutorial" },
-  { label: "Help Desk", href: "/resources?category=help", icon: "help" },
-  { label: "Blog", href: "/resources?category=blog", icon: "blog" },
-  { label: "Customer Support", href: "/resources?category=help", icon: "support" },
-];
-
-const navLinks: NavLink[] = [
-  { href: "/beats", label: "Beats", menu: beatsMenu },
-  { href: "/dashboard/listening", label: "Dashboard", menu: dashboardMenu },
-  { href: "/catalog", label: "Sound Kits" },
-  { href: "/projects", label: "Hiring", menu: hiringMenu },
-  { href: "/resources", label: "Resources", menu: resourcesMenu },
-];
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -168,7 +47,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [globalFlash, setGlobalFlash] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const menuCloseTimeout = useRef<number | null>(null);
+  const userMenuCloseTimeout = useRef<number | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
 
   const hasSession = Boolean(token);
@@ -183,6 +62,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isPublicAuthRoute = publicAuthRoutes.includes(normalizedPath);
   const isProtectedRoute = !isPublicAuthRoute;
   const hideGlobalPlayer = normalizedPath.startsWith("/producer/upload-wizard");
+  const isOrdersRoute = normalizedPath === "/orders";
 
   useEffect(() => {
     if (loading) {
@@ -295,19 +175,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isBrowseActive = normalizedPath === "/activity";
   const isHomeActive =
     normalizedPath === "/" || normalizedPath === "/dashboard/listening" || normalizedPath === "/dashboard/selling";
-  const activeMenuItems = useMemo(() => {
-    const match = navLinks.find((link) => (link.menuKey ?? link.label) === openMenuKey);
-    return match?.menu ?? [];
-  }, [openMenuKey]);
 
-  const closeMenuSoon = () => {
-    if (menuCloseTimeout.current) {
-      window.clearTimeout(menuCloseTimeout.current);
+  const cancelUserMenuClose = () => {
+    if (userMenuCloseTimeout.current) {
+      window.clearTimeout(userMenuCloseTimeout.current);
     }
-    menuCloseTimeout.current = window.setTimeout(() => {
-      if (!pinnedMenuOpen) {
-        setHoverMenuOpen(null);
-      }
+  };
+
+  const closeUserMenuSoon = () => {
+    cancelUserMenuClose();
+    userMenuCloseTimeout.current = window.setTimeout(() => {
+      setUserMenuOpen(false);
     }, 120);
   };
 
@@ -323,11 +201,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   if (loading) {
-    return (
-      <div className="mx-auto flex min-h-screen max-w-[520px] flex-col items-center justify-center gap-3 px-6 text-center theme-text-main">
-        <p className="text-sm theme-text-muted">Loading session...</p>
-      </div>
-    );
+    return <AppBootSkeleton />;
   }
 
   if (hasSession && !user && !allowDegradedSession) {
@@ -387,15 +261,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   // Legacy-route guard removed now that auth context is unified.
 
   return (
-    <div className="app-theme min-h-screen pb-28">
-      <header className="theme-header sticky top-0 z-40 border-b backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1380px] items-center gap-3 px-4 py-3 md:grid md:grid-cols-[1fr_auto_1fr] md:gap-4 lg:px-6">
-          <Link href="/" className="text-3xl font-black tracking-[-0.07em] md:justify-self-start" style={{ color: "var(--brand)" }}>
+    <div className="app-theme flex h-screen flex-col overflow-hidden pt-[112px] md:pt-[124px]">
+      <header className="theme-header fixed inset-x-0 top-0 z-[110] isolate border-b shadow-[0_14px_34px_rgba(0,0,0,0.32)]" style={{ borderColor: "var(--line)" }}>
+        <div className="absolute inset-0 -z-10 bg-[#0b0b0f]" aria-hidden="true" />
+        <div className="relative z-10 flex w-full items-center gap-3 bg-[#0b0b0f] px-3 py-3 md:px-4 lg:px-5">
+          <Link href="/" className="hidden shrink-0 text-3xl font-black tracking-[-0.07em] md:block" style={{ color: "var(--brand)" }}>
             B
           </Link>
 
-          <div className="hidden items-center justify-center md:flex md:justify-self-center">
-            <div className="flex w-full max-w-[680px] items-center gap-2.5">
+          <div className="pointer-events-none absolute left-1/2 top-1/2 hidden -translate-x-1/2 -translate-y-1/2 items-center justify-center md:flex">
+            <div className="flex items-center justify-center gap-2">
               <button
                 type="button"
                 onClick={() => {
@@ -403,19 +278,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setHoverMenuOpen(null);
                   router.push("/");
                 }}
-                className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition ${
+                className={`pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border transition ${
                   isHomeActive
-                    ? "border-white/18 bg-white/12 text-white"
-                    : "border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08]"
+                    ? "border-white/18 bg-[#241e2b] text-white"
+                    : "border-white/10 bg-[#1c1722] text-white/72 hover:bg-[#26202e]"
                 }`}
                 aria-label="Go home"
                 title="Home"
               >
-                <Home className="h-[1.15rem] w-[1.15rem]" strokeWidth={2} aria-hidden="true" />
+                <Home className="h-4.5 w-4.5" strokeWidth={2} aria-hidden="true" />
               </button>
 
               <form
-                className="flex h-12 w-[560px] items-center rounded-full border border-white/10 bg-white/[0.05] px-4 shadow-[0_12px_34px_rgba(0,0,0,0.2)]"
+                className="pointer-events-auto flex h-11 w-[420px] items-center rounded-full border border-white/10 bg-[#1c1722] px-3.5 shadow-[0_12px_34px_rgba(0,0,0,0.2)] lg:w-[460px]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   runSearch();
@@ -423,10 +298,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <button
                   type="submit"
-                  className="mr-2.5 inline-flex h-8 w-8 items-center justify-center rounded-full text-white/58 transition hover:text-white"
+                  className="mr-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-white/58 transition hover:bg-[#2a2432] hover:text-white"
                   aria-label="Search"
                 >
-                  <Search className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+                  <Search className="h-[1.1rem] w-[1.1rem]" strokeWidth={2} aria-hidden="true" />
                 </button>
                 <input
                   value={searchQuery}
@@ -435,10 +310,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     setPinnedMenuOpen("Browse");
                     setHoverMenuOpen("Browse");
                   }}
-                  className="min-w-0 flex-1 bg-transparent text-[0.95rem] text-white outline-none placeholder:text-white/40"
+                  className="min-w-0 flex-1 bg-transparent text-[0.92rem] text-white outline-none placeholder:text-white/40"
                   placeholder="What do you want to play?"
                 />
-                <div className="mx-3 h-7 w-px bg-white/10" />
+                <div className="mx-2.5 h-6 w-px bg-white/10" />
                 <button
                   type="button"
                   onClick={() => {
@@ -446,21 +321,25 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     setHoverMenuOpen("Browse");
                     router.push("/activity");
                   }}
-                  className="inline-flex h-8 w-8 items-center justify-center rounded-full text-white/58 transition hover:bg-white/8 hover:text-white"
+                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/58 transition hover:bg-[#2a2432] hover:text-white"
                   aria-label="Open browse"
                   title="Browse"
                 >
-                  <Compass className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+                  <Compass className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
                 </button>
               </form>
             </div>
           </div>
 
-          <div className="ml-auto flex items-center gap-2 md:ml-0 md:justify-self-end">
+          <Link href="/" className="text-3xl font-black tracking-[-0.07em] md:hidden" style={{ color: "var(--brand)" }}>
+            B
+          </Link>
+
+          <div className="ml-auto flex items-center gap-2">
             <button
               type="button"
               onClick={() => setNotificationsOpen((s) => !s)}
-              className="theme-soft relative inline-flex h-10 w-10 items-center justify-center rounded-full px-0 text-xs theme-text-soft"
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] px-0 text-xs text-white/72 transition hover:bg-[#26202e] hover:text-white"
               aria-label="Notifications"
             >
               <span className="sr-only">Notifications</span>
@@ -472,7 +351,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
             <Link
               href="/orders"
-              className="theme-soft relative hidden h-10 w-10 items-center justify-center rounded-full text-xs theme-text-soft md:inline-flex"
+              className="relative hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] text-xs text-white/72 transition hover:bg-[#26202e] hover:text-white md:inline-flex"
               aria-label="Cart"
               title="Cart"
             >
@@ -482,7 +361,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <button
               type="button"
               onClick={toggleTheme}
-              className="theme-toggle hidden h-10 w-10 items-center justify-center rounded-full transition md:inline-flex"
+              className="hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] text-white/72 transition hover:bg-[#26202e] hover:text-white md:inline-flex"
               aria-label="Toggle color mode"
               title="Toggle color mode"
             >
@@ -539,159 +418,37 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
             )}
 
-            <button
-              type="button"
-              onClick={() => setUserMenuOpen((s) => !s)}
-              className="theme-avatar flex h-10 w-10 items-center justify-center overflow-hidden rounded-full text-xs font-semibold"
-              aria-label="Open user menu"
+            <div
+              className="relative"
+              onMouseLeave={closeUserMenuSoon}
             >
-              {avatarUrl ? (
-                <img
-                  src={avatarUrl}
-                  alt={user?.producer_profile?.producer_name || user?.username || "User avatar"}
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                avatarFallback
-              )}
-            </button>
-          </div>
-        </div>
-
-        <div className="mx-auto max-w-[1380px] px-4 pb-3 lg:px-6">
-          <nav ref={navRef} className="relative flex items-center justify-center gap-6 text-sm theme-text-muted">
-            <div className="flex w-full items-center gap-2 md:hidden">
-              <button
-                type="button"
-                onClick={() => router.push("/")}
-                className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition ${
-                  isHomeActive
-                    ? "border-white/18 bg-white/12 text-white"
-                    : "border-white/10 bg-white/[0.04] text-white/72"
-                }`}
-              >
-                <Home className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
-              </button>
-              <form
-                className="flex h-11 flex-1 items-center rounded-full border border-white/10 bg-white/[0.05] px-3"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  runSearch();
-                }}
-              >
-                <Search className="h-4 w-4 text-white/52" strokeWidth={2} aria-hidden="true" />
-                <input
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  className="ml-2 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
-                  placeholder="Search beats"
-                />
-              </form>
               <button
                 type="button"
                 onClick={() => {
-                  setPinnedMenuOpen("Browse");
-                  setHoverMenuOpen("Browse");
-                  router.push("/activity");
+                  cancelUserMenuClose();
+                  setUserMenuOpen((current) => !current);
                 }}
-                className={`inline-flex h-11 items-center gap-2 rounded-full border px-3 text-sm transition ${
-                  isBrowseActive || openMenuKey === "Browse"
-                    ? "border-[#1ed760]/35 bg-[#1ed760]/12 text-white"
-                    : "border-white/10 bg-white/[0.04] text-white/72"
-                }`}
+                onFocus={cancelUserMenuClose}
+                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-[#1c1722] text-xs font-semibold text-white"
+                aria-label="Open user menu"
+                aria-expanded={userMenuOpen}
               >
-                <Compass className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
-                Browse
+                {avatarUrl ? (
+                  <img
+                    src={avatarUrl}
+                    alt={user?.producer_profile?.producer_name || user?.username || "User avatar"}
+                    className="h-full w-full object-cover"
+                  />
+                ) : (
+                  avatarFallback
+                )}
               </button>
-            </div>
 
-            <div className="hidden w-full max-w-[620px] items-center justify-between md:flex">
-              {navLinks.map((link) => {
-                const hasMenu = Boolean(link.menu && link.menu.length);
-                const menuKey = link.menuKey ?? link.label;
-                // Route-based active state is reserved for destination tabs like Browse.
-                const isActive = !hasMenu && normalizedPath === link.href;
-                const isOpen = openMenuKey === menuKey;
-                return (
-                  <div
-                    key={link.label}
-                    className="relative"
-                    onMouseEnter={() => {
-                      if (!hasMenu) {
-                        return;
-                      }
-                      if (menuCloseTimeout.current) {
-                        window.clearTimeout(menuCloseTimeout.current);
-                      }
-                      setHoverMenuOpen(menuKey);
-                    }}
-                    onMouseLeave={() => {
-                      if (!hasMenu) {
-                        return;
-                      }
-                      closeMenuSoon();
-                    }}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (!hasMenu) {
-                          router.push(link.href);
-                          return;
-                        }
-                        setPinnedMenuOpen((prev) => (prev === menuKey ? null : menuKey));
-                        setHoverMenuOpen(menuKey);
-                      }}
-                      className={
-                        "rounded-full px-2 py-2 text-center font-semibold transition " +
-                        (isActive || isOpen ? "theme-soft-strong theme-text-main" : "theme-text-muted")
-                      }
-                    >
-                      {link.label}
-                    </button>
-                  </div>
-                );
-              })}
-            </div>
-
-            {openMenuKey && activeMenuItems.length ? (
               <div
-                className="absolute left-0 top-[46px] z-50 w-full"
-                onMouseEnter={() => {
-                  if (menuCloseTimeout.current) {
-                    window.clearTimeout(menuCloseTimeout.current);
-                  }
-                }}
-                onMouseLeave={() => {
-                  closeMenuSoon();
-                }}
+                className={`theme-menu absolute right-0 top-[46px] z-50 w-[260px] rounded-2xl p-3 backdrop-blur-xl transition-all duration-220 ease-out ${userMenuOpen ? "pointer-events-auto translate-y-0 scale-100 opacity-100" : "pointer-events-none -translate-y-2 scale-[0.98] opacity-0"}`}
+                onMouseEnter={cancelUserMenuClose}
+                onMouseLeave={closeUserMenuSoon}
               >
-                <div className="theme-menu rounded-2xl p-6 backdrop-blur-xl">
-                  <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-                    {activeMenuItems.map((item) => (
-                      <button
-                        key={item.href}
-                        type="button"
-                        onClick={() => {
-                          setPinnedMenuOpen(null);
-                          setHoverMenuOpen(null);
-                          router.push(item.href);
-                        }}
-                        className="theme-soft flex items-center gap-3 rounded-xl px-4 py-3 text-left transition"
-                      >
-                        <MenuIcon kind={item.icon} />
-                        <span className="text-sm font-medium theme-text-soft">{item.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : null}
-
-            {startSellingError ? <p className="ml-auto text-xs text-[#ff8f7d]">{startSellingError}</p> : null}
-
-            {userMenuOpen ? (
-              <div className="theme-menu absolute right-0 top-[46px] z-50 w-[260px] rounded-2xl p-3 backdrop-blur-xl">
                 <p className="px-2 pb-2 text-xs theme-text-faint">Signed in as {user?.username ?? ""}</p>
                 {user?.is_producer ? (
                   <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-2">
@@ -707,7 +464,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             onClick={async () => {
                               try {
                                 await switchRole(role);
-                                setUserMenuOpen(false);
                                 router.push(role === "producer" ? "/producer/studio" : "/dashboard/listening");
                               } catch (err) {
                                 setStartSellingError(err instanceof Error ? err.message : "Unable to switch mode");
@@ -727,7 +483,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       href={profileHref}
                       className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                      onClick={() => setUserMenuOpen(false)}
                     >
                       My Profile
                     </Link>
@@ -735,7 +490,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   <Link
                     href={user?.active_role === "producer" ? "/dashboard/selling" : "/dashboard/listening"}
                     className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                    onClick={() => setUserMenuOpen(false)}
                   >
                     {user?.active_role === "producer" ? "Seller Dashboard" : "Listening Dashboard"}
                   </Link>
@@ -744,21 +498,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       <Link
                         href="/producer/studio"
                         className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                        onClick={() => setUserMenuOpen(false)}
                       >
                         Studio
                       </Link>
                       <Link
                         href="/producer/media-uploads"
                         className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                        onClick={() => setUserMenuOpen(false)}
                       >
                         Media Uploads
                       </Link>
                       <Link
                         href="/producer/settings"
                         className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                        onClick={() => setUserMenuOpen(false)}
                       >
                         Seller Settings
                       </Link>
@@ -767,7 +518,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     <Link
                       href="/library"
                       className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                      onClick={() => setUserMenuOpen(false)}
                     >
                       Library
                     </Link>
@@ -798,7 +548,58 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </button>
                 </div>
               </div>
-            ) : null}
+            </div>
+          </div>
+        </div>
+
+        <div className="relative z-10 w-full bg-[#0b0b0f] px-3 pb-3 md:px-4 lg:px-5">
+          <nav ref={navRef} className="relative flex items-center justify-center gap-6 text-sm theme-text-muted">
+            <div className="flex w-full items-center gap-2 md:hidden">
+              <button
+                type="button"
+                onClick={() => router.push("/")}
+                className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition ${
+                  isHomeActive
+                    ? "border-white/18 bg-[#241e2b] text-white"
+                    : "border-white/10 bg-[#1c1722] text-white/72"
+                }`}
+              >
+                <Home className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
+              </button>
+              <form
+                className="flex h-11 flex-1 items-center rounded-full border border-white/10 bg-[#1c1722] px-3"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  runSearch();
+                }}
+              >
+                <Search className="h-4 w-4 text-white/52" strokeWidth={2} aria-hidden="true" />
+                <input
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
+                  className="ml-2 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                  placeholder="Search beats"
+                />
+              </form>
+              <button
+                type="button"
+                onClick={() => {
+                  setPinnedMenuOpen("Browse");
+                  setHoverMenuOpen("Browse");
+                  router.push("/activity");
+                }}
+                className={`inline-flex h-11 items-center gap-2 rounded-full border px-3 text-sm transition ${
+                  isBrowseActive || openMenuKey === "Browse"
+                    ? "border-[#1ed760]/35 bg-[#243226] text-white"
+                    : "border-white/10 bg-[#1c1722] text-white/72"
+                }`}
+              >
+                <Compass className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+                Browse
+              </button>
+            </div>
+
+            {startSellingError ? <p className="ml-auto text-xs text-[#ff8f7d]">{startSellingError}</p> : null}
 
             {notificationsOpen ? (
               <div className="theme-menu absolute right-0 top-[46px] z-50 w-[340px] rounded-2xl p-4 backdrop-blur-xl">
@@ -815,6 +616,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                           setNotificationsOpen(false);
                           if (item.beat_id) {
                             router.push(`/beats/${item.beat_id}`);
+                            return;
+                          }
+                          if (item.notification_type === "producer_followed") {
+                            router.push(`/producers/${item.actor_id}`);
                           }
                         }}
                         className="theme-soft block w-full rounded-xl px-3 py-3 text-left"
@@ -915,13 +720,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       ) : null}
-
-      <main className="mx-auto max-w-[1240px] px-4 py-6 lg:px-6">{children}</main>
-
+      <main
+        className={
+          isOrdersRoute
+            ? "flex min-h-0 w-full flex-1 overflow-hidden px-3 py-6 md:px-4 lg:px-5"
+            : "min-h-0 w-full flex-1 overflow-y-auto overscroll-y-contain px-3 py-6 pb-32 md:px-4 lg:px-5"
+        }
+      >
+        {children}
+      </main>
       {!hideGlobalPlayer ? <GlobalPlayer /> : null}
     </div>
   );
 }
-
-
 

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { BeatListRowSkeleton } from "@/components/beat-list-row-skeleton";
 import { usePlayer } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 
@@ -207,6 +208,14 @@ export function BeatsExplorePage({
       ) : null}
 
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
+
+      {loading ? (
+        <div className="space-y-2">
+          {Array.from({ length: 6 }).map((_, index) => (
+            <BeatListRowSkeleton key={index} />
+          ))}
+        </div>
+      ) : null}
 
       {!loading && !error ? (
         <div className="space-y-2">

@@ -143,6 +143,35 @@ class Beat(models.Model):
         return f"{self.title} ({self.producer.username})"
 
 
+class BeatTrendSnapshot(models.Model):
+    PERIOD_DAILY = "daily"
+    PERIOD_WEEKLY = "weekly"
+    PERIOD_CHOICES = (
+        (PERIOD_DAILY, "Daily"),
+        (PERIOD_WEEKLY, "Weekly"),
+    )
+
+    beat = models.ForeignKey(Beat, on_delete=models.CASCADE, related_name="trend_snapshots")
+    period = models.CharField(max_length=16, choices=PERIOD_CHOICES)
+    rank = models.PositiveSmallIntegerField()
+    score = models.FloatField(default=0)
+    plays = models.PositiveIntegerField(default=0)
+    likes = models.PositiveIntegerField(default=0)
+    purchases = models.PositiveIntegerField(default=0)
+    calculated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ("period", "rank", "-score")
+        unique_together = ("period", "beat")
+        indexes = [
+            models.Index(fields=("period", "rank")),
+            models.Index(fields=("period", "-score")),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.period}:{self.rank}:{self.beat_id}"
+
+
 class BeatUploadDraft(models.Model):
     STATUS_DRAFT = "draft"
     STATUS_PUBLISHED = "published"

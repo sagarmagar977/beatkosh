@@ -174,18 +174,6 @@ export default function ProducerPrivateProfilePage() {
     });
   }, [beats, trackView]);
 
-  const refreshHistory = async () => {
-    if (!token) {
-      return;
-    }
-    try {
-      const result = await apiRequest<ListeningHistoryItem[]>("/analytics/listening/recent/", { token });
-      setHistory(result);
-    } catch {
-      // ignore refresh errors inside playback interactions
-    }
-  };
-
   const handleAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (!file) {
@@ -265,17 +253,8 @@ export default function ProducerPrivateProfilePage() {
       coverUrl: resolveMediaUrl(beat.cover_art_obj),
       beatUrl: `/beats/${beat.id}`,
       audioUrl: playbackUrl,
+      source,
     });
-    try {
-      await apiRequest("/analytics/listening/play/", {
-        method: "POST",
-        token,
-        body: { beat_id: beat.id, source },
-      });
-      await refreshHistory();
-    } catch {
-      // ignore analytics errors in playback flow
-    }
   };
 
   const featuredProducers = useMemo(() => {

@@ -5,7 +5,7 @@ from django.db.models import Sum
 from rest_framework import serializers
 
 from beats.metadata_choices import INSTRUMENT_VALUES, MOOD_VALUES
-from beats.models import Beat, BeatTag, BeatUploadDraft, FeaturedCoverPhoto, LicenseType
+from beats.models import Beat, BeatTag, BeatTrendSnapshot, BeatUploadDraft, FeaturedCoverPhoto, LicenseType
 
 from accounts.models import ProducerProfile
 
@@ -416,6 +416,40 @@ class BeatUploadDraftSerializer(MoodTypesSerializerMixin, InstrumentTypesSeriali
             draft.save(update_fields=["cover_art_obj"])
         return draft
 
+class BeatTrendSnapshotSerializer(serializers.ModelSerializer):
+    beat_id = serializers.IntegerField(read_only=True)
+    title = serializers.CharField(source="beat.title", read_only=True)
+    producer_id = serializers.IntegerField(source="beat.producer_id", read_only=True)
+    producer_username = serializers.CharField(source="beat.producer.username", read_only=True)
+    genre = serializers.CharField(source="beat.genre", read_only=True)
+    bpm = serializers.IntegerField(source="beat.bpm", read_only=True)
+    base_price = serializers.DecimalField(source="beat.base_price", max_digits=10, decimal_places=2, read_only=True)
+    cover_art_obj = serializers.CharField(source="beat.cover_art_obj", read_only=True)
+    preview_audio_obj = serializers.CharField(source="beat.preview_audio_obj", read_only=True)
+    created_at = serializers.DateTimeField(source="beat.created_at", read_only=True)
+    trending_score = serializers.FloatField(source="score", read_only=True)
+    play_count = serializers.IntegerField(source="plays", read_only=True)
+    like_count = serializers.IntegerField(source="likes", read_only=True)
+    purchase_count = serializers.IntegerField(source="purchases", read_only=True)
 
-
+    class Meta:
+        model = BeatTrendSnapshot
+        fields = (
+            "beat_id",
+            "title",
+            "producer_id",
+            "producer_username",
+            "genre",
+            "bpm",
+            "base_price",
+            "cover_art_obj",
+            "preview_audio_obj",
+            "created_at",
+            "rank",
+            "trending_score",
+            "play_count",
+            "like_count",
+            "purchase_count",
+            "calculated_at",
+        )
 

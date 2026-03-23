@@ -1,13 +1,27 @@
 from rest_framework import serializers
 
-from accounts.serializers import ProducerDiscoveryCardSerializer
+from accounts.serializers import LibraryPlaylistSerializer, ProducerDiscoveryCardSerializer
 from beats.serializers import BeatSerializer
 
-from analytics_app.models import ActivityDrop, ListeningHistory
+from analytics_app.models import ActivityDrop, ListeningHistory, ListeningSession, UserTasteProfile
 
 
 class PlayBeatSerializer(serializers.Serializer):
     beat_id = serializers.IntegerField(min_value=1)
+    source = serializers.CharField(required=False, allow_blank=True, max_length=80)
+
+
+class ListeningSessionStartSerializer(serializers.Serializer):
+    beat_id = serializers.IntegerField(min_value=1)
+    source = serializers.CharField(required=False, allow_blank=True, max_length=80)
+    resume = serializers.BooleanField(required=False, default=False)
+
+
+class ListeningSessionFinishSerializer(serializers.Serializer):
+    session_id = serializers.IntegerField(min_value=1)
+    listened_seconds = serializers.IntegerField(min_value=0)
+    duration_seconds = serializers.IntegerField(min_value=0, required=False)
+    end_reason = serializers.ChoiceField(choices=ListeningSession.END_REASON_CHOICES, required=False)
 
 
 class ListeningHistorySerializer(serializers.ModelSerializer):
@@ -16,6 +30,43 @@ class ListeningHistorySerializer(serializers.ModelSerializer):
     class Meta:
         model = ListeningHistory
         fields = ("id", "beat", "play_count", "last_played_at")
+
+
+class ListeningSessionSerializer(serializers.ModelSerializer):
+    beat = BeatSerializer(read_only=True)
+
+    class Meta:
+        model = ListeningSession
+        fields = (
+            "id",
+            "beat",
+            "source",
+            "started_at",
+            "last_event_at",
+            "listened_seconds",
+            "duration_seconds",
+            "completion_percent",
+            "is_completed",
+            "is_skipped",
+            "end_reason",
+        )
+
+
+class UserTasteProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserTasteProfile
+        fields = (
+            "favorite_genres",
+            "favorite_moods",
+            "favorite_instruments",
+            "favorite_producer_ids",
+            "liked_genres",
+            "bpm_min",
+            "bpm_max",
+            "bpm_average",
+            "today_snapshot",
+            "updated_at",
+        )
 
 
 class ActivityDropSerializer(serializers.ModelSerializer):
@@ -68,3 +119,24 @@ class ProducerDashboardSummarySerializer(serializers.Serializer):
     revenue_series = AnalyticsSeriesPointSerializer(many=True)
     top_beats = BeatSerializer(many=True)
     audience_fit_producers = ProducerDiscoveryCardSerializer(many=True)
+
+
+class HomeBeatShelfItemSerializer(serializers.Serializer):
+    beat = BeatSerializer()
+    session = ListeningSessionSerializer(required=False, allow_null=True)
+    note = serializers.CharField(required=False, allow_blank=True)
+
+
+class HomeShelfSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    title = serializers.CharField()
+    subtitle = serializers.CharField(required=False, allow_blank=True)
+    see_more_path = serializers.CharField(required=False, allow_blank=True)
+    beats = HomeBeatShelfItemSerializer(many=True, required=False)
+    playlists = LibraryPlaylistSerializer(many=True, required=False)
+
+
+class HomeFeedSerializer(serializers.Serializer):
+    greeting = serializers.CharField()
+    user_label = serializers.CharField(required=False, allow_blank=True)
+    shelves = HomeShelfSerializer(many=True)

@@ -4,6 +4,7 @@ import { ChangeEvent, FormEvent, ReactNode, useEffect, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import {
+  AudioLines,
   ArrowUpRight,
   BadgeCheck,
   BarChart3,
@@ -11,6 +12,11 @@ import {
   BriefcaseBusiness,
   CircleDollarSign,
   Disc3,
+  FolderKanban,
+  Inbox,
+  MessageCircleMore,
+  Music2,
+  PanelLeft,
   Play,
   Search,
   Sparkles,
@@ -19,6 +25,7 @@ import {
 } from "lucide-react";
 
 import { useAuth } from "@/app/auth-context";
+import { ProducerStudioSkeleton } from "@/app/page-skeletons";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 import { Beat22Summary, fetchBeat22Summary } from "@/lib/reference";
 
@@ -194,6 +201,44 @@ function StatCard({
   );
 }
 
+function WorkspaceModuleCard({
+  eyebrow,
+  title,
+  description,
+  metric,
+  icon,
+  href,
+}: {
+  eyebrow: string;
+  title: string;
+  description: string;
+  metric: string;
+  icon: ReactNode;
+  href: string;
+}) {
+  return (
+    <Link
+      href={href}
+      className="group relative overflow-hidden rounded-[28px] border border-white/8 bg-[linear-gradient(180deg,rgba(255,255,255,0.05),rgba(255,255,255,0.02))] p-5 transition hover:border-[#b596ff]/35 hover:bg-[linear-gradient(180deg,rgba(181,150,255,0.14),rgba(255,255,255,0.03))]"
+    >
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(181,150,255,0.18),transparent_34%)] opacity-80" />
+      <div className="relative">
+        <div className="flex items-start justify-between gap-4">
+          <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-[#c8b5ff]">
+            {icon}
+          </div>
+          <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-medium text-white/66">
+            {metric}
+          </span>
+        </div>
+        <p className="mt-5 text-[11px] uppercase tracking-[0.24em] text-[#bdaaff]">{eyebrow}</p>
+        <h3 className="mt-2 text-2xl font-semibold tracking-tight text-white">{title}</h3>
+        <p className="mt-2 text-sm leading-6 text-white/58">{description}</p>
+      </div>
+    </Link>
+  );
+}
+
 export default function ProducerStudioPage() {
   const { token, user } = useAuth();
   const [summary, setSummary] = useState<Beat22Summary | null>(null);
@@ -205,6 +250,7 @@ export default function ProducerStudioPage() {
   const [beats, setBeats] = useState<Beat[]>([]);
   const [projects, setProjects] = useState<Project[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
   const [selectedRange, setSelectedRange] = useState<RangeKey>("30d");
   const [analyticsSearch, setAnalyticsSearch] = useState("");
 
@@ -218,6 +264,8 @@ export default function ProducerStudioPage() {
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+
     const run = async () => {
       try {
         const [referenceData, licenseData, featuredCoverData] = await Promise.all([
@@ -225,19 +273,34 @@ export default function ProducerStudioPage() {
           apiRequest<License[]>("/beats/licenses/"),
           apiRequest<FeaturedCoverPhoto[]>("/beats/featured-covers/"),
         ]);
+        if (cancelled) {
+          return;
+        }
         setSummary(referenceData);
         setLicenses(licenseData);
         setFeaturedCovers(featuredCoverData);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load producer studio");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load producer studio");
+        }
       }
     };
     void run();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     const run = async () => {
-      if (!token || !user?.id) return;
+      if (!token || !user?.id) {
+        setLoading(false);
+        return;
+      }
+
+      setLoading(true);
       try {
         const [walletData, onboardingData, dashboardData, beatData, projectData] = await Promise.all([
           apiRequest<Wallet>("/payments/wallet/me/", { token }),
@@ -246,17 +309,33 @@ export default function ProducerStudioPage() {
           apiRequest<Beat[]>(`/beats/?producer=${user.id}`),
           apiRequest<Project[]>("/projects/", { token }),
         ]);
+        if (cancelled) {
+          return;
+        }
         setWallet(walletData);
         setOnboarding(onboardingData);
         setDashboard(dashboardData);
         setBeats(beatData);
         setProjects(projectData);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load producer dashboard");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load producer dashboard");
+        }
+      } finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
       }
     };
     void run();
+    return () => {
+      cancelled = true;
+    };
   }, [selectedRange, token, user?.id]);
+
+  if (loading) {
+    return <ProducerStudioSkeleton />;
+  }
 
   const handleCustomCoverChange = (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0] ?? null;
@@ -362,6 +441,49 @@ export default function ProducerStudioPage() {
   const conversionPercent = clampPercent(dashboard?.conversion_rate ?? 0);
   const currentRangeLabel =
     selectedRange === "7d" ? "Last 7 Days" : selectedRange === "90d" ? "Last 90 Days" : selectedRange === "365d" ? "Last 12 Months" : "Last 30 Days";
+  const negotiationProjects = projects.filter((project) => getProjectBucket(project) === "Negotiation");
+  const activeWorkspaceProjects = projects.filter((project) => getProjectBucket(project) === "WIP");
+  const completedProjects = projects.filter((project) => getProjectBucket(project) === "Completed");
+  const workspaceSections = [
+    {
+      id: "messages",
+      label: "Messages",
+      count: String(activeWorkspaceProjects.length),
+      summary: "Hire-only chat lanes and shared files.",
+      icon: <MessageCircleMore className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />,
+    },
+    {
+      id: "workspace",
+      label: "Project Workspace",
+      count: String(projects.length),
+      summary: "Milestones, drafts, and delivery movement.",
+      icon: <FolderKanban className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />,
+    },
+    {
+      id: "offers",
+      label: "Hiring Offers",
+      count: String(negotiationProjects.length),
+      summary: "Proposal review and acceptance queue.",
+      icon: <Inbox className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />,
+    },
+    {
+      id: "analytics",
+      label: "Analytics",
+      count: `${conversionPercent.toFixed(1)}%`,
+      summary: "Revenue, plays, and conversion health.",
+      icon: <BarChart3 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />,
+    },
+    {
+      id: "beats",
+      label: "Beat Management",
+      count: String(beats.length),
+      summary: "Catalog controls, uploads, and visibility.",
+      icon: <Music2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />,
+    },
+  ];
+  const messagePreviewProjects = activeWorkspaceProjects.slice(0, 3);
+  const offersPreviewProjects = negotiationProjects.slice(0, 3);
+  const beatsPreview = sortedBeats.slice(0, 4);
 
   const exportAnalyticsSnapshot = () => {
     const payload = {
@@ -381,7 +503,329 @@ export default function ProducerStudioPage() {
   };
 
   return (
-    <div className="space-y-6 pb-10">
+    <div className="grid gap-6 pb-10 xl:grid-cols-[280px_minmax(0,1fr)]">
+      <aside className="xl:sticky xl:top-24 xl:self-start">
+        <div className="overflow-hidden rounded-[32px] border border-white/8 bg-[radial-gradient(circle_at_top_left,rgba(167,123,255,0.2),transparent_30%),linear-gradient(180deg,#140f1e_0%,#0d0a15_100%)] p-5 shadow-[0_26px_70px_rgba(6,4,12,0.34)]">
+          <div className="flex items-center gap-3">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl border border-white/10 bg-white/[0.05] text-[#cbb8ff]">
+              <PanelLeft className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.24em] text-[#c8b6ff]">Studio workspace</p>
+              <p className="mt-1 text-lg font-semibold text-white">Producer Control Room</p>
+            </div>
+          </div>
+          <p className="mt-4 text-sm leading-6 text-white/58">
+            A dedicated creator sidebar for chat, active projects, offer review, analytics, and beat operations.
+          </p>
+
+          <nav className="mt-6 space-y-2">
+            {workspaceSections.map((section) => (
+              <a
+                key={section.id}
+                href={`#${section.id}`}
+                className="flex items-start gap-3 rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-4 transition hover:border-[#b596ff]/30 hover:bg-white/[0.06]"
+              >
+                <div className="mt-0.5 flex h-10 w-10 items-center justify-center rounded-2xl bg-[#b596ff]/12 text-[#d5c7ff]">
+                  {section.icon}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="font-medium text-white">{section.label}</p>
+                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/58">
+                      {section.count}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-white/48">{section.summary}</p>
+                </div>
+              </a>
+            ))}
+          </nav>
+
+          <div className="mt-6 rounded-[24px] border border-[#9f85ff]/20 bg-[#9f85ff]/10 p-4">
+            <p className="text-[11px] uppercase tracking-[0.22em] text-[#d7cbff]">Why this helps</p>
+            <p className="mt-2 text-sm leading-6 text-white/74">
+              It gives the studio a proper product shell now, and later we can map each sidebar item to its own route and backend endpoint.
+            </p>
+          </div>
+        </div>
+      </aside>
+
+      <div className="space-y-6">
+      <section className="overflow-hidden rounded-[36px] border border-white/8 bg-[radial-gradient(circle_at_top_left,rgba(165,122,255,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(255,148,206,0.12),transparent_24%),linear-gradient(180deg,#120d1e_0%,#0c0914_100%)] p-6 md:p-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/6 pb-5">
+          <div>
+            <p className="text-sm uppercase tracking-[0.26em] text-[#c7b4ff]">Studio workspace</p>
+            <h1 className="mt-3 text-4xl font-semibold tracking-tight text-white md:text-5xl">Run your producer business from one shell</h1>
+            <p className="mt-3 max-w-3xl text-base leading-7 text-white/62">
+              The studio now behaves like a real workspace instead of a single analytics page, with dedicated zones for messages, projects, offers, analytics, and beat management.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/producer/upload-wizard?flow=beat&fresh=1" className="rounded-full bg-[linear-gradient(135deg,#ab91ff,#7f60ff)] px-4 py-2.5 text-sm font-semibold text-[#140f20]">
+              Upload beat
+            </Link>
+            <Link href="/projects" className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white/82 transition hover:bg-white/[0.08]">
+              Open hiring workspace
+            </Link>
+          </div>
+        </div>
+
+        <div className="mt-6 grid gap-4 lg:grid-cols-2 2xl:grid-cols-5">
+          <WorkspaceModuleCard
+            eyebrow="Collaboration"
+            title="Messages"
+            description="Private artist-producer conversations with room for files, links, and milestone context."
+            metric={`${activeWorkspaceProjects.length} live`}
+            icon={<MessageCircleMore className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />}
+            href="#messages"
+          />
+          <WorkspaceModuleCard
+            eyebrow="Delivery"
+            title="Project Workspace"
+            description="Track production status, stems, approvals, revisions, and next actions."
+            metric={`${projects.length} total`}
+            icon={<FolderKanban className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />}
+            href="#workspace"
+          />
+          <WorkspaceModuleCard
+            eyebrow="Negotiation"
+            title="Hiring Offers"
+            description="Review incoming proposals and later accept or counter them from one review board."
+            metric={`${negotiationProjects.length} pending`}
+            icon={<Inbox className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />}
+            href="#offers"
+          />
+          <WorkspaceModuleCard
+            eyebrow="Performance"
+            title="Analytics"
+            description="Keep the existing studio metrics, but give them a home inside a larger operating system."
+            metric={revenueDelta}
+            icon={<BarChart3 className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />}
+            href="#analytics"
+          />
+          <WorkspaceModuleCard
+            eyebrow="Catalog"
+            title="Beat Management"
+            description="Manage track metadata, visibility, uploads, pricing, and future draft controls."
+            metric={`${beats.length} beats`}
+            icon={<AudioLines className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />}
+            href="#beats"
+          />
+        </div>
+      </section>
+
+      <section id="messages" className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_340px]">
+        <section className="overflow-hidden rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#17111f_0%,#110c18_100%)] p-6 shadow-[0_26px_70px_rgba(6,4,12,0.34)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Messages</p>
+              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">Hire-only chat preview</h2>
+              <p className="mt-2 max-w-2xl text-white/58">
+                This is the UI direction for the future conversation area that should unlock only after an artist accepts a producer offer.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/62">
+              {activeWorkspaceProjects.length} active channels
+            </span>
+          </div>
+
+          <div className="mt-6 grid gap-4 lg:grid-cols-[260px_minmax(0,1fr)]">
+            <div className="space-y-3">
+              {messagePreviewProjects.length > 0 ? messagePreviewProjects.map((project) => (
+                <div key={`message-preview-${project.id}`} className="rounded-[22px] border border-white/8 bg-white/[0.03] p-4">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="font-medium text-white">{project.title}</p>
+                      <p className="mt-1 text-xs uppercase tracking-[0.18em] text-white/34">{project.workflow_summary?.stage_label ?? project.workflow_stage}</p>
+                    </div>
+                    <span className="rounded-full bg-[#9f85ff]/14 px-2.5 py-1 text-[11px] text-[#d8ceff]">
+                      Project chat
+                    </span>
+                  </div>
+                  <p className="mt-3 text-sm leading-6 text-white/56">
+                    Shared references, file delivery notes, and revision follow-ups would live here.
+                  </p>
+                </div>
+              )) : (
+                <div className="rounded-[22px] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-white/52">
+                  No accepted-hire chat rooms yet. Once a proposal is accepted, this column can show the conversation list.
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-[28px] border border-white/8 bg-[#100c18] p-5">
+              <div className="flex items-center justify-between gap-3 border-b border-white/8 pb-4">
+                <div>
+                  <p className="text-lg font-semibold text-white">{messagePreviewProjects[0]?.title ?? "Workspace conversation"}</p>
+                  <p className="mt-1 text-sm text-white/52">Private artist-to-producer thread with file sharing, links, and delivery notes.</p>
+                </div>
+                <div className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-white/58">
+                  Preview only
+                </div>
+              </div>
+
+              <div className="space-y-4 py-5">
+                <div className="max-w-[80%] rounded-[22px] border border-white/8 bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/76">
+                  The artist briefing, reference links, and accepted scope can sit at the top of the conversation for quick context.
+                </div>
+                <div className="ml-auto max-w-[82%] rounded-[22px] bg-[linear-gradient(135deg,#b398ff,#8f6dff)] px-4 py-3 text-sm leading-6 text-[#1b1330]">
+                  Producers can reply with progress notes, sample previews, draft links, and attachment chips without leaving the workspace.
+                </div>
+                <div className="max-w-[74%] rounded-[22px] border border-white/8 bg-white/[0.04] px-4 py-3 text-sm leading-6 text-white/76">
+                  Shared files, important links, and milestone updates can sit in a right-side panel once backend chat objects are added.
+                </div>
+              </div>
+
+              <div className="rounded-[22px] border border-white/8 bg-white/[0.03] p-4">
+                <div className="flex flex-wrap gap-2">
+                  <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">Attachment</span>
+                  <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">Emoji</span>
+                  <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">Link share</span>
+                  <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">Milestone context</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <aside className="overflow-hidden rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#17111f_0%,#110c18_100%)] p-6 shadow-[0_26px_70px_rgba(6,4,12,0.34)]">
+          <p className="eyebrow">Shared assets</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Conversation side rail</h2>
+          <div className="mt-5 space-y-3">
+            {[
+              "Accepted brief PDF",
+              "Reference playlist links",
+              "Draft stems and bounce uploads",
+              "Revision notes and status badges",
+            ].map((item) => (
+              <div key={item} className="rounded-[22px] border border-white/8 bg-white/[0.03] px-4 py-3 text-sm text-white/68">
+                {item}
+              </div>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <section id="workspace" className="grid gap-6 xl:grid-cols-3">
+        <section className="xl:col-span-2 overflow-hidden rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#161121_0%,#120d1b_100%)] p-6 shadow-[0_26px_70px_rgba(6,4,12,0.34)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Project Workspace</p>
+              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">Milestones and production flow</h2>
+              <p className="mt-2 max-w-2xl text-white/58">
+                These cards can become the main project entry point later, with progress, due dates, files, and workspace actions.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/62">
+              {completedProjects.length} completed
+            </span>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {projects.slice(0, 3).map((project) => (
+              <div key={`workspace-project-${project.id}`} className="overflow-hidden rounded-[26px] border border-white/10 bg-[#0f0a16]">
+                <div className="h-36 bg-[radial-gradient(circle_at_top,rgba(171,142,255,0.34),transparent_30%),linear-gradient(135deg,#13242e,#0b1018_48%,#191020)]" />
+                <div className="p-5">
+                  <div className="flex items-start justify-between gap-3">
+                    <div>
+                      <p className="text-xl font-semibold text-white">{project.title}</p>
+                      <p className="mt-1 text-sm text-white/52">{project.project_type.replaceAll("_", " ")}</p>
+                    </div>
+                    <span className="rounded-full border border-white/10 px-2.5 py-1 text-[11px] text-white/58">
+                      {project.workflow_summary?.stage_label ?? project.workflow_stage}
+                    </span>
+                  </div>
+                  <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/6">
+                    <div
+                      className="h-full rounded-full bg-[linear-gradient(90deg,#b89dff,#ff9bc8)]"
+                      style={{
+                        width: `${Math.min(100, (project.workflow_summary?.approved_milestones ?? 0) * 25 + (project.workflow_summary?.funded_milestones ?? 0) * 15)}%`,
+                      }}
+                    />
+                  </div>
+                  <div className="mt-4 flex flex-wrap gap-3 text-xs text-white/52">
+                    <span>{project.workflow_summary?.milestone_count ?? 0} milestones</span>
+                    <span>{project.workflow_summary?.deliverable_count ?? 0} deliverables</span>
+                    <span>{project.delivery_timeline_days ?? "-"} day target</span>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {projects.length === 0 ? (
+              <div className="rounded-[26px] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-white/52 md:col-span-2 xl:col-span-3">
+                Once project records exist, this space can show active collaboration cards with milestones, completion progress, and one-click workspace launch.
+              </div>
+            ) : null}
+          </div>
+        </section>
+
+        <aside className="overflow-hidden rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#17111f_0%,#110c18_100%)] p-6 shadow-[0_26px_70px_rgba(6,4,12,0.34)]">
+          <p className="eyebrow">Workspace stack</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Core states</h2>
+          <div className="mt-5 space-y-3">
+            {donutSegments.map((segment) => (
+              <div key={`workspace-stack-${segment.label}`} className="flex items-center justify-between rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-3">
+                <span className="inline-flex items-center gap-3 text-sm text-white/74">
+                  <span className="h-3 w-3 rounded-full" style={{ background: segment.color }} />
+                  {segment.label}
+                </span>
+                <span className="text-sm text-white/52">{segment.value}</span>
+              </div>
+            ))}
+          </div>
+        </aside>
+      </section>
+
+      <section id="offers" className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_360px]">
+        <section className="overflow-hidden rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#17111f_0%,#110c18_100%)] p-6 shadow-[0_26px_70px_rgba(6,4,12,0.34)]">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Hiring Offers</p>
+              <h2 className="mt-2 text-3xl font-semibold tracking-tight text-white">Offer inbox and proposal review</h2>
+              <p className="mt-2 max-w-2xl text-white/58">
+                Frontend-first version of the future offer board where artists or producers can review structured proposals before activation.
+              </p>
+            </div>
+            <Link href="/projects" className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-white/82 transition hover:bg-white/[0.08]">
+              Open current hiring page
+            </Link>
+          </div>
+
+          <div className="mt-6 space-y-3">
+            {offersPreviewProjects.length > 0 ? offersPreviewProjects.map((project) => (
+              <div key={`offer-${project.id}`} className="flex flex-wrap items-center justify-between gap-4 rounded-[24px] border border-white/10 bg-white/[0.03] p-4">
+                <div>
+                  <p className="text-lg font-semibold text-white">{project.title}</p>
+                  <p className="mt-1 text-sm text-white/54">
+                    {project.preferred_genre || "Genre pending"} | {project.expected_track_count} tracks | {project.delivery_timeline_days ?? "-"} days
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button type="button" className="rounded-full border border-white/10 px-4 py-2 text-sm text-white/74">View details</button>
+                  <button type="button" className="rounded-full bg-[linear-gradient(135deg,#b398ff,#8f6dff)] px-4 py-2 text-sm font-semibold text-[#170f2c]">Accept later</button>
+                </div>
+              </div>
+            )) : (
+              <div className="rounded-[24px] border border-dashed border-white/12 bg-white/[0.02] p-5 text-sm text-white/52">
+                No offer rows to preview yet. Once proposal data is separated from accepted projects, this board becomes much more useful.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <aside className="overflow-hidden rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#17111f_0%,#110c18_100%)] p-6 shadow-[0_26px_70px_rgba(6,4,12,0.34)]">
+          <p className="eyebrow">Acceptance flow</p>
+          <h2 className="mt-2 text-2xl font-semibold tracking-tight text-white">Later backend rule</h2>
+          <div className="mt-5 space-y-3 text-sm text-white/68">
+            <div className="rounded-[20px] border border-white/8 bg-white/[0.03] p-4">1. Many proposals can exist for one hiring brief.</div>
+            <div className="rounded-[20px] border border-white/8 bg-white/[0.03] p-4">2. Accepting one proposal creates the active project and private chat.</div>
+            <div className="rounded-[20px] border border-white/8 bg-white/[0.03] p-4">3. The rest of the proposals close automatically.</div>
+          </div>
+        </aside>
+      </section>
+
+      <section id="analytics" className="space-y-6">
       <section className="overflow-hidden rounded-[36px] border border-white/8 bg-[radial-gradient(circle_at_top_left,rgba(165,122,255,0.18),transparent_28%),radial-gradient(circle_at_top_right,rgba(255,148,206,0.12),transparent_24%),linear-gradient(180deg,#120d1e_0%,#0c0914_100%)] p-6 md:p-8">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-white/6 pb-5">
           <div className="flex min-w-[280px] flex-1 items-center gap-3 rounded-full border border-white/8 bg-white/[0.04] px-4 py-3 text-white/54">
@@ -790,6 +1234,59 @@ export default function ProducerStudioPage() {
         </section>
       </section>
 
+      <section id="beats" className="grid gap-6 xl:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]">
+        <section className="surface-panel rounded-[32px] p-6">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="eyebrow">Beat Management</p>
+              <h2 className="mt-2 text-3xl font-semibold tracking-tight">Catalog table preview</h2>
+              <p className="mt-2 max-w-2xl text-white/58">
+                This can evolve into a full management table with filtering, status, pricing, visibility, and edit actions.
+              </p>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm text-white/66">
+              {beats.length} uploaded
+            </span>
+          </div>
+
+          <div className="mt-5 overflow-hidden rounded-[24px] border border-white/10 bg-[#0f0a16]">
+            <div className="grid grid-cols-[minmax(0,1.6fr)_0.9fr_1fr_0.8fr] gap-4 border-b border-white/8 px-5 py-4 text-xs uppercase tracking-[0.2em] text-white/34">
+              <span>Track</span>
+              <span>Vibe</span>
+              <span>Stats</span>
+              <span>Status</span>
+            </div>
+            <div className="divide-y divide-white/6">
+              {beatsPreview.map((beat, index) => (
+                <div key={`beat-preview-${beat.id}`} className="grid grid-cols-[minmax(0,1.6fr)_0.9fr_1fr_0.8fr] gap-4 px-5 py-4 text-sm text-white/78">
+                  <div>
+                    <p className="font-medium text-white">{beat.title}</p>
+                    <p className="mt-1 text-xs text-white/46">Added {beat.created_at ? new Date(beat.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short" }) : "recently"}</p>
+                  </div>
+                  <div>
+                    <p>{beat.bpm ?? "-"} BPM</p>
+                    <p className="mt-1 text-xs text-white/46">{beat.genre}</p>
+                  </div>
+                  <div>
+                    <p>{formatCompact(beat.play_count ?? 0)} plays</p>
+                    <p className="mt-1 text-xs text-white/46">{formatCompact(beat.like_count ?? 0)} likes</p>
+                  </div>
+                  <div>
+                    <span className={`rounded-full px-3 py-1 text-xs ${index === 0 ? "bg-[#9ce6d9]/12 text-[#bdf5ea]" : "bg-[#b398ff]/14 text-[#d8ceff]"}`}>
+                      {index === 0 ? "Live" : "Managed"}
+                    </span>
+                  </div>
+                </div>
+              ))}
+              {beatsPreview.length === 0 ? (
+                <div className="px-5 py-6 text-sm text-white/52">
+                  No beats uploaded yet. Once your catalog grows, this section can become the producer-side management dashboard.
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+
       <section className="grid gap-6 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]">
         <section className="surface-panel rounded-[32px] p-6">
           <div className="flex flex-wrap items-start justify-between gap-4">
@@ -880,6 +1377,9 @@ export default function ProducerStudioPage() {
       </section>
 
       {error ? <p className="text-sm text-[#ffb4a9]">{error}</p> : null}
+      </section>
+      </section>
+      </div>
     </div>
   );
 }

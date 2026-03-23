@@ -8,9 +8,11 @@ from beats.views import (
     BeatUploadDraftListCreateView,
     BeatUploadDraftPublishView,
     BeatUploadView,
+    DailyTrendingBeatsView,
     FeaturedCoverPhotoListView,
     LicenseTypeListCreateView,
     TrendingBeatsView,
+    WeeklyTrendingBeatsView,
 )
 
 
@@ -31,6 +33,8 @@ urlpatterns = [
     *both("upload-drafts/<int:pk>", BeatUploadDraftDetailView.as_view(), "beat-upload-draft-detail"),
     *both("upload-drafts/<int:draft_id>/publish", BeatUploadDraftPublishView.as_view(), "beat-upload-draft-publish"),
     *both("trending", TrendingBeatsView.as_view(), "beat-trending"),
+    *both("trending/daily", DailyTrendingBeatsView.as_view(), "beat-trending-daily"),
+    *both("trending/weekly", WeeklyTrendingBeatsView.as_view(), "beat-trending-weekly"),
     *both("featured-covers", FeaturedCoverPhotoListView.as_view(), "featured-cover-photo-list"),
     *both("licenses", LicenseTypeListCreateView.as_view(), "license-list-create"),
     *both("metadata-options", BeatMetadataOptionsView.as_view(), "beat-metadata-options"),
