@@ -103,6 +103,12 @@ class AnalyticsRangeSerializer(serializers.Serializer):
     end = serializers.DateField()
 
 
+class TopSellingBeatSerializer(serializers.Serializer):
+    beat = BeatSerializer()
+    sales_count = serializers.IntegerField()
+    revenue = serializers.DecimalField(max_digits=10, decimal_places=2)
+
+
 class ProducerDashboardSummarySerializer(serializers.Serializer):
     producer_id = serializers.IntegerField()
     follower_count = serializers.IntegerField()
@@ -117,7 +123,7 @@ class ProducerDashboardSummarySerializer(serializers.Serializer):
     selected_range = AnalyticsRangeSerializer()
     performance_series = AnalyticsSeriesPointSerializer(many=True)
     revenue_series = AnalyticsSeriesPointSerializer(many=True)
-    top_beats = BeatSerializer(many=True)
+    top_beats = TopSellingBeatSerializer(many=True)
     audience_fit_producers = ProducerDiscoveryCardSerializer(many=True)
 
 
@@ -140,3 +146,4 @@ class HomeFeedSerializer(serializers.Serializer):
     greeting = serializers.CharField()
     user_label = serializers.CharField(required=False, allow_blank=True)
     shelves = HomeShelfSerializer(many=True)
+

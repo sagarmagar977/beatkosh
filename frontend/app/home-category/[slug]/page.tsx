@@ -233,6 +233,9 @@ export default function HomeCategoryPage() {
 
   const selectedLicenseInfo = licenseOptions.find((item) => item.id === selectedLicenseId) ?? licenseOptions[0];
 
+  const detailHeroBeat = detail?.items[0]?.beat ?? null;
+  const detailHeroCover = detailHeroBeat ? resolveMediaUrl(detailHeroBeat.cover_art_obj) : null;
+
   const notify = (text: string) => {
     setMessage(text);
     window.setTimeout(() => setMessage(null), 2400);
@@ -299,23 +302,33 @@ export default function HomeCategoryPage() {
 
   return (
     <div className="space-y-6 pb-24">
-      <section className="overflow-hidden rounded-[34px] border border-white/8 bg-[radial-gradient(circle_at_top_left,rgba(91,72,255,0.16),transparent_30%),linear-gradient(180deg,#16191c_0%,#0f1113_100%)] p-6 shadow-[0_28px_90px_rgba(0,0,0,0.34)] md:p-8">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
+      <section className="relative overflow-hidden rounded-[34px] border border-white/8 bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)] p-6 shadow-[0_28px_90px_rgba(0,0,0,0.34)] md:p-8 min-h-[300px]">
+        {detailHeroCover ? <img src={detailHeroCover} alt={detailHeroBeat?.title || (detail?.title ?? 'Category')} className="absolute inset-0 h-full w-full object-cover" /> : null}
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,8,18,0.9)_0%,rgba(30,18,42,0.72)_42%,rgba(12,8,18,0.88)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(172,115,220,0.32),rgba(17,13,20,0.84)_82%)]" />
+        <div className="relative flex min-h-[250px] flex-wrap items-start justify-between gap-4">
+          <div className="self-end">
             <HomeCategoryBackButton />
-            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.28em] text-[#9c8cff]">Home Category</p>
+            <p className="mt-5 text-xs font-semibold uppercase tracking-[0.28em] text-white/62">Home Category</p>
             <h1 className="mt-4 max-w-[14ch] text-4xl font-semibold leading-[0.94] text-white md:text-6xl">
               {loading ? "Loading category" : detail?.title ?? "Category not found"}
             </h1>
-            <p className="mt-4 max-w-[720px] text-sm leading-6 text-white/65 md:text-base">
+            <p className="mt-4 max-w-[720px] text-sm leading-6 text-white/76 md:text-base">
               {loading
                 ? "Building the full list view for this homepage category."
                 : detail?.subtitle ?? "This category could not be found from the current homepage feed."}
             </p>
+            {detailHeroBeat ? (
+              <div className="mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
+                <span className="text-white/58">Featured cover</span>
+                <span className="font-medium text-white">{detailHeroBeat.title}</span>
+                <span className="text-white/58">{detailHeroBeat.producer_username}</span>
+              </div>
+            ) : null}
           </div>
           <Link
             href="/"
-            className="rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-medium text-white/72 transition hover:bg-white/[0.08] hover:text-white"
+            className="relative z-10 rounded-full border border-white/10 bg-white/[0.04] px-4 py-2 text-sm font-medium text-white/72 transition hover:bg-white/[0.08] hover:text-white"
           >
             Home
           </Link>

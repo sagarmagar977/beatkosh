@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { ChevronDown, Minus, Music2, Plus, Search, Wand2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
@@ -39,6 +40,41 @@ type Project = {
   linked_conversation_hint?: string;
   workflow_summary?: { milestone_count: number; deliverable_count: number; funded_milestones: number; approved_milestones: number; stage_label: string };
   milestones: Milestone[];
+};
+
+type Proposal = {
+  id: number;
+  project_request: number;
+  producer: number;
+  producer_username?: string;
+  amount: string;
+  message: string;
+  created_at: string;
+};
+
+type HiringAd = {
+  id: number;
+  title: string;
+  description: string;
+  project_type: string;
+  expected_track_count: number;
+  preferred_genre?: string;
+  instrument_types: string[];
+  mood_types: string[];
+  producer?: number | null;
+  producer_username?: string | null;
+  target_genre_style?: string;
+  reference_links?: string[];
+  delivery_timeline_days?: number | string | null;
+  revision_allowance?: number | string;
+  budget: string;
+  offer_price?: string | null;
+  status: string;
+  workflow_label: string;
+  proposal_count: number;
+  proposals: Proposal[];
+  created_at: string;
+  saved_at?: string;
 };
 
 type ProducerLookup = {
@@ -182,6 +218,7 @@ export default function ProjectsPage() {
   const searchParams = useSearchParams();
   const { token } = useAuth();
   const [projects, setProjects] = useState<Project[]>([]);
+  const [projectRequests, setProjectRequests] = useState<HiringAd[]>([]);
   const [metadata, setMetadata] = useState<ProjectMetadataOptions | null>(null);
   const [selectedProducerId] = useState(searchParams.get("producer") ?? "");
   const [selectedProducer, setSelectedProducer] = useState<ProducerLookup | null>(null);
@@ -205,10 +242,17 @@ export default function ProjectsPage() {
   const hasLockedProducer = Boolean(searchParams.get("producer"));
   const [showProductionType, setShowProductionType] = useState(true);
   const [showProjectDetails, setShowProjectDetails] = useState(true);
+  const [acceptingProposalId, setAcceptingProposalId] = useState<number | null>(null);
 
-  const loadProjects = async (accessToken: string) => {
-    const data = await apiRequest<Project[]>("/projects/", { token: accessToken });
-    setProjects(data);
+  const draftIdFromQuery = searchParams.get("draft");
+
+  const loadWorkspace = async (accessToken: string) => {
+    const [projectData, requestData] = await Promise.all([
+      apiRequest<Project[]>("/projects/", { token: accessToken }),
+      apiRequest<HiringAd[]>("/projects/requests/", { token: accessToken }),
+    ]);
+    setProjects(projectData);
+    setProjectRequests(requestData);
   };
 
   useEffect(() => {
@@ -216,11 +260,10 @@ export default function ProjectsPage() {
       if (!token) return;
       try {
         setLoading(true);
-        const [projectData, metadataOptions] = await Promise.all([
-          apiRequest<Project[]>("/projects/", { token }),
+        const [metadataOptions] = await Promise.all([
           apiRequest<ProjectMetadataOptions>("/projects/metadata-options/", { token }),
+          loadWorkspace(token),
         ]);
-        setProjects(projectData);
         setMetadata(metadataOptions);
         setError(null);
       } catch (err) {
@@ -327,14 +370,18 @@ export default function ProjectsPage() {
         token,
         body: requestBody,
       });
-      setMessage("Structured project brief sent.");
+      setMessage(selectedProducerId ? "Targeted hiring ad created." : "Hiring ad created.");
       setTitle("");
       setDescription("");
+      setPreferredGenre("");
+      setTrackCount(1);
       setInstrumentTypes([]);
       setMoodTypes([]);
       setGenreStyle("");
+      setTimelineDays("14");
+      setRevisionAllowance("2");
       setReferenceLinks([""]);
-      await loadProjects(token);
+      await loadWorkspace(token);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");
     } finally {
@@ -361,6 +408,131 @@ export default function ProjectsPage() {
   const removeReferenceLink = (index: number) => {
     setReferenceLinks((current) => (current.length === 1 ? [""] : current.filter((_, itemIndex) => itemIndex != index)));
   };
+
+  const draftRequests = useMemo(() => projectRequests.filter((request) => request.status === "draft"), [projectRequests]);
+  const postedRequests = useMemo(() => projectRequests.filter((request) => request.status !== "draft"), [projectRequests]);
+
+  const hasUnsavedChanges = useMemo(() => {
+    return Boolean(
+      title.trim() ||
+      description.trim() ||
+      preferredGenre ||
+      genreStyle.trim() ||
+      instrumentTypes.length ||
+      moodTypes.length ||
+      referenceLinks.some((item) => item.trim()) ||
+      trackCount !== 1 ||
+      timelineDays !== "14" ||
+      revisionAllowance !== "2"
+    );
+  }, [title, description, preferredGenre, genreStyle, instrumentTypes, moodTypes, referenceLinks, trackCount, timelineDays, revisionAllowance]);
+
+  useEffect(() => {
+    if (!hasUnsavedChanges) return;
+
+    const handleBeforeUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+
+    const handleDocumentClick = (event: MouseEvent) => {
+      const target = event.target instanceof Element ? event.target.closest("a[href]") : null;
+      if (!target) return;
+      const href = target.getAttribute("href");
+      if (!href || href.startsWith("#")) return;
+      const nextUrl = new URL(href, window.location.href);
+      const currentUrl = `${window.location.pathname}${window.location.search}`;
+      const targetUrl = `${nextUrl.pathname}${nextUrl.search}`;
+      if (currentUrl === targetUrl) return;
+      if (!window.confirm("You have unsaved form changes. Are you sure you want to leave this hiring form?")) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
+
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    document.addEventListener("click", handleDocumentClick, true);
+    return () => {
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+      document.removeEventListener("click", handleDocumentClick, true);
+    };
+  }, [hasUnsavedChanges]);
+
+  const handleSaveDraft = async () => {
+    if (!token) return;
+    setError(null);
+    try {
+      await apiRequest("/projects/request/draft/", {
+        method: "POST",
+        token,
+        body: {
+          title,
+          description,
+          project_type: projectType,
+          expected_track_count: trackCount,
+          preferred_genre: preferredGenre,
+          instrument_types: instrumentTypes,
+          mood_types: moodTypes,
+          target_genre_style: genreStyle,
+          reference_links: referenceLinks.map((item) => item.trim()).filter(Boolean),
+          delivery_timeline_days: timelineDays ? Number(timelineDays) : null,
+          revision_allowance: revisionAllowance ? Number(revisionAllowance) : 0,
+          budget,
+          offer_price: offerPrice || budget,
+          ...(selectedProducerId ? { producer: Number(selectedProducerId) } : {}),
+        },
+      });
+      setMessage("Hiring draft saved.");
+      await loadWorkspace(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Draft save failed");
+    }
+  };
+
+  const removeDraft = () => {
+    setMessage("Backend draft deletion is the next step. For now, drafts are read-only once saved.");
+  };
+
+  const handleAcceptProposal = async (proposalId: number) => {
+    if (!token) return;
+    try {
+      setAcceptingProposalId(proposalId);
+      setError(null);
+      await apiRequest(`/projects/proposal/${proposalId}/accept/`, { method: "POST", token });
+      setMessage("Offer accepted. The project moved into the active projects list.");
+      await loadWorkspace(token);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not accept offer");
+    } finally {
+      setAcceptingProposalId(null);
+    }
+  };
+
+  const loadDraftIntoForm = (draft: HiringAd) => {
+    setTitle(draft.title);
+    setDescription(draft.description);
+    setProjectType(draft.project_type);
+    setTrackCount(draft.expected_track_count || 1);
+    setPreferredGenre(draft.preferred_genre || "");
+    setInstrumentTypes(draft.instrument_types || []);
+    setMoodTypes(draft.mood_types || []);
+    setGenreStyle(draft.target_genre_style || "");
+    setTimelineDays(String(draft.delivery_timeline_days ?? "14"));
+    setRevisionAllowance(String(draft.revision_allowance ?? "2"));
+    setReferenceLinks(draft.reference_links?.length ? draft.reference_links : [""]);
+    setBudget(draft.budget || "3000.00");
+    setOfferPrice(draft.offer_price || draft.budget || "3000.00");
+    setShowProductionType(true);
+    setShowProjectDetails(true);
+    setMessage(`Draft "${draft.title}" loaded into the form.`);
+  };
+
+  useEffect(() => {
+    if (!draftIdFromQuery || projectRequests.length === 0) return;
+    const matchedDraft = projectRequests.find((draft) => String(draft.id) === draftIdFromQuery && draft.status === "draft");
+    if (!matchedDraft) return;
+    loadDraftIntoForm(matchedDraft);
+  }, [draftIdFromQuery, projectRequests]);
 
   return (
     <div className="space-y-6 pb-16">
@@ -520,13 +692,103 @@ export default function ProjectsPage() {
               <p className={`text-center text-xs ${offerTooLow || offerTooHigh ? "text-[#ffb4a9]" : "text-white/45"}`}>Offer moves in 5% steps. Minimum is Rs {formatCurrency(minOffer)} and maximum is Rs {formatCurrency(maxOffer)}.</p>
             </div>
             <p className="mt-4 text-center text-xs text-white/45">{selectedProducerId ? "This brief is locked to one producer until they respond." : "This is an open hiring brief. A producer is assigned only after you accept an offer."}</p>
-            <button type="submit" form="hiring-form" disabled={submitting || loading} className="mt-6 flex w-full items-center justify-center gap-2 rounded-[20px] bg-[linear-gradient(135deg,#c1c7cf,#8f98a3)] px-4 py-4 text-sm font-semibold text-[#11151a] disabled:opacity-60">
-              <Wand2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-              {submitting ? "Posting hiring brief..." : selectedProducerId ? "Post Targeted Hiring Ad" : "Post Open Hiring Ad"}
-            </button>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              <button type="button" onClick={handleSaveDraft} disabled={submitting || loading} className="flex w-full items-center justify-center gap-2 rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4 text-sm font-semibold text-white disabled:opacity-60">
+                <Plus className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                Save Draft
+              </button>
+              <button type="submit" form="hiring-form" disabled={submitting || loading} className="flex w-full items-center justify-center gap-2 rounded-[20px] bg-[linear-gradient(135deg,#c1c7cf,#8f98a3)] px-4 py-4 text-sm font-semibold text-[#11151a] disabled:opacity-60">
+                <Wand2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                {submitting ? "Posting hiring ad..." : selectedProducerId ? "Post Targeted Hiring Ad" : "Post Open Hiring Ad"}
+              </button>
+            </div>
           </section>
         </aside>
       </section>
+
+      {draftRequests.length > 0 || loading || postedRequests.length > 0 ? (
+        <section className="surface-panel rounded-[30px] p-6">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-white">Hiring Ads</p>
+              <p className="mt-1 text-sm text-white/55">Posted ads and saved drafts live here before they turn into accepted projects.</p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs text-white/65">
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{projectRequests.length} posted</span>
+              <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5">{draftRequests.length} drafts</span>
+            </div>
+          </div>
+          <div className="mt-5 space-y-4">
+            {draftRequests.map((draft) => (
+              <div key={`draft-${draft.id}`} className="rounded-[24px] border border-[#ffd38a]/15 bg-[#18140d] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full border border-[#ffd38a]/20 bg-[#ffd38a]/10 px-3 py-1 text-[11px] uppercase tracking-[0.18em] text-[#ffd38a]">Draft</span>
+                      <span className="text-xs text-white/42">Saved {new Date(draft.saved_at || draft.created_at).toLocaleDateString()}</span>
+                    </div>
+                    <p className="mt-3 font-medium text-white">{draft.title}</p>
+                    <p className="mt-1 text-sm text-white/58">{formatProjectType(draft.project_type)} | Budget Rs {formatCurrency(draft.offer_price || draft.budget)}</p>
+                    <p className="mt-2 text-sm text-white/52">{draft.description || "No description saved yet."}</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={() => removeDraft()} className="rounded-[16px] border border-white/10 px-4 py-2 text-sm text-white/76 transition hover:bg-white/[0.05]">Delete Draft</button>
+                  </div>
+                </div>
+              </div>
+            ))}
+            {loading ? <p className="text-sm text-white/55">Loading hiring ads...</p> : null}
+            {!loading && postedRequests.map((request) => (
+              <div key={`request-${request.id}`} className="rounded-[24px] border border-white/10 bg-[#0d1218] p-4">
+                <div className="flex flex-wrap items-start justify-between gap-4">
+                  <div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`rounded-full border px-3 py-1 text-[11px] uppercase tracking-[0.18em] ${request.producer ? "border-[#c7b2ff]/20 bg-[#8f6cff]/12 text-[#cfbeff]" : "border-white/10 bg-white/5 text-white/70"}`}>{request.producer ? "Targeted" : "Open"}</span>
+                      <span className="text-xs text-white/42">{request.workflow_label}</span>
+                    </div>
+                    <p className="mt-3 font-medium text-white">{request.title}</p>
+                    <p className="mt-1 text-sm text-white/62">{formatProjectType(request.project_type)} | Budget Rs {formatCurrency(request.budget)} | Offer Rs {formatCurrency(request.offer_price)} {request.producer_username ? `| ${request.producer_username}` : ""}</p>
+                    <p className="mt-2 text-sm text-white/58">{request.description}</p>
+                  </div>
+                  <div className="rounded-[18px] border border-white/8 bg-white/[0.03] px-4 py-3 text-right">
+                    <p className="text-xs uppercase tracking-[0.18em] text-white/40">Offers</p>
+                    <p className="mt-2 text-2xl font-semibold text-white">{request.proposal_count}</p>
+                  </div>
+                </div>
+                <div className="mt-4 rounded-[20px] border border-white/10 bg-white/[0.03] p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs uppercase tracking-[0.18em] text-white/42">Offerings</p>
+                      <p className="mt-1 text-sm text-white/58">Review producer offers, open their profile, and accept the best fit.</p>
+                    </div>
+                    <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs text-white/65">{request.proposals.length} listed</span>
+                  </div>
+                  <div className="mt-4 space-y-3">
+                    {request.proposals.length > 0 ? request.proposals.map((proposal) => (
+                      <div key={`request-${request.id}-proposal-${proposal.id}`} className="rounded-[18px] border border-white/10 bg-[#11161d] p-4">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <p className="font-medium text-white">{proposal.producer_username || "Producer"}</p>
+                            <p className="mt-1 text-sm text-white/58">Offer Rs {formatCurrency(proposal.amount)}</p>
+                          </div>
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={`/producers/${proposal.producer}`} className="rounded-[14px] border border-white/10 px-4 py-2 text-sm text-white/78 transition hover:bg-white/[0.05]">View Profile</Link>
+                            <button type="button" onClick={() => void handleAcceptProposal(proposal.id)} disabled={acceptingProposalId === proposal.id || request.status !== "pending"} className="rounded-[14px] bg-[#a887ff] px-4 py-2 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff] disabled:opacity-60">
+                              {acceptingProposalId === proposal.id ? "Accepting..." : "Accept Offer"}
+                            </button>
+                          </div>
+                        </div>
+                        <p className="mt-3 text-sm text-white/60">{proposal.message || "No message added yet."}</p>
+                      </div>
+                    )) : <p className="text-sm text-white/55">No producer offers yet. When producers apply, they will show here.</p>}
+                  </div>
+                </div>
+              </div>
+            ))}
+            {!loading && postedRequests.length === 0 && draftRequests.length === 0 ? <p className="text-sm text-white/55">No hiring ads or drafts yet.</p> : null}
+          </div>
+        </section>
+      ) : null}
 
       {loading || projects.length > 0 ? (
         <section className="surface-panel rounded-[30px] p-6">

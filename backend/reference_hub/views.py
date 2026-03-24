@@ -75,7 +75,7 @@ class Beat22ReferenceService:
                 "key": "producer_dashboard",
                 "title": "Producer Studio Dashboard",
                 "status": "in_progress",
-                "frontend_route": "/producer/studio",
+                "frontend_route": "/producer/profile",
                 "backend_dependencies": ["/api/v1/beats/", "/api/v1/payments/wallet/me/"],
             },
             {

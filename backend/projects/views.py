@@ -5,6 +5,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from beats.metadata_choices import GENRE_VALUES, INSTRUMENT_VALUES, MOOD_VALUES
+from accounts.models import User
 from projects.models import Deliverable, Milestone, Project, ProjectRequest, Proposal
 from projects.serializers import (
     DeliverableSerializer,
@@ -75,7 +76,40 @@ class ProjectRequestCreateView(generics.CreateAPIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def perform_create(self, serializer):
-        serializer.save(artist=self.request.user)
+        serializer.save(artist=self.request.user, status=ProjectRequest.STATUS_PENDING)
+
+
+class ProjectRequestDraftCreateView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        producer = None
+        producer_id = request.data.get("producer")
+        if producer_id:
+            try:
+                producer = User.objects.get(id=producer_id, is_producer=True)
+            except User.DoesNotExist as exc:
+                raise ValidationError({"producer": "Selected user is not a producer."}) from exc
+
+        draft = ProjectRequest.objects.create(
+            artist=request.user,
+            producer=producer,
+            title=(request.data.get("title") or "Untitled draft")[:150],
+            description=request.data.get("description") or "",
+            project_type=request.data.get("project_type") or ProjectRequest.TYPE_CUSTOM_SINGLE,
+            expected_track_count=max(1, int(request.data.get("expected_track_count") or 1)),
+            preferred_genre=request.data.get("preferred_genre") or "",
+            instrument_types=request.data.get("instrument_types") or [],
+            mood_types=request.data.get("mood_types") or [],
+            target_genre_style=request.data.get("target_genre_style") or "",
+            reference_links=request.data.get("reference_links") or [],
+            delivery_timeline_days=request.data.get("delivery_timeline_days") or None,
+            revision_allowance=int(request.data.get("revision_allowance") or 0),
+            budget=request.data.get("budget") or "0.00",
+            offer_price=request.data.get("offer_price") or request.data.get("budget") or "0.00",
+            status=ProjectRequest.STATUS_DRAFT,
+        )
+        return Response(ProjectRequestSerializer(draft).data, status=status.HTTP_201_CREATED)
 
 
 class ProjectProposalCreateView(generics.CreateAPIView):
@@ -94,6 +128,26 @@ class ProjectProposalCreateView(generics.CreateAPIView):
             raise PermissionDenied("Only the requested producer can submit a proposal for this brief.")
 
         serializer.save(producer=self.request.user)
+
+
+class ProjectRequestListView(generics.ListAPIView):
+    serializer_class = ProjectRequestSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        project_type = self.request.query_params.get("project_type", "").strip()
+
+        if user.active_role == "producer":
+            queryset = ProjectRequest.objects.filter(status=ProjectRequest.STATUS_PENDING)
+            queryset = queryset.filter(Q(producer__isnull=True) | Q(producer=user))
+        else:
+            queryset = ProjectRequest.objects.filter(artist=user)
+
+        if project_type:
+            queryset = queryset.filter(project_type=project_type)
+
+        return queryset.select_related("artist", "producer").prefetch_related("proposals").order_by("-created_at")
 
 
 class ProjectProposalAcceptView(APIView):
@@ -240,3 +294,4 @@ class MilestoneDeliverableListView(generics.ListAPIView):
         if self.request.user.id not in (milestone.project.artist_id, milestone.project.producer_id):
             raise PermissionDenied("Only project participants can view deliverables.")
         return Deliverable.objects.filter(milestone=milestone).select_related("submitted_by")
+

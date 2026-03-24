@@ -67,6 +67,20 @@ class ProjectsApiTests(APITestCase):
         self.assertIn("Piano", response.data["instrument_types"])
         self.assertIn("Dark", response.data["moods"])
 
+    def test_project_request_draft_create(self):
+        response = self.client.post(
+            reverse("project-request-draft-create"),
+            {
+                "title": "Rough draft",
+                "project_type": "custom_single",
+                "budget": "0.00",
+            },
+            format="json",
+        )
+        self.assertEqual(response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(response.data["status"], ProjectRequest.STATUS_DRAFT)
+        self.assertEqual(response.data["workflow_label"], "Draft")
+
     def test_project_request_create_without_locked_producer(self):
         response = self._create_project_request()
         self.assertEqual(response.status_code, status.HTTP_201_CREATED)
@@ -94,6 +108,60 @@ class ProjectsApiTests(APITestCase):
             format="json",
         )
         self.assertEqual(proposal_response.status_code, status.HTTP_403_FORBIDDEN)
+
+    def test_artist_request_list_only_returns_own_ads(self):
+        own_response = self._create_project_request()
+        self.assertEqual(own_response.status_code, status.HTTP_201_CREATED)
+
+        other_artist = User.objects.create_user(
+            username="otherartist",
+            email="otherartist@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        ProjectRequest.objects.create(
+            artist=other_artist,
+            title="Other Brief",
+            description="Other brief",
+            project_type="custom_single",
+            budget="300.00",
+        )
+
+        response = self.client.get(reverse("project-request-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["title"], "Album Beat Pack")
+
+        draft_response = self.client.post(reverse("project-request-draft-create"), {"title": "Draft only"}, format="json")
+        self.assertEqual(draft_response.status_code, status.HTTP_201_CREATED)
+
+        refreshed = self.client.get(reverse("project-request-list"))
+        self.assertEqual(refreshed.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(refreshed.data), 2)
+        self.assertTrue(any(item["status"] == ProjectRequest.STATUS_DRAFT for item in refreshed.data))
+
+    def test_producer_request_list_returns_open_and_targeted_briefs(self):
+        open_response = self._create_project_request()
+        targeted_response = self._create_project_request(producer_id=self.producer.id)
+        hidden_response = self._create_project_request(producer_id=self.producer_two.id)
+        self.assertEqual(open_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(targeted_response.status_code, status.HTTP_201_CREATED)
+        self.assertEqual(hidden_response.status_code, status.HTTP_201_CREATED)
+
+        producer_login = self.client.post(
+            reverse("login"),
+            {"username": "projproducer", "password": "strong-pass-123"},
+            format="json",
+        )
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {producer_login.data['access']}")
+        response = self.client.get(reverse("project-request-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 2)
+        self.assertTrue(all(item["title"] == "Album Beat Pack" for item in response.data))
+        self.assertTrue(any(item["producer"] is None for item in response.data))
+        self.assertTrue(any(item["producer"] == self.producer.id for item in response.data))
 
     def test_artist_accepts_offer_and_selected_producer_becomes_project_owner(self):
         req_response = self._create_project_request()
@@ -173,3 +241,18 @@ class ProjectsApiTests(APITestCase):
         self.assertEqual(project_refresh.status_code, status.HTTP_200_OK)
         self.assertEqual(project_refresh.data[0]["milestones"][0]["deliverables"][0]["version_label"], "v1")
         self.assertEqual(project_refresh.data[0]["workflow_stage"], Project.WORKFLOW_DELIVERABLES_REVIEW)
+
+    def test_producer_request_list_keeps_same_users_pending_briefs_visible(self):
+        own_response = self._create_project_request()
+        self.assertEqual(own_response.status_code, status.HTTP_201_CREATED)
+
+        switch_response = self.client.post(reverse("start-selling"), {}, format="json")
+        self.assertEqual(switch_response.status_code, status.HTTP_200_OK)
+
+        response = self.client.get(reverse("project-request-list"))
+        self.assertEqual(response.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(response.data), 1)
+        self.assertEqual(response.data[0]["id"], own_response.data["id"])
+        self.assertEqual(response.data[0]["status"], ProjectRequest.STATUS_PENDING)
+
+

@@ -224,6 +224,7 @@ class AnalyticsApiTests(APITestCase):
         self.assertEqual(len(response.data["performance_series"]), 7)
         self.assertEqual(len(response.data["revenue_series"]), 7)
         self.assertIn("top_beats", response.data)
+        self.assertEqual(response.data["top_beats"], [])
         self.assertEqual(sum(point["plays"] for point in response.data["performance_series"]), 1)
 
     def test_home_feed_uses_history_for_recent_and_sessions_for_jump_back(self):
@@ -310,3 +311,4 @@ class AnalyticsApiTests(APITestCase):
         self.assertEqual(resume_start.status_code, status.HTTP_201_CREATED)
         self.assertEqual(ListeningHistory.objects.get(user=artist, beat=beat).play_count, 1)
         self.assertEqual(ListeningSession.objects.filter(user=artist, beat=beat).count(), 2)
+

@@ -11,6 +11,8 @@ from projects.views import (
     ProjectProposalAcceptView,
     ProjectProposalCreateView,
     ProjectRequestCreateView,
+    ProjectRequestDraftCreateView,
+    ProjectRequestListView,
 )
 
 
@@ -26,6 +28,8 @@ def both(route: str, view, name: str):
 
 urlpatterns = [
     *both("metadata-options", ProjectMetadataOptionsView.as_view(), "project-metadata-options"),
+    *both("requests", ProjectRequestListView.as_view(), "project-request-list"),
+    *both("request/draft", ProjectRequestDraftCreateView.as_view(), "project-request-draft-create"),
     *both("request", ProjectRequestCreateView.as_view(), "project-request-create"),
     *both("proposal", ProjectProposalCreateView.as_view(), "project-proposal-create"),
     *both("proposal/<int:pk>/accept", ProjectProposalAcceptView.as_view(), "project-proposal-accept"),

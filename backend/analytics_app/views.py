@@ -477,7 +477,28 @@ class ProducerDashboardSummaryView(APIView):
         hiring_inquiry_count = ProjectRequest.objects.filter(producer_id=producer_id).count()
         follower_count = ProducerFollow.objects.filter(producer_id=producer_id).count()
         conversion_rate = round((purchases / plays) * 100, 2) if plays else 0.0
-        top_beats = list(beat_queryset_for_producer.order_by("-created_at")[:8])
+        top_beat_sales_rows = list(
+            purchases_queryset.values("product_id")
+            .annotate(sales_count=Count("id"), revenue=Sum("price"))
+            .order_by("-sales_count", "-revenue", "product_id")[:5]
+        )
+        top_beat_ids = [row["product_id"] for row in top_beat_sales_rows]
+        top_beat_map = {
+            beat.id: beat
+            for beat in beat_queryset_for_producer.filter(id__in=top_beat_ids)
+        }
+        top_beats = []
+        for row in top_beat_sales_rows:
+            beat = top_beat_map.get(row["product_id"])
+            if beat is None:
+                continue
+            top_beats.append(
+                {
+                    "beat": beat,
+                    "sales_count": row["sales_count"] or 0,
+                    "revenue": row["revenue"] or 0,
+                }
+            )
 
         audience_candidates = ProducerProfile.objects.select_related("user").filter(user__is_producer=True).exclude(user_id=producer_id)[:3]
         audience_fit = []
@@ -759,3 +780,4 @@ class SimilarProducersView(APIView):
             serialized["badges"] = summary["badges"]
             data.append(serialized)
         return Response(data)
+

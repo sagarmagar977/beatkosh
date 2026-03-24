@@ -4,7 +4,7 @@ import { Compass, Home, Search, ShoppingCart } from "lucide-react";
 import { SunMoon } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type CSSProperties, useEffect, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
@@ -60,7 +60,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const avatarFallback = (user?.producer_profile?.producer_name || user?.username || "U").slice(0, 1).toUpperCase();
 
   const normalizedPath = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
-  const producerWorkspaceRoutes = ["/producer/studio", "/producer/upload-wizard", "/producer/settings", "/producer/profile", "/producer/media-uploads", "/dashboard/selling", "/wallet"];
+  const producerWorkspaceRoutes = ["/producer/profile", "/producer/upload-wizard", "/producer/settings", "/producer/media-uploads", "/dashboard/selling", "/wallet"];
   const isProducerWorkspaceRoute = producerWorkspaceRoutes.some((route) => normalizedPath === route || normalizedPath.startsWith(`${route}/`));
   const publicAuthRoutes = ["/auth/login", "/auth/register"];
   const isPublicAuthRoute = publicAuthRoutes.includes(normalizedPath);
@@ -200,6 +200,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const isBrowseActive = normalizedPath === "/activity";
   const isHomeActive =
     normalizedPath === "/" || normalizedPath === "/dashboard/listening" || normalizedPath === "/dashboard/selling";
+
+  const switchRoleInPlace = useCallback(
+    async (role: "artist" | "producer") => {
+      await switchRole(role);
+      setUserMenuOpen(false);
+      setPinnedMenuOpen(null);
+      setHoverMenuOpen(null);
+      router.refresh();
+    },
+    [router, switchRole],
+  );
 
   const cancelUserMenuClose = () => {
     if (userMenuCloseTimeout.current) {
@@ -409,7 +420,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setStartSellingError(null);
                   try {
                     await startSelling();
-                    router.push("/producer/studio");
+                    router.push("/producer/profile");
                   } catch (err) {
                     setStartSellingError(err instanceof Error ? err.message : "Unable to start selling");
                   } finally {
@@ -436,8 +447,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setStartSellingBusy(true);
                   setStartSellingError(null);
                   try {
-                    await switchRole("producer");
-                    router.push("/producer/studio");
+                    await switchRoleInPlace("producer");
                   } catch (err) {
                     setStartSellingError(err instanceof Error ? err.message : "Unable to switch to producer mode");
                   } finally {
@@ -496,8 +506,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                             disabled={active}
                             onClick={async () => {
                               try {
-                                await switchRole(role);
-                                router.push(role === "producer" ? "/producer/studio" : "/dashboard/listening");
+                                await switchRoleInPlace(role);
                               } catch (err) {
                                 setStartSellingError(err instanceof Error ? err.message : "Unable to switch mode");
                               }
@@ -528,12 +537,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   </Link>
                   {user?.active_role === "producer" ? (
                     <>
-                      <Link
-                        href="/producer/studio"
-                        className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                      >
-                        Studio
-                      </Link>
                       <Link
                         href="/producer/media-uploads"
                         className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
@@ -757,7 +760,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         className={
           isOrdersRoute || isActivityRoute
             ? "flex min-h-0 flex-1 w-full overflow-hidden px-3 pb-6 md:px-4 lg:px-5"
-            : "w-full px-3 pb-32 md:px-4 lg:px-5"
+            : "w-full px-3 pb-24 md:px-4 lg:px-5"
         }
       >
         {children}

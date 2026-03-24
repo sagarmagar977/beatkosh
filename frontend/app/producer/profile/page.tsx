@@ -1,6 +1,6 @@
 "use client";
 
-import { BadgeCheck, Camera, Heart, PencilLine, Play, ShieldAlert, X } from "lucide-react";
+import { ArrowUpRight, BadgeCheck, Camera, Heart, PencilLine, Play, ShieldAlert, Users, WalletCards, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
 
@@ -42,11 +42,40 @@ type TrustSummary = {
   verified?: boolean;
 };
 
+type RangeKey = "7d" | "30d" | "90d";
+
+type DashboardSeriesPoint = {
+  label: string;
+  plays?: number;
+  sales?: number;
+  revenue?: number;
+};
+
+type TopSellingBeat = {
+  beat: Beat;
+  sales_count: number;
+  revenue: number | string;
+};
+
 type DashboardSummary = {
   follower_count: number;
   verified: boolean;
   plays: number;
   likes: number;
+  purchases: number;
+  conversion_rate: number;
+  skip_events: number;
+  activity_drop_count: number;
+  hiring_inquiry_count: number;
+  selected_range: {
+    key: RangeKey;
+    days: number;
+    start: string;
+    end: string;
+  };
+  performance_series: DashboardSeriesPoint[];
+  revenue_series: DashboardSeriesPoint[];
+  top_beats: TopSellingBeat[];
 };
 
 type BeatMetadataOptions = {
@@ -61,7 +90,7 @@ type ListeningHistoryItem = {
 };
 
 
-type PrivateTab = "beats" | "playlists" | "history";
+type PrivateTab = "beats" | "playlists" | "history" | "analytics";
 type TrackView = "recent" | "mostPlayed" | "topLiked";
 
 function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
@@ -84,6 +113,30 @@ function formatCompact(value: number) {
   return String(value);
 }
 
+function formatCurrency(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return value.toLocaleString("en-US", { maximumFractionDigits: 0 });
+}
+
+function buildChartPoints(values: number[], width: number, height: number) {
+  if (values.length === 0) return [];
+  const max = Math.max(...values, 1);
+  const min = Math.min(...values, 0);
+  const range = Math.max(max - min, 1);
+  return values.map((value, index) => ({
+    x: values.length === 1 ? width / 2 : (index / (values.length - 1)) * width,
+    y: height - ((value - min) / range) * height,
+    value,
+    index,
+  }));
+}
+
+function normalizePoints(values: number[], width: number, height: number) {
+  return buildChartPoints(values, width, height)
+    .map((point) => `${point.x},${point.y}`)
+    .join(" ");
+}
+
 function formatReleaseYear(raw?: string) {
   if (!raw) return "New release";
   const parsed = new Date(raw);
@@ -102,6 +155,7 @@ export default function ProducerPrivateProfilePage() {
   const [trust, setTrust] = useState<TrustSummary | null>(null);
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [history, setHistory] = useState<ListeningHistoryItem[]>([]);
+  const [selectedRange, setSelectedRange] = useState<RangeKey>("30d");
   const [tab, setTab] = useState<PrivateTab>("beats");
   const [trackView, setTrackView] = useState<TrackView>("recent");
   const [profileName, setProfileName] = useState("");
@@ -126,7 +180,7 @@ export default function ProducerPrivateProfilePage() {
           apiRequest<ProducerProfile>("/account/producer-profile/", { token }),
           apiRequest<Beat[]>(`/beats/?producer=${user.id}`),
           apiRequest<TrustSummary>(`/account/producer-trust/${user.id}/`),
-          apiRequest<DashboardSummary>(`/analytics/producer/${user.id}/dashboard-summary/`),
+          apiRequest<DashboardSummary>(`/analytics/producer/${user.id}/dashboard-summary/?range=${selectedRange}`, { token }),
           apiRequest<ListeningHistoryItem[]>("/analytics/listening/recent/", { token }),
           apiRequest<BeatMetadataOptions>("/beats/metadata-options/"),
         ]);
@@ -152,7 +206,7 @@ export default function ProducerPrivateProfilePage() {
     };
 
     void run();
-  }, [token, user]);
+  }, [selectedRange, token, user]);
 
   const notify = (text: string) => {
     setMessage(text);
@@ -285,6 +339,23 @@ export default function ProducerPrivateProfilePage() {
         beats: beats.filter((beat) => (beat.tag_names ?? []).includes(tag) || beat.mood === tag).slice(0, 10),
       }))
       .filter((entry) => entry.beats.length > 0);
+  }, [beats]);
+
+  const analyticsPlaySeries = dashboard?.performance_series.map((point) => point.plays ?? 0) ?? [];
+  const analyticsSalesSeries = dashboard?.performance_series.map((point) => point.sales ?? 0) ?? [];
+  const analyticsRevenueSeries = dashboard?.revenue_series.map((point) => point.revenue ?? 0) ?? [];
+  const analyticsLabels = dashboard?.performance_series.map((point) => point.label) ?? [];
+  const playDots = buildChartPoints(analyticsPlaySeries, 100, 60);
+  const salesDots = buildChartPoints(analyticsSalesSeries, 100, 60);
+  const playsLine = normalizePoints(analyticsPlaySeries, 100, 60);
+  const salesLine = normalizePoints(analyticsSalesSeries, 100, 60);
+  const revenueTotal = analyticsRevenueSeries.reduce((sum, value) => sum + value, 0);
+  const topSellingBeats = dashboard?.top_beats ?? [];
+  const currentRangeLabel = dashboard?.selected_range
+    ? `${dashboard.selected_range.start} to ${dashboard.selected_range.end}`
+    : "Selected range";
+  const bestPerformer = useMemo(() => {
+    return [...beats].sort((a, b) => (b.play_count ?? 0) - (a.play_count ?? 0))[0] ?? null;
   }, [beats]);
 
   const renderBeatTab = () => {
@@ -567,6 +638,182 @@ export default function ProducerPrivateProfilePage() {
     </section>
   );
 
+  const renderAnalyticsTab = () => (
+    <section className="mt-4 overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(140,77,255,0.22),transparent_28%),linear-gradient(180deg,#17111f_0%,#0f0b17_100%)] p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.24em] text-white/45">Producer analytics</p>
+          <h2 className="spotify-display mt-3 text-[2rem] leading-none text-white sm:text-[2.8rem]">Overview</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
+            Plays, sales, audience growth, and conversion for your producer profile.
+          </p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {([
+            { key: "7d", label: "7D" },
+            { key: "30d", label: "30D" },
+            { key: "90d", label: "90D" },
+          ] as { key: RangeKey; label: string }[]).map((option) => (
+            <button
+              key={option.key}
+              type="button"
+              onClick={() => setSelectedRange(option.key)}
+              className={`rounded-full px-4 py-2 text-sm transition ${
+                selectedRange === option.key
+                  ? "bg-white text-black"
+                  : "border border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08]"
+              }`}
+            >
+              {option.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="mt-3 text-xs uppercase tracking-[0.18em] text-white/35">{currentRangeLabel}</div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-4">
+        <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Revenue</p>
+            <WalletCards className="h-4 w-4 text-[#b79cff]" strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <p className="mt-3 text-2xl font-semibold text-white">Rs {formatCurrency(revenueTotal)}</p>
+          <p className="mt-1 text-sm text-white/58">{dashboard?.purchases ?? 0} paid beat orders</p>
+        </div>
+        <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Followers</p>
+            <Users className="h-4 w-4 text-[#9ee8dc]" strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <p className="mt-3 text-2xl font-semibold text-white">{formatCompact(dashboard?.follower_count ?? 0)}</p>
+          <p className="mt-1 text-sm text-white/58">Audience following this producer profile</p>
+        </div>
+        <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Conversion</p>
+            <ArrowUpRight className="h-4 w-4 text-[#ffb06d]" strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <p className="mt-3 text-2xl font-semibold text-white">{dashboard?.conversion_rate?.toFixed(1) ?? "0.0"}%</p>
+          <p className="mt-1 text-sm text-white/58">{dashboard?.skip_events ?? 0} skip events in this range</p>
+        </div>
+        <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Hiring</p>
+            <BadgeCheck className="h-4 w-4 text-[#ff9fc4]" strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <p className="mt-3 text-2xl font-semibold text-white">{dashboard?.hiring_inquiry_count ?? 0}</p>
+          <p className="mt-1 text-sm text-white/58">{dashboard?.activity_drop_count ?? 0} activity drops logged</p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_280px]">
+        <section className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-lg font-semibold text-white">Plays and sales trend</p>
+              <p className="mt-1 text-sm text-white/58">Daily activity across the selected range.</p>
+            </div>
+            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.16em] text-white/54">
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-[#b89dff]" />
+                <span>Plays</span>
+              </span>
+              <span className="inline-flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full border border-[#ff9fc4] bg-transparent" />
+                <span>Sales</span>
+              </span>
+            </div>
+          </div>
+          <svg viewBox="0 0 100 60" className="mt-5 h-[220px] w-full">
+            {[12, 28, 44].map((line) => (
+              <line key={line} x1="0" y1={line} x2="100" y2={line} stroke="rgba(255,255,255,0.08)" strokeWidth="0.35" />
+            ))}
+            <polyline
+              fill="none"
+              stroke="#b89dff"
+              strokeWidth="0.9"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              points={playsLine || "0,42 20,34 40,36 60,22 80,18 100,15"}
+            />
+            {playDots.map((point) => (
+              <circle key={`play-${point.index}`} cx={point.x} cy={point.y} r="1.3" fill="#b89dff" />
+            ))}
+            <polyline
+              fill="none"
+              stroke="#ff9fc4"
+              strokeWidth="0.85"
+              strokeDasharray="2.4 1.6"
+              strokeLinejoin="round"
+              strokeLinecap="round"
+              points={salesLine || "0,55 20,52 40,50 60,46 80,43 100,38"}
+            />
+            {salesDots.map((point) => (
+              <circle key={`sale-${point.index}`} cx={point.x} cy={point.y} r="1.35" fill="#0f0b17" stroke="#ff9fc4" strokeWidth="0.7" />
+            ))}
+          </svg>
+          <div className={`mt-2 grid gap-2 text-[11px] uppercase tracking-[0.16em] text-white/36 ${analyticsLabels.length > 8 ? "grid-cols-4 sm:grid-cols-8" : "grid-cols-3 sm:grid-cols-6"}`}>
+            {(analyticsLabels.length ? analyticsLabels : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]).map((label) => (
+              <span key={label}>{label}</span>
+            ))}
+          </div>
+        </section>
+
+        <aside className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+          <p className="text-lg font-semibold text-white">Best sold beats</p>
+          <p className="mt-1 text-sm text-white/55">Your strongest sellers for this range, plus a quick health snapshot.</p>
+          <div className="mt-4 space-y-3">
+            {topSellingBeats.length ? (
+              topSellingBeats.map((entry, index) => (
+                <button
+                  key={`${entry.beat.id}-${index}`}
+                  type="button"
+                  onClick={() => router.push(`/beats/${entry.beat.id}`)}
+                  className="flex w-full items-center gap-3 rounded-[18px] border border-white/8 bg-white/[0.03] p-3 text-left transition hover:bg-white/[0.06]"
+                >
+                  <span className="w-5 text-xs font-semibold text-white/42">{index + 1}</span>
+                  <div className="h-12 w-12 overflow-hidden rounded-xl bg-white/[0.05]">
+                    {entry.beat.cover_art_obj ? (
+                      <img src={resolveMediaUrl(entry.beat.cover_art_obj)} alt={entry.beat.title} className="h-full w-full object-cover" />
+                    ) : (
+                      <div className="h-full w-full bg-[radial-gradient(circle_at_top,_rgba(255,95,31,0.42),_rgba(19,20,23,0.95)_62%)]" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="line-clamp-1 text-sm font-semibold text-white">{entry.beat.title}</p>
+                    <p className="mt-1 text-xs text-white/48">{entry.sales_count} sales | Rs {formatCurrency(Number(entry.revenue ?? 0))}</p>
+                  </div>
+                </button>
+              ))
+            ) : (
+              <div className="rounded-[18px] border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+                No sales have been recorded in this range yet.
+              </div>
+            )}
+          </div>
+          <div className="mt-5 space-y-3">
+            <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-white/38">Top performer</p>
+              <p className="mt-2 text-base font-semibold text-white">{bestPerformer?.title ?? "No beat data yet"}</p>
+              <p className="mt-1 text-sm text-white/58">{formatCompact(bestPerformer?.play_count ?? 0)} plays</p>
+            </div>
+            <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-white/38">Trust</p>
+              <p className="mt-2 text-base font-semibold text-white">{trust?.trust_score ?? 0}/100</p>
+              <p className="mt-1 text-sm text-white/58">{trust?.profile_completion ?? 0}% profile completion</p>
+            </div>
+            <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+              <p className="text-xs uppercase tracking-[0.18em] text-white/38">Purchase intent</p>
+              <p className="mt-2 text-base font-semibold text-white">{dashboard?.purchases ?? 0} purchases</p>
+              <p className="mt-1 text-sm text-white/58">{dashboard?.plays ?? 0} plays tracked in the selected window</p>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+
 
   if (!user?.is_producer) {
     return <div className="theme-surface rounded-[28px] p-6 text-sm theme-text-muted">Producer mode is required to use this page.</div>;
@@ -753,7 +1000,7 @@ export default function ProducerPrivateProfilePage() {
           <section className="theme-surface rounded-[30px] p-4 sm:p-5">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b pb-3" style={{ borderColor: "var(--line)" }}>
               <div>
-                <p className="spotify-kicker theme-text-quiet text-[11px]">Producer studio</p>
+                <p className="spotify-kicker theme-text-quiet text-[11px]">Producer profile</p>
                 <h1 className="spotify-display theme-text-main mt-1 text-[2rem] sm:text-[2.9rem]">{profileDisplayName}</h1>
               </div>
               <button
@@ -770,6 +1017,7 @@ export default function ProducerPrivateProfilePage() {
                 { key: "beats", label: "Beats" },
                 { key: "playlists", label: "Playlists" },
                 { key: "history", label: "History" },
+                { key: "analytics", label: "Analytics" },
               ].map((option) => (
                 <button
                   key={option.key}
@@ -786,6 +1034,7 @@ export default function ProducerPrivateProfilePage() {
               {tab === "beats" ? renderBeatTab() : null}
               {tab === "playlists" ? renderPlaylistsTab() : null}
               {tab === "history" ? renderHistoryTab() : null}
+              {tab === "analytics" ? renderAnalyticsTab() : null}
             </div>
           </section>
 

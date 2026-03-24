@@ -1,1 +1,1 @@
-﻿export { default } from "../../producer/studio/page";
+export { default } from "../../producer/profile/page";

@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
-import { BookOpen, Clock3, Compass, FileText, Heart, LayoutPanelLeft, MessageSquareMore, Package2, Search, ShoppingCart, SlidersHorizontal, Upload, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, Clock3, Compass, FileText, Heart, LayoutPanelLeft, MessageSquareMore, Minus, Package2, Pencil, Plus, ShoppingCart, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
 import { BeatListRow } from "@/components/beat-list-row";
@@ -38,6 +38,54 @@ type LicenseOption = {
 
 type CartSummary = {
   items: Array<{ product_type: string; product_id: number }>;
+};
+
+type Proposal = {
+  id: number;
+  project_request: number;
+  producer: number;
+  producer_username?: string;
+  amount: string;
+  message: string;
+  created_at: string;
+};
+
+type HiringBrief = {
+  id: number;
+  artist: number;
+  artist_username?: string;
+  producer?: number | null;
+  producer_username?: string | null;
+  title: string;
+  description: string;
+  project_type: string;
+  expected_track_count: number;
+  preferred_genre?: string;
+  instrument_types: string[];
+  mood_types: string[];
+  target_genre_style?: string;
+  reference_links?: string[];
+  delivery_timeline_days?: number | null;
+  revision_allowance?: number;
+  budget: string;
+  offer_price?: string | null;
+  status: string;
+  workflow_label: string;
+  proposal_count: number;
+  proposals: Proposal[];
+  created_at: string;
+};
+
+type HiringMetadata = {
+  project_types: Array<{
+    value: string;
+    label: string;
+    description: string;
+    base_price: string;
+  }>;
+  negotiation: {
+    max_negotiation_discount_factor: string;
+  };
 };
 
 type BrowseTile = {
@@ -93,37 +141,51 @@ export default function ActivityPage() {
   const [licenseModalBeat, setLicenseModalBeat] = useState<Beat | null>(null);
   const [selectedLicenseId, setSelectedLicenseId] = useState<number | null>(null);
   const [cartBeatIds, setCartBeatIds] = useState<number[]>([]);
+  const [hiringBriefs, setHiringBriefs] = useState<HiringBrief[]>([]);
+  const [hiringMetadata, setHiringMetadata] = useState<HiringMetadata | null>(null);
+  const [hiringTypeFilter, setHiringTypeFilter] = useState("all");
+  const [expandedHiringBriefId, setExpandedHiringBriefId] = useState<number | null>(null);
+  const [activeProposalBriefId, setActiveProposalBriefId] = useState<number | null>(null);
+  const [proposalDrafts, setProposalDrafts] = useState<Record<number, string>>({});
+  const [proposalMessages, setProposalMessages] = useState<Record<number, string>>({});
+  const [submittingProposalId, setSubmittingProposalId] = useState<number | null>(null);
+  const [acceptingProposalId, setAcceptingProposalId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [query, setQuery] = useState("");
+  const [query] = useState("");
   const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<ShelfSectionKey | null>(null);
   const [sidebarMode, setSidebarMode] = useState<SidebarMode>("browse");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [activityNow] = useState(() => Date.now());
   const selectedGenreSectionRef = useRef<HTMLElement | null>(null);
   const library = useBeatLibrary(user?.id, token);
-  const isProducerMode = user?.active_role === "producer";
+  const activeRole = user?.active_role;
+  const isProducerMode = activeRole === "producer";
 
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const [likeData, beatData, licenses] = await Promise.all([
+      const [likeData, beatData, licenses, hiringData, hiringMeta] = await Promise.all([
         apiRequest<LikeItem[]>("/account/likes/beats/me/", { token }),
         apiRequest<Beat[]>("/beats/"),
         apiRequest<License[]>("/beats/licenses/"),
+        apiRequest<HiringBrief[]>("/projects/requests/", { token }),
+        apiRequest<HiringMetadata>("/projects/metadata-options/", { token }),
       ]);
       setLikes(likeData);
       setBeats(beatData);
       setLicenseCatalog(licenses);
+      setHiringBriefs(hiringData);
+      setHiringMetadata(hiringMeta);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load activity");
     }
   }, [token]);
 
   useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
     void load();
-  }, [load]);
+  }, [activeRole, load]);
 
   useEffect(() => {
     const loadCart = async () => {
@@ -240,6 +302,49 @@ export default function ActivityPage() {
 
   const notify = (text: string) => {
     setMessage(text);
+  };
+
+  const likedHeroBeat = useMemo(() => {
+    const likedIds = likes.map((item) => item.beat.id);
+    const likedBeats = likedIds.map((id) => beats.find((beat) => beat.id === id)).filter(Boolean) as Beat[];
+    return likedBeats.find((beat) => resolveMediaUrl(beat.cover_art_obj)) ?? likedBeats[0] ?? null;
+  }, [beats, likes]);
+
+  const historyHeroBeat = useMemo(() => {
+    const historyBeats = [...beats].sort((a, b) => (b.play_count ?? 0) - (a.play_count ?? 0));
+    return historyBeats.find((beat) => resolveMediaUrl(beat.cover_art_obj)) ?? historyBeats[0] ?? null;
+  }, [beats]);
+
+  const playlistHeroBeat = useMemo(() => {
+    const savedBeats = [...library.listenLater, ...library.playlists.flatMap((playlist) => playlist.beats)];
+    return savedBeats.find((beat) => resolveMediaUrl(beat.cover_art_obj)) ?? savedBeats[0] ?? null;
+  }, [library.listenLater, library.playlists]);
+
+  const hubHeroBeat = sidebarMode === "liked"
+    ? likedHeroBeat
+    : sidebarMode === "history"
+      ? historyHeroBeat
+      : sidebarMode === "playlists"
+        ? playlistHeroBeat
+        : null;
+
+  const hubHeroCover = hubHeroBeat ? resolveMediaUrl(hubHeroBeat.cover_art_obj) : null;
+
+  const hubHeroEyebrow = sidebarMode === "liked"
+    ? "Latest liked beat"
+    : sidebarMode === "history"
+      ? "Top replayed beat"
+      : sidebarMode === "playlists"
+        ? "Latest saved beat"
+        : "";
+
+  const handleLibraryBeatPlay = (savedBeat: (typeof library.listenLater)[number], queue: Beat[]) => {
+    const liveBeat = beats.find((item) => item.id === savedBeat.id);
+    if (liveBeat) {
+      void handlePlayAttempt(liveBeat, queue);
+      return;
+    }
+    router.push(`/beats/${savedBeat.id}`);
   };
 
   const handleGenreSelect = (genre: string | null) => {
@@ -384,11 +489,148 @@ export default function ActivityPage() {
     { title: "Release prep", detail: "Checklist-style resources for cover art, metadata, and launch planning.", href: "/resources" },
   ];
 
-  const hiringHighlights = [
-    { title: "Open projects", detail: "Review active briefs, in-progress collaborations, and deal stages.", href: "/projects" },
-    { title: "Post a brief", detail: "Jump into the hiring flow and outline the sound you need.", href: "/projects" },
-    { title: "Negotiation lane", detail: "Track offers, revisions, and delivery conversations in one place.", href: "/projects" },
-  ];
+  const hiringTypeOptions = useMemo(() => {
+    const base = [{ value: "all", label: isProducerMode ? "All Hiring" : "All My Ads" }];
+    const dynamic = (hiringMetadata?.project_types ?? []).map((item) => ({ value: item.value, label: item.label }));
+    return [...base, ...dynamic];
+  }, [hiringMetadata?.project_types, isProducerMode]);
+
+  const visibleHiringBriefs = useMemo(() => {
+    return hiringBriefs.filter((brief) => brief.status !== "draft" && (hiringTypeFilter === "all" || brief.project_type === hiringTypeFilter));
+  }, [hiringBriefs, hiringTypeFilter]);
+
+  const visibleHiringDrafts = useMemo(() => {
+    return hiringBriefs.filter((brief) => brief.status === "draft" && (hiringTypeFilter === "all" || brief.project_type === hiringTypeFilter));
+  }, [hiringBriefs, hiringTypeFilter]);
+
+  const formatHiringDate = (value: string) => {
+    const timestamp = new Date(value).getTime();
+    if (!Number.isFinite(timestamp)) return "Recently posted";
+    const diffHours = Math.max(1, Math.floor((activityNow - timestamp) / (1000 * 60 * 60)));
+    if (diffHours < 24) return `${diffHours}h ago`;
+    const diffDays = Math.floor(diffHours / 24);
+    return `${diffDays}d ago`;
+  };
+
+  const formatHiringType = (value: string) => {
+    const matched = hiringMetadata?.project_types.find((item) => item.value === value);
+    return matched?.label ?? value.replaceAll("_", " ").replace(/\b\w/g, (char) => char.toUpperCase());
+  };
+
+  const formatHiringCurrency = (value?: string | null) => {
+    const numeric = Number(value ?? 0);
+    if (!Number.isFinite(numeric)) return "0";
+    return numeric.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  };
+
+  const clampHiringOfferValue = (value: number, fallbackValue: number, minimum: number, maximum: number) => {
+    if (!Number.isFinite(value)) return fallbackValue;
+    return Math.min(maximum, Math.max(minimum, value));
+  };
+
+  const getHiringNegotiationRange = useCallback((brief: HiringBrief) => {
+    const suggested = Number(brief.offer_price || brief.budget || 0);
+    const safeSuggested = Number.isFinite(suggested) ? suggested : 0;
+    const minimumFactor = Number(hiringMetadata?.negotiation.max_negotiation_discount_factor ?? "0.80");
+    return {
+      suggested: safeSuggested,
+      minimum: Math.max(0, safeSuggested * minimumFactor),
+      maximum: Math.max(safeSuggested, safeSuggested * 1.7),
+    };
+  }, [hiringMetadata?.negotiation.max_negotiation_discount_factor]);
+
+  const getHiringModeLabel = (brief: HiringBrief) => (brief.producer ? "Targeted" : "Open");
+
+  const toggleHiringBrief = (briefId: number) => {
+    setExpandedHiringBriefId((current) => {
+      const nextValue = current === briefId ? null : briefId;
+      if (nextValue === null) {
+        setActiveProposalBriefId((openId) => (openId === briefId ? null : openId));
+      }
+      return nextValue;
+    });
+  };
+
+  const openProposalComposer = (brief: HiringBrief) => {
+    const { suggested } = getHiringNegotiationRange(brief);
+    setExpandedHiringBriefId(brief.id);
+    setActiveProposalBriefId(brief.id);
+    setProposalDrafts((current) => (current[brief.id] ? current : { ...current, [brief.id]: suggested > 0 ? suggested.toFixed(0) : "" }));
+  };
+
+  const handleProposalAmountChange = (briefId: number, value: string) => {
+    setProposalDrafts((current) => ({ ...current, [briefId]: value }));
+  };
+
+  const handleProposalMessageChange = (briefId: number, value: string) => {
+    setProposalMessages((current) => ({ ...current, [briefId]: value }));
+  };
+
+  const adjustProposalAmount = (brief: HiringBrief, direction: "down" | "up") => {
+    const { suggested, minimum, maximum } = getHiringNegotiationRange(brief);
+    const step = Math.max(1, Number((Math.max(suggested, 1) * 0.05).toFixed(2)));
+    const currentAmount = Number(proposalDrafts[brief.id] ?? suggested);
+    const nextValue = direction === "down" ? currentAmount - step : currentAmount + step;
+    const clamped = clampHiringOfferValue(nextValue, suggested, minimum, maximum);
+    setProposalDrafts((current) => ({ ...current, [brief.id]: clamped.toFixed(0) }));
+  };
+
+  const handleSubmitProposal = async (event: FormEvent<HTMLFormElement>, brief: HiringBrief) => {
+    event.preventDefault();
+    if (!token) {
+      router.push("/auth/login");
+      return;
+    }
+
+    const { minimum, maximum, suggested } = getHiringNegotiationRange(brief);
+    const amount = Number(proposalDrafts[brief.id] ?? suggested);
+    if (!Number.isFinite(amount)) {
+      setError("Enter a valid offer amount before submitting.");
+      return;
+    }
+    if (amount < minimum || amount > maximum) {
+      setError(`Offer must stay between Rs ${formatHiringCurrency(String(minimum))} and Rs ${formatHiringCurrency(String(maximum))}.`);
+      return;
+    }
+
+    try {
+      setSubmittingProposalId(brief.id);
+      setError(null);
+      await apiRequest("/projects/proposal/", {
+        method: "POST",
+        token,
+        body: {
+          project_request: brief.id,
+          amount: amount.toFixed(2),
+          message: proposalMessages[brief.id] ?? "",
+        },
+      });
+      setMessage(`Offer sent for ${brief.title}.`);
+      setActiveProposalBriefId(null);
+      await load();
+      setExpandedHiringBriefId(brief.id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not send offer");
+    } finally {
+      setSubmittingProposalId(null);
+    }
+  };
+
+  const handleAcceptProposal = async (briefId: number, proposalId: number) => {
+    if (!token) return;
+    try {
+      setAcceptingProposalId(proposalId);
+      setError(null);
+      await apiRequest(`/projects/proposal/${proposalId}/accept/`, { method: "POST", token });
+      setMessage("Offer accepted. The collaboration is now active in projects.");
+      await load();
+      setExpandedHiringBriefId(briefId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not accept offer");
+    } finally {
+      setAcceptingProposalId(null);
+    }
+  };
 
   return (
     <div className="flex h-[calc(100vh-10rem)] min-h-0 flex-col overflow-hidden rounded-[34px] border border-white/8 bg-[#090909] p-3 text-white shadow-[0_30px_120px_rgba(0,0,0,0.42)]">
@@ -416,10 +658,6 @@ export default function ActivityPage() {
                     key={action.key}
                     type="button"
                     onClick={() => {
-                      if ("href" in action && action.href) {
-                        router.push(action.href);
-                        return;
-                      }
                       setSidebarMode(action.key);
                     }}
                     className={`group flex w-full items-center rounded-[18px] border border-transparent bg-transparent text-left shadow-none transition ${sidebarCollapsed ? "max-w-[52px] justify-center px-0 py-3" : "gap-3 px-3 py-2.5"} hover:bg-white/[0.05]`}
@@ -603,24 +841,39 @@ export default function ActivityPage() {
             </>
           ) : (
             <div className="space-y-5">
-              <div className="rounded-[24px] bg-[linear-gradient(180deg,rgba(89,78,118,0.92),rgba(24,21,31,0.98))] p-6">
-                <p className="text-xs uppercase tracking-[0.28em] text-white/55">Hub</p>
-                <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white">
-                  {sidebarActions.find((item) => item.key === sidebarMode)?.label ?? "Hub"}
-                </h2>
-                <p className="mt-3 max-w-2xl text-sm text-white/68">
-                  {sidebarMode === "liked" && "Jump through the beats you already saved and keep discovery anchored around your taste."}
-                  {sidebarMode === "history" && "Use recent activity as a quick-return lane for replaying beats you were exploring."}
-                  {sidebarMode === "playlists" && "Open your backend-saved Listen later queue and custom playlists without switching into producer tools."}
-                  {sidebarMode === "kits" && "Browse sound kits from the sidebar instead of relying on the old top navigation tab."}
-                  {sidebarMode === "resources" && "Open learning and support content directly from the browse sidebar."}
-                  {sidebarMode === "hiring" && "Move into the hiring workspace from the browse sidebar when you want to post or review briefs."}
-                  {sidebarMode === "studio" && "Open the producer studio workflow from here instead of relying on the top navigation Hub entry."}
-                  {sidebarMode === "uploads" && "Manage upload and media workflow shortcuts from the left sidebar Hub CTA area."}
-                  {sidebarMode === "briefs" && "Use the Hub CTA to move into active briefs and project request flow."}
-                  {sidebarMode === "negotiations" && "Surface collaboration and deal-making actions directly inside the activity workspace."}
-                </p>
-              </div>
+              <section className="relative overflow-hidden rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)] min-h-[260px]">
+                {hubHeroCover ? (
+                  <img src={hubHeroCover} alt={hubHeroBeat?.title || "Hub"} className="absolute inset-0 h-full w-full object-cover" />
+                ) : null}
+                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,8,18,0.9)_0%,rgba(30,18,42,0.72)_42%,rgba(12,8,18,0.88)_100%)]" />
+                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(172,115,220,0.32),rgba(17,13,20,0.84)_82%)]" />
+
+                <div className="relative flex min-h-[260px] flex-col justify-end px-6 py-8 md:px-8 md:py-10">
+                  <p className="text-xs uppercase tracking-[0.28em] text-white/62">Hub</p>
+                  <h2 className="mt-3 text-4xl font-semibold tracking-tight text-white md:text-5xl">
+                    {sidebarActions.find((item) => item.key === sidebarMode)?.label ?? "Hub"}
+                  </h2>
+                  <p className="mt-3 max-w-2xl text-sm text-white/76 md:text-base">
+                    {sidebarMode === "liked" && "Jump through the beats you already saved and keep discovery anchored around your taste."}
+                    {sidebarMode === "history" && "Use recent activity as a quick-return lane for replaying beats you were exploring."}
+                    {sidebarMode === "playlists" && "Open your backend-saved Listen later queue and custom playlists without switching into producer tools."}
+                    {sidebarMode === "kits" && "Browse sound kits from the sidebar instead of relying on the old top navigation tab."}
+                    {sidebarMode === "resources" && "Open learning and support content directly from the browse sidebar."}
+                    {sidebarMode === "hiring" && "Move into the hiring workspace from the browse sidebar when you want to post or review briefs."}
+                    {sidebarMode === "studio" && "Open the producer studio workflow from here instead of relying on the top navigation Hub entry."}
+                    {sidebarMode === "uploads" && "Manage upload and media workflow shortcuts from the left sidebar Hub CTA area."}
+                    {sidebarMode === "briefs" && "Use the Hub CTA to move into active briefs and project request flow."}
+                    {sidebarMode === "negotiations" && "Surface collaboration and deal-making actions directly inside the activity workspace."}
+                  </p>
+                  {hubHeroBeat ? (
+                    <div className="mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
+                      <span className="text-white/58">{hubHeroEyebrow}</span>
+                      <span className="font-medium text-white">{hubHeroBeat.title}</span>
+                      <span className="text-white/58">{hubHeroBeat.producer_username}</span>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
 
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
                 {(sidebarMode === "liked" ? beats.filter((beat) => likes.some((item) => item.beat.id === beat.id)) :
@@ -653,37 +906,66 @@ export default function ActivityPage() {
               </div>
 
               {sidebarMode === "playlists" ? (
-                <div className="space-y-4">
-                  <div className="rounded-[18px] bg-white/[0.04] p-4">
+                <div className="grid gap-4 xl:grid-cols-2">
+                  <div className="rounded-[26px] border border-white/10 bg-[#171a22] p-5">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium text-white">Listen later</p>
-                        <p className="mt-1 text-xs text-white/45">Backend-saved for this signed-in user.</p>
+                        <p className="text-xs uppercase tracking-[0.18em] text-white/42">System playlist</p>
+                        <h3 className="mt-2 text-2xl font-semibold text-white">Listen later</h3>
                       </div>
-                      <span className="rounded-full bg-white/8 px-3 py-1 text-xs text-white/70">{library.listenLater.length} beats</span>
+                      <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/55">{library.listenLater.length} beats</span>
                     </div>
-                    <div className="mt-3 space-y-2">
-                      {library.listenLater.slice(0, 5).map((beat) => (
-                        <button key={`listen-later-${beat.id}`} type="button" onClick={() => router.push(`/beats/${beat.id}`)} className="flex w-full items-center justify-between rounded-[14px] bg-white/[0.03] px-3 py-2 text-left transition hover:bg-white/[0.06]">
-                          <div>
-                            <p className="text-sm text-white">{beat.title}</p>
-                            <p className="mt-1 text-xs text-white/45">{beat.producer_username}</p>
-                          </div>
-                          <span className="text-xs text-white/35">Play</span>
-                        </button>
+                    <div className="mt-4 space-y-3">
+                      {library.listenLater.map((beat) => (
+                        <BeatListRow
+                          key={`listen-later-${beat.id}`}
+                          beat={beat}
+                          detailHref={`/beats/${beat.id}`}
+                          artistHref={`/producers/${beat.producer}`}
+                          onPlay={() => handleLibraryBeatPlay(beat, beats.filter((item) => library.listenLater.some((saved) => saved.id === item.id)))}
+                          actionLabel="Remove"
+                          actionTone="neutral"
+                          onAction={() => {
+                            void library.removeFromListenLater(beat.id).then(() => notify("Removed from Listen later."));
+                          }}
+                          message={notify}
+                        />
                       ))}
                       {library.listenLater.length === 0 ? <p className="text-sm text-white/55">No beats in Listen later yet.</p> : null}
                     </div>
                   </div>
 
-                  <div className="grid gap-3 md:grid-cols-2">
+                  <div className="space-y-4">
                     {library.playlists.map((playlist) => (
-                      <div key={playlist.id} className="rounded-[18px] bg-white/[0.04] p-4">
-                        <p className="text-base font-medium text-white">{playlist.name}</p>
-                        <p className="mt-1 text-sm text-white/55">{playlist.beats.length} beats</p>
-                      </div>
+                      <section key={playlist.id} className="rounded-[26px] border border-white/10 bg-[#171a22] p-5">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Custom playlist</p>
+                            <h3 className="mt-2 text-2xl font-semibold text-white">{playlist.name}</h3>
+                          </div>
+                          <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/55">{playlist.beats.length} beats</span>
+                        </div>
+                        <div className="mt-4 space-y-3">
+                          {playlist.beats.map((beat) => (
+                            <BeatListRow
+                              key={`${playlist.id}-${beat.id}`}
+                              beat={beat}
+                              detailHref={`/beats/${beat.id}`}
+                              artistHref={`/producers/${beat.producer}`}
+                              onPlay={() => handleLibraryBeatPlay(beat, beats.filter((item) => playlist.beats.some((saved) => saved.id === item.id)))}
+                              actionLabel="Remove"
+                              actionTone="neutral"
+                              onAction={() => {
+                                void library.removeBeatFromPlaylist(playlist.id, beat.id).then(() => notify(`Removed from ${playlist.name}.`));
+                              }}
+                              message={notify}
+                            />
+                          ))}
+                          {playlist.beats.length === 0 ? <p className="text-sm text-white/55">This playlist is empty.</p> : null}
+                        </div>
+                      </section>
                     ))}
-                    {library.playlists.length === 0 ? <p className="rounded-[18px] bg-white/[0.04] p-4 text-sm text-white/55 md:col-span-2">No custom playlists yet. Use the three-dot menu on any beat to save one.</p> : null}
+                    {library.playlists.length === 0 ? <p className="rounded-[26px] border border-white/10 bg-[#171a22] p-5 text-sm text-white/55">No custom playlists yet. Use the three-dot menu on any beat to create one.</p> : null}
                   </div>
                 </div>
               ) : null}
@@ -713,14 +995,323 @@ export default function ActivityPage() {
               ) : null}
 
               {sidebarMode === "hiring" ? (
-                <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-                  {hiringHighlights.map((item) => (
-                    <Link key={item.title} href={item.href} className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]">
-                      <p className="text-lg font-semibold text-white">{item.title}</p>
-                      <p className="mt-2 text-sm leading-6 text-white/58">{item.detail}</p>
-                      <p className="mt-4 text-xs font-semibold uppercase tracking-[0.18em] text-[#b598ff]">Open workspace</p>
-                    </Link>
-                  ))}
+                <div className="space-y-5">
+                  <section className="overflow-hidden rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(52,43,78,0.98),rgba(18,18,18,0.98))] p-5 md:p-6">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.28em] text-white/55">Hiring Board</p>
+                        <h3 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">{isProducerMode ? "Open hiring across the marketplace" : "Manage the hiring ads you posted"}</h3>
+                        <p className="mt-3 max-w-3xl text-sm leading-6 text-white/66">
+                          {isProducerMode
+                            ? "Browse active briefs, targeted requests sent to you, and jump into applications from one place."
+                            : "Review every hiring ad you created, open offers received from producers, and jump back into the form to manage them."}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => router.push("/projects")}
+                        className="inline-flex items-center gap-2 rounded-[18px] bg-[linear-gradient(135deg,#ba9eff,#8f6cff)] px-5 py-3 text-sm font-semibold text-[#140f20] shadow-[0_16px_36px_rgba(114,76,201,0.28)] transition hover:scale-[1.01]"
+                      >
+                        <Plus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                        {isProducerMode ? "Post Or Apply" : "Create Hiring Ad"}
+                      </button>
+                    </div>
+
+                    <div className="mt-6 flex flex-wrap gap-3">
+                      {hiringTypeOptions.map((option) => {
+                        const active = hiringTypeFilter === option.value;
+                        return (
+                          <button
+                            key={option.value}
+                            type="button"
+                            onClick={() => setHiringTypeFilter(option.value)}
+                            className={`rounded-[18px] px-5 py-3 text-sm font-semibold transition ${active ? "border border-[#8e72e8] bg-[#20192d] text-[#ba9eff] shadow-[inset_0_0_0_1px_rgba(186,158,255,0.18)]" : "border border-transparent bg-white/[0.06] text-white/74 hover:bg-white/[0.09]"}`}
+                          >
+                            {option.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  {!isProducerMode && visibleHiringDrafts.length > 0 ? (
+                    <section className="space-y-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <h4 className="text-lg font-semibold text-white">Saved Drafts</h4>
+                        <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/62">{visibleHiringDrafts.length} drafts</span>
+                      </div>
+                      <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+                        {visibleHiringDrafts.map((draft) => (
+                          <article key={`hiring-draft-${draft.id}`} className="rounded-[24px] border border-[#ffd38a]/15 bg-[#19150f] p-5">
+                            <div className="flex items-start justify-between gap-4">
+                              <div>
+                                <span className="rounded-full border border-[#ffd38a]/20 bg-[#ffd38a]/10 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] text-[#ffd38a]">Draft</span>
+                                <h4 className="mt-4 text-2xl font-semibold leading-tight text-white">{draft.title}</h4>
+                                <p className="mt-2 text-sm text-white/54">{formatHiringType(draft.project_type)}</p>
+                              </div>
+                              <div className="rounded-[18px] border border-white/8 bg-black/20 px-4 py-3 text-right">
+                                <p className="text-[11px] uppercase tracking-[0.16em] text-white/42">Offer</p>
+                                <p className="mt-2 text-2xl font-semibold text-white">Rs {formatHiringCurrency(draft.offer_price || draft.budget)}</p>
+                              </div>
+                            </div>
+                            <p className="mt-5 line-clamp-3 text-sm leading-6 text-white/62">{draft.description || "Draft saved without a full description yet."}</p>
+                            <div className="mt-6 flex items-center justify-between gap-4 border-t border-white/6 pt-5">
+                              <p className="text-sm text-white/52">Saved {new Date(draft.created_at).toLocaleDateString()}</p>
+                              <button type="button" onClick={() => router.push(`/projects?draft=${draft.id}`)} className="inline-flex items-center gap-2 rounded-[16px] bg-[#a887ff] px-4 py-2.5 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff]">Open Draft</button>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  ) : null}
+
+                  <section className="space-y-4">
+                    <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
+                      {visibleHiringBriefs.map((brief) => {
+                        const isExpanded = expandedHiringBriefId === brief.id;
+                        const isApplying = activeProposalBriefId === brief.id;
+                        const { minimum, maximum, suggested } = getHiringNegotiationRange(brief);
+                        const activeProposalAmount = proposalDrafts[brief.id] ?? (suggested > 0 ? suggested.toFixed(0) : "");
+                        const numericProposalAmount = Number(activeProposalAmount || suggested);
+                        const proposalOutOfRange = Number.isFinite(numericProposalAmount) ? numericProposalAmount < minimum || numericProposalAmount > maximum : true;
+
+                        return (
+                          <div key={`hiring-brief-${brief.id}`} className={isExpanded ? "xl:col-span-2 2xl:col-span-3" : ""}>
+                            <article className="group rounded-[24px] border border-white/8 bg-[#19191d] p-5 transition duration-300 hover:-translate-y-0.5 hover:bg-[#1d1d22] hover:shadow-[0_22px_50px_rgba(0,0,0,0.28)]">
+                              <div className="flex items-start justify-between gap-4">
+                                <div>
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${getHiringModeLabel(brief) === "Targeted" ? "bg-[#8f6cff]/16 text-[#c7b2ff]" : "bg-white/[0.07] text-white/68"}`}>
+                                      {getHiringModeLabel(brief)}
+                                    </span>
+                                    <span className="text-[11px] uppercase tracking-[0.16em] text-white/38">{formatHiringDate(brief.created_at)}</span>
+                                  </div>
+                                  <h4 className="mt-4 text-2xl font-semibold leading-tight text-white">{brief.title}</h4>
+                                  <p className="mt-2 text-sm text-white/54">{formatHiringType(brief.project_type)}</p>
+                                </div>
+                                <div className="rounded-[18px] border border-white/8 bg-black/20 px-4 py-3 text-right">
+                                  <p className="text-[11px] uppercase tracking-[0.16em] text-white/42">Budget</p>
+                                  <p className="mt-2 text-2xl font-semibold text-white">Rs {formatHiringCurrency(brief.offer_price || brief.budget)}</p>
+                                </div>
+                              </div>
+
+                              <p className="mt-5 line-clamp-3 text-sm leading-6 text-white/62">{brief.description}</p>
+
+                              <div className="mt-5 flex flex-wrap gap-2">
+                                {brief.preferred_genre ? <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/70">{brief.preferred_genre}</span> : null}
+                                {brief.instrument_types.slice(0, 2).map((item) => <span key={`${brief.id}-${item}`} className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/60">{item}</span>)}
+                                {brief.mood_types.slice(0, 2).map((item) => <span key={`${brief.id}-mood-${item}`} className="rounded-full border border-[#ff9bc8]/20 bg-[#ff9bc8]/10 px-3 py-1 text-xs text-[#ffd4e8]">{item}</span>)}
+                              </div>
+
+                              <div className="mt-6 flex items-center justify-between gap-4 border-t border-white/6 pt-5">
+                                <div>
+                                  <p className="text-xs uppercase tracking-[0.16em] text-white/38">{isProducerMode ? "Artist" : "Offers Received"}</p>
+                                  <p className="mt-2 text-sm font-medium text-white">{isProducerMode ? brief.artist_username : `${brief.proposal_count} offer${brief.proposal_count === 1 ? "" : "s"}`}</p>
+                                </div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  {isProducerMode ? (
+                                    <>
+                                      <button type="button" onClick={() => toggleHiringBrief(brief.id)} className="inline-flex items-center gap-2 rounded-[16px] border border-white/10 px-4 py-2.5 text-sm font-medium text-white/82 transition hover:bg-white/[0.05]">
+                                        {isExpanded ? "Close Brief" : "Open Brief"}
+                                        <ArrowUpRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                                      </button>
+                                      <button type="button" onClick={() => openProposalComposer(brief)} className="inline-flex items-center gap-2 rounded-[16px] bg-[#a887ff] px-4 py-2.5 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff]">
+                                        Apply
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <button type="button" onClick={() => router.push("/projects")} className="inline-flex items-center gap-2 rounded-[16px] border border-white/10 px-4 py-2.5 text-sm font-medium text-white/82 transition hover:bg-white/[0.05]">
+                                        <Pencil className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                                        Edit
+                                      </button>
+                                      <button type="button" onClick={() => toggleHiringBrief(brief.id)} className="inline-flex items-center gap-2 rounded-[16px] bg-[#a887ff] px-4 py-2.5 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff]">
+                                        {isExpanded ? "Hide Offers" : "View Offers"}
+                                      </button>
+                                      <button type="button" onClick={() => router.push("/projects")} className="inline-flex items-center gap-2 rounded-[16px] border border-white/10 px-4 py-2.5 text-sm font-medium text-white/64 transition hover:bg-white/[0.05]">
+                                        <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                                        Delete
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </article>
+
+                            {isExpanded ? (
+                              <section className="mt-3 rounded-[24px] border border-[#8f6cff]/18 bg-[linear-gradient(180deg,rgba(37,33,49,0.96),rgba(20,20,24,0.98))] p-5 md:p-6">
+                                <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
+                                  <div>
+                                    <p className="text-xs uppercase tracking-[0.24em] text-white/48">Brief Details</p>
+                                    <h5 className="mt-3 text-3xl font-semibold text-white">{brief.title}</h5>
+                                    <p className="mt-3 max-w-3xl text-sm leading-7 text-white/68">{brief.description}</p>
+
+                                    <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                                      <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Genre</p>
+                                        <p className="mt-2 text-sm font-medium text-white">{brief.preferred_genre || "Open"}</p>
+                                      </div>
+                                      <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Tracks</p>
+                                        <p className="mt-2 text-sm font-medium text-white">{brief.expected_track_count}</p>
+                                      </div>
+                                      <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Timeline</p>
+                                        <p className="mt-2 text-sm font-medium text-white">{brief.delivery_timeline_days ? `${brief.delivery_timeline_days} days` : "Flexible"}</p>
+                                      </div>
+                                    </div>
+
+                                    {brief.target_genre_style ? (
+                                      <div className="mt-5 rounded-[20px] border border-white/10 bg-black/20 p-4">
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Style Direction</p>
+                                        <p className="mt-2 text-sm leading-6 text-white/72">{brief.target_genre_style}</p>
+                                      </div>
+                                    ) : null}
+
+                                    <div className="mt-5 grid gap-5 md:grid-cols-2">
+                                      <div>
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Instruments</p>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          {brief.instrument_types.length > 0 ? brief.instrument_types.map((item) => (
+                                            <span key={`${brief.id}-instrument-full-${item}`} className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/72">{item}</span>
+                                          )) : <span className="text-sm text-white/45">No instruments specified.</span>}
+                                        </div>
+                                      </div>
+                                      <div>
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Mood</p>
+                                        <div className="mt-3 flex flex-wrap gap-2">
+                                          {brief.mood_types.length > 0 ? brief.mood_types.map((item) => (
+                                            <span key={`${brief.id}-mood-full-${item}`} className="rounded-full border border-[#ff9bc8]/20 bg-[#ff9bc8]/10 px-3 py-1 text-xs text-[#ffd4e8]">{item}</span>
+                                          )) : <span className="text-sm text-white/45">No moods specified.</span>}
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    {brief.reference_links && brief.reference_links.length > 0 ? (
+                                      <div className="mt-5">
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">References</p>
+                                        <div className="mt-3 flex flex-col gap-2">
+                                          {brief.reference_links.map((link, index) => (
+                                            <a key={`${brief.id}-reference-${index}`} href={link} target="_blank" rel="noreferrer" className="inline-flex items-center gap-2 rounded-[16px] border border-white/10 bg-white/[0.04] px-4 py-3 text-sm text-white/78 transition hover:bg-white/[0.07]">
+                                              <span className="truncate">{link}</span>
+                                              <ArrowUpRight className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+                                            </a>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+
+                                  <div className="space-y-4">
+                                    <div className="rounded-[22px] border border-white/10 bg-[#111217] p-5">
+                                      <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Project Type</p>
+                                      <p className="mt-2 text-lg font-semibold text-white">{formatHiringType(brief.project_type)}</p>
+                                      <p className="mt-4 text-[11px] uppercase tracking-[0.18em] text-white/45">Budget</p>
+                                      <p className="mt-2 text-3xl font-semibold text-white">Rs {formatHiringCurrency(brief.offer_price || brief.budget)}</p>
+                                      <p className="mt-4 text-sm leading-6 text-white/58">
+                                        {isProducerMode
+                                          ? brief.producer_username
+                                            ? `This brief is targeted to ${brief.producer_username}.`
+                                            : "This is an open brief. You can send your own offer from here."
+                                          : brief.producer_username
+                                            ? `Producer locked after acceptance: ${brief.producer_username}.`
+                                            : "Review offers below and accept the producer that fits this brief best."}
+                                      </p>
+                                      {isProducerMode ? (
+                                        <button type="button" onClick={() => openProposalComposer(brief)} className="mt-5 inline-flex w-full items-center justify-center rounded-[18px] bg-[#a887ff] px-4 py-3 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff]">
+                                          Apply
+                                        </button>
+                                      ) : null}
+                                    </div>
+
+                                    {!isProducerMode ? (
+                                      <div className="rounded-[22px] border border-white/10 bg-[#111217] p-5">
+                                        <div className="flex items-center justify-between gap-3">
+                                          <div>
+                                            <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Offers</p>
+                                            <p className="mt-2 text-lg font-semibold text-white">{brief.proposals.length} received</p>
+                                          </div>
+                                          <span className="rounded-full border border-white/10 bg-white/[0.05] px-3 py-1 text-xs text-white/62">{brief.workflow_label}</span>
+                                        </div>
+                                        <div className="mt-4 space-y-3">
+                                          {brief.proposals.length > 0 ? brief.proposals.map((proposal) => (
+                                            <div key={`proposal-${proposal.id}`} className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                              <div className="flex flex-wrap items-start justify-between gap-3">
+                                                <div>
+                                                  <p className="text-base font-semibold text-white">{proposal.producer_username || "Producer"}</p>
+                                                  <p className="mt-1 text-sm text-white/58">Sent {formatHiringDate(proposal.created_at)}</p>
+                                                </div>
+                                                <div className="text-right">
+                                                  <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Offer</p>
+                                                  <p className="mt-1 text-2xl font-semibold text-white">Rs {formatHiringCurrency(proposal.amount)}</p>
+                                                </div>
+                                              </div>
+                                              <p className="mt-3 text-sm leading-6 text-white/72">{proposal.message || "No message added with this offer yet."}</p>
+                                              <div className="mt-4 flex flex-wrap gap-2">
+                                                <Link href={`/producers/${proposal.producer}`} className="inline-flex items-center gap-2 rounded-[14px] border border-white/10 px-4 py-2 text-sm text-white/82 transition hover:bg-white/[0.05]">
+                                                  View Profile
+                                                  <ArrowUpRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                                                </Link>
+                                                <button type="button" onClick={() => void handleAcceptProposal(brief.id, proposal.id)} disabled={acceptingProposalId === proposal.id || brief.status !== "pending"} className="inline-flex items-center gap-2 rounded-[14px] bg-[#a887ff] px-4 py-2 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff] disabled:opacity-60">
+                                                  {acceptingProposalId === proposal.id ? "Accepting..." : "Accept Offer"}
+                                                </button>
+                                              </div>
+                                            </div>
+                                          )) : <p className="text-sm text-white/50">No offers yet. Producers will appear here after they apply.</p>}
+                                        </div>
+                                      </div>
+                                    ) : null}
+                                  </div>
+                                </div>
+
+                                {isProducerMode && isApplying ? (
+                                  <form onSubmit={(event) => void handleSubmitProposal(event, brief)} className="mt-6 rounded-[22px] border border-[#a887ff]/18 bg-[#111217] p-5">
+                                    <div className="flex flex-wrap items-center justify-between gap-3">
+                                      <div>
+                                        <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Send Offer</p>
+                                        <p className="mt-2 text-lg font-semibold text-white">Negotiate your price and message</p>
+                                      </div>
+                                      <button type="button" onClick={() => setActiveProposalBriefId(null)} className="rounded-[14px] border border-white/10 px-3 py-2 text-sm text-white/70 transition hover:bg-white/[0.05]">Close</button>
+                                    </div>
+                                    <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
+                                      <label className="space-y-3">
+                                        <span className="text-xs uppercase tracking-[0.22em] text-white/52">Why are you a fit?</span>
+                                        <textarea value={proposalMessages[brief.id] ?? ""} onChange={(event) => handleProposalMessageChange(brief.id, event.target.value)} placeholder="Share your sound, turnaround, and what you would deliver for this project..." className="min-h-[150px] w-full rounded-[18px] border border-white/10 bg-[#1c1f27] px-4 py-4 text-sm text-white outline-none placeholder:text-white/28 focus:border-[#a887ff]" />
+                                      </label>
+                                      <div className="rounded-[20px] border border-white/10 bg-[#171922] p-4">
+                                        <p className="text-xs uppercase tracking-[0.22em] text-white/52">Your Offer</p>
+                                        <div className="mt-4 grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-3">
+                                          <button type="button" onClick={() => adjustProposalAmount(brief, "down")} className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/10 bg-white/[0.04] text-white/78 transition hover:bg-white/[0.08]">
+                                            <Minus className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                                          </button>
+                                          <input value={activeProposalAmount} onChange={(event) => handleProposalAmountChange(brief.id, event.target.value)} className="h-12 w-full rounded-[14px] border border-white/10 bg-[#0e1016] px-4 text-center text-base text-white outline-none focus:border-[#a887ff]" />
+                                          <button type="button" onClick={() => adjustProposalAmount(brief, "up")} className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#a887ff]/30 bg-[#a887ff] text-[#120d1d] transition hover:bg-[#b497ff]">
+                                            <Plus className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                                          </button>
+                                        </div>
+                                        <p className={`mt-3 text-xs ${proposalOutOfRange ? "text-[#ffb4a9]" : "text-white/48"}`}>Keep the offer between Rs {formatHiringCurrency(String(minimum))} and Rs {formatHiringCurrency(String(maximum))}.</p>
+                                        <button type="submit" disabled={submittingProposalId === brief.id || proposalOutOfRange} className="mt-5 inline-flex w-full items-center justify-center rounded-[16px] bg-[#a887ff] px-4 py-3 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff] disabled:opacity-60">
+                                          {submittingProposalId === brief.id ? "Sending Offer..." : "Send Offer"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </form>
+                                ) : null}
+                              </section>
+                            ) : null}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+
+                  {visibleHiringBriefs.length === 0 ? (
+                    <div className="rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] px-6 py-10 text-center text-sm text-white/58">
+                      {isProducerMode
+                        ? "No active hiring ads match this filter yet. Try another production type or create a brief from the plus button."
+                        : "You have not posted any hiring ads in this filter yet. Use the plus button to open the hiring form and create one."}
+                    </div>
+                  ) : null}
                 </div>
               ) : null}
 
@@ -731,7 +1322,7 @@ export default function ActivityPage() {
                       sidebarMode === "briefs" || sidebarMode === "negotiations"
                         ? "/projects"
                         : sidebarMode === "studio"
-                          ? "/producer/studio"
+                          ? "/producer/profile"
                           : "/producer/media-uploads"
                     }
                     className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]"
@@ -808,5 +1399,6 @@ export default function ActivityPage() {
     </div>
   );
 }
+
 
 

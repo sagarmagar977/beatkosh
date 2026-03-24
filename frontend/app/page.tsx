@@ -219,6 +219,12 @@ export default function HomePage() {
 
   const baseGreeting = feed?.greeting || "Welcome back";
   const headingGreeting = displayName ? `${baseGreeting}, ${displayName}` : baseGreeting;
+  const homeHeroBeat = feed?.shelves.flatMap((shelf) => shelf.beats?.map((item) => item.beat) ?? shelf.playlists?.flatMap((playlist) => playlist.beats) ?? []).find((beat) => resolveMediaUrl(beat.cover_art_obj))
+    ?? discovery.dailyTrending.find((beat) => resolveMediaUrl(beat.cover_art_obj))
+    ?? discovery.weeklyTrending.find((beat) => resolveMediaUrl(beat.cover_art_obj))
+    ?? discovery.beats.find((beat) => resolveMediaUrl(beat.cover_art_obj))
+    ?? null;
+  const homeHeroCover = homeHeroBeat ? resolveMediaUrl(homeHeroBeat.cover_art_obj) : null;
 
   if (loading) {
     return <HomePageSkeleton />;
@@ -226,10 +232,24 @@ export default function HomePage() {
 
   return (
     <div className="space-y-4 pb-24">
-      <section className="pt-3 md:pt-4">
-        <h1 className="max-w-[12ch] text-4xl font-semibold leading-[1.02] text-white md:text-6xl">
-          {headingGreeting}
-        </h1>
+      <section className="relative overflow-hidden rounded-[30px] border border-white/8 bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)] min-h-[280px] p-6 md:p-8">
+        {homeHeroCover ? <img src={homeHeroCover} alt={homeHeroBeat?.title || headingGreeting} className="absolute inset-0 h-full w-full object-cover" /> : null}
+        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,8,18,0.9)_0%,rgba(30,18,42,0.72)_42%,rgba(12,8,18,0.88)_100%)]" />
+        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(172,115,220,0.32),rgba(17,13,20,0.84)_82%)]" />
+        <div className="relative flex min-h-[248px] flex-col justify-end">
+          <p className="text-xs uppercase tracking-[0.28em] text-white/62">Home</p>
+          <h1 className="mt-3 max-w-[12ch] text-4xl font-semibold leading-[1.02] text-white md:text-6xl">
+            {headingGreeting}
+          </h1>
+          <p className="mt-3 max-w-2xl text-sm text-white/76 md:text-base">Jump back into fresh discovery, trending beats, and the categories moving fastest right now.</p>
+          {homeHeroBeat ? (
+            <div className="mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
+              <span className="text-white/58">Featured cover</span>
+              <span className="font-medium text-white">{homeHeroBeat.title}</span>
+              <span className="text-white/58">{homeHeroBeat.producer_username}</span>
+            </div>
+          ) : null}
+        </div>
       </section>
 
       {(feed?.shelves ?? []).map((shelf) => (

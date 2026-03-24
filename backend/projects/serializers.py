@@ -3,17 +3,30 @@ from rest_framework import serializers
 from projects.models import Deliverable, Milestone, Project, ProjectRequest, Proposal
 
 
+class ProposalSerializer(serializers.ModelSerializer):
+    producer_username = serializers.CharField(source="producer.username", read_only=True)
+
+    class Meta:
+        model = Proposal
+        fields = ("id", "project_request", "producer", "producer_username", "amount", "message", "created_at")
+        read_only_fields = ("producer", "created_at")
+
+
 class ProjectRequestSerializer(serializers.ModelSerializer):
     workflow_label = serializers.SerializerMethodField()
     instrument_types = serializers.ListField(child=serializers.CharField(max_length=120), required=False)
     mood_types = serializers.ListField(child=serializers.CharField(max_length=80), required=False)
     producer_username = serializers.CharField(source="producer.username", read_only=True)
+    artist_username = serializers.CharField(source="artist.username", read_only=True)
+    proposal_count = serializers.SerializerMethodField()
+    proposals = serializers.SerializerMethodField()
 
     class Meta:
         model = ProjectRequest
         fields = (
             "id",
             "artist",
+            "artist_username",
             "producer",
             "producer_username",
             "title",
@@ -31,10 +44,12 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
             "offer_price",
             "status",
             "workflow_label",
+            "proposal_count",
+            "proposals",
             "created_at",
         )
-        read_only_fields = ("artist", "status", "created_at")
-        extra_kwargs = {"producer": {"required": False, "allow_null": True}}
+        read_only_fields = ("artist", "created_at")
+        extra_kwargs = {"producer": {"required": False, "allow_null": True}, "status": {"required": False}}
 
     def validate_producer(self, value):
         if value is None:
@@ -59,17 +74,22 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
                 cleaned.append(name)
         return cleaned
 
+    def validate_status(self, value):
+        if value not in {ProjectRequest.STATUS_DRAFT, ProjectRequest.STATUS_PENDING, ProjectRequest.STATUS_ACCEPTED, ProjectRequest.STATUS_REJECTED}:
+            raise serializers.ValidationError("Invalid request status.")
+        return value
+
     def get_workflow_label(self, obj):
+        if obj.status == ProjectRequest.STATUS_DRAFT:
+            return "Draft"
         return "Brief submitted" if obj.status == ProjectRequest.STATUS_PENDING else obj.get_status_display()
 
+    def get_proposal_count(self, obj):
+        return obj.proposals.count()
 
-class ProposalSerializer(serializers.ModelSerializer):
-    producer_username = serializers.CharField(source="producer.username", read_only=True)
-
-    class Meta:
-        model = Proposal
-        fields = ("id", "project_request", "producer", "producer_username", "amount", "message", "created_at")
-        read_only_fields = ("producer", "created_at")
+    def get_proposals(self, obj):
+        proposals = obj.proposals.all().order_by("-created_at")
+        return ProposalSerializer(proposals, many=True).data
 
 
 class DeliverableSerializer(serializers.ModelSerializer):

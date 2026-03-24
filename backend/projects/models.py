@@ -18,10 +18,12 @@ class ProjectRequest(models.Model):
         (TYPE_SOUND_DESIGN, "Sound Design"),
     )
 
+    STATUS_DRAFT = "draft"
     STATUS_PENDING = "pending"
     STATUS_ACCEPTED = "accepted"
     STATUS_REJECTED = "rejected"
     STATUS_CHOICES = (
+        (STATUS_DRAFT, "Draft"),
         (STATUS_PENDING, "Pending"),
         (STATUS_ACCEPTED, "Accepted"),
         (STATUS_REJECTED, "Rejected"),
