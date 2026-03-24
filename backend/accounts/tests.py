@@ -75,6 +75,7 @@ class AccountsFlowTests(APITestCase):
             format="json",
         )
         self.assertEqual(artist_response.status_code, status.HTTP_200_OK)
+        self.assertEqual(artist_response.data["stage_name"], "Sagar Artist")
 
         self.client.post(reverse("start-selling"), {}, format="json")
         producer_response = self.client.patch(
@@ -95,6 +96,19 @@ class AccountsFlowTests(APITestCase):
             shutil.rmtree(temp_media_root, ignore_errors=True)
         temp_media_root.mkdir(parents=True, exist_ok=True)
         with override_settings(MEDIA_ROOT=str(temp_media_root)):
+            artist_avatar_upload = SimpleUploadedFile("artist-avatar.jpg", b"fake-image-bytes", content_type="image/jpeg")
+            artist_avatar_response = self.client.patch(
+                reverse("artist-profile-me"),
+                {
+                    "stage_name": "Sagar Artist Updated",
+                    "avatar_upload": artist_avatar_upload,
+                },
+                format="multipart",
+            )
+            self.assertEqual(artist_avatar_response.status_code, status.HTTP_200_OK)
+            self.assertEqual(artist_avatar_response.data["stage_name"], "Sagar Artist Updated")
+            self.assertIn("avatar_obj", artist_avatar_response.data)
+
             avatar_upload = SimpleUploadedFile("avatar.jpg", b"fake-image-bytes", content_type="image/jpeg")
             avatar_response = self.client.patch(
                 reverse("producer-profile-me"),

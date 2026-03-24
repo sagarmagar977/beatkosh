@@ -30,6 +30,8 @@ type PlayTrackOptions = {
 
 type PlayerContextType = {
   currentTrack: PlayerTrack | null;
+  queue: PlayerTrack[];
+  queueIndex: number;
   isPlaying: boolean;
   isLooping: boolean;
   isShuffling: boolean;
@@ -45,6 +47,9 @@ type PlayerContextType = {
   toggleShuffle: () => void;
   playNext: () => Promise<void>;
   playPrevious: () => Promise<void>;
+  playQueueIndex: (index: number) => Promise<void>;
+  addToQueue: (track: PlayerTrack) => void;
+  removeFromQueue: (trackId: number) => Promise<void>;
   seekTo: (time: number) => void;
   setVolumeLevel: (value: number) => void;
   stopPlayback: (clearTrack?: boolean) => void;
@@ -64,6 +69,22 @@ function clamp(num: number, min: number, max: number) {
 function buildQueueStartIndex(track: PlayerTrack, queue: PlayerTrack[]) {
   const directIndex = queue.findIndex((item) => item.id === track.id);
   return directIndex >= 0 ? directIndex : 0;
+}
+
+function ensureQueueHasCurrentTrack(queue: PlayerTrack[], currentTrack: PlayerTrack | null, currentIndex: number) {
+  if (!currentTrack) {
+    return { queue, currentIndex };
+  }
+
+  const existingIndex = queue.findIndex((item) => item.id === currentTrack.id);
+  if (existingIndex >= 0) {
+    return { queue, currentIndex: currentIndex >= 0 ? currentIndex : existingIndex };
+  }
+
+  return {
+    queue: [currentTrack, ...queue],
+    currentIndex: currentIndex >= 0 ? currentIndex + 1 : 0,
+  };
 }
 
 export function PlayerProvider({ children }: { children: React.ReactNode }) {
@@ -337,6 +358,51 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     await playByIndex(previousIndex);
   };
 
+  const playQueueIndex = async (index: number) => {
+    await playByIndex(index);
+  };
+
+  const addToQueue = (track: PlayerTrack) => {
+    const existingIndex = queueRef.current.findIndex((item) => item.id === track.id);
+    if (existingIndex >= 0) {
+      return;
+    }
+
+    const normalized = ensureQueueHasCurrentTrack([...queueRef.current], currentTrackRef.current, queueIndexRef.current);
+    const nextQueue = [...normalized.queue];
+    const insertIndex = normalized.currentIndex >= 0 ? normalized.currentIndex + 1 : nextQueue.length;
+    nextQueue.splice(insertIndex, 0, track);
+    setQueue(nextQueue);
+    setQueueIndex(normalized.currentIndex);
+  };
+
+  const removeFromQueue = async (trackId: number) => {
+    const currentQueue = queueRef.current;
+    const removeIndex = currentQueue.findIndex((item) => item.id == trackId);
+    if (removeIndex < 0) {
+      return;
+    }
+
+    const nextQueue = currentQueue.filter((item) => item.id !== trackId);
+    const currentId = currentTrackRef.current?.id;
+
+    if (currentId === trackId) {
+      if (nextQueue.length === 0) {
+        stopPlayback(true);
+        return;
+      }
+      const nextIndex = Math.min(removeIndex, nextQueue.length - 1);
+      setQueue(nextQueue);
+      setQueueIndex(nextIndex);
+      await playTrack(nextQueue[nextIndex], { queue: nextQueue, startIndex: nextIndex });
+      return;
+    }
+
+    const nextIndex = removeIndex < queueIndexRef.current ? queueIndexRef.current - 1 : queueIndexRef.current;
+    setQueue(nextQueue);
+    setQueueIndex(nextQueue.length > 0 ? nextIndex : -1);
+  };
+
   const togglePlay = async () => {
     if (loading) {
       return;
@@ -393,6 +459,8 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
 
   const value = {
     currentTrack,
+    queue,
+    queueIndex,
     isPlaying,
     isLooping,
     isShuffling,
@@ -408,6 +476,9 @@ export function PlayerProvider({ children }: { children: React.ReactNode }) {
     toggleShuffle,
     playNext,
     playPrevious,
+    playQueueIndex,
+    addToQueue,
+    removeFromQueue,
     seekTo,
     setVolumeLevel,
     stopPlayback,

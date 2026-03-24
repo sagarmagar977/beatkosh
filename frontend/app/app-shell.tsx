@@ -1,10 +1,9 @@
 "use client";
 
-import { Compass, Home, Search, ShoppingCart } from "lucide-react";
-import { SunMoon } from "lucide-react";
+import { ChevronRight, Compass, Home, LogOut, Search, Settings, ShoppingCart, SunMoon, UserRound } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
 
 import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
@@ -41,6 +40,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
+  const [userSettingsOpen, setUserSettingsOpen] = useState(false);
+  const [artistEditorOpen, setArtistEditorOpen] = useState(false);
   const [startSellingBusy, setStartSellingBusy] = useState(false);
   const [startSellingError, setStartSellingError] = useState<string | null>(null);
   const [logoutBusy, setLogoutBusy] = useState(false);
@@ -48,6 +49,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [uploadPickerOpen, setUploadPickerOpen] = useState(false);
   const [globalFlash, setGlobalFlash] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [artistProfileName, setArtistProfileName] = useState("");
+  const [artistProfileAvatar, setArtistProfileAvatar] = useState<File | null>(null);
+  const [artistProfileAvatarPreview, setArtistProfileAvatarPreview] = useState("");
+  const [artistProfileSaving, setArtistProfileSaving] = useState(false);
+  const [artistProfileError, setArtistProfileError] = useState<string | null>(null);
 
   const userMenuCloseTimeout = useRef<number | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
@@ -56,8 +62,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   const hasSession = Boolean(token);
   const profileHref = user?.is_producer ? "/producer/profile" : null;
-  const avatarUrl = resolveMediaUrl(user?.producer_profile?.avatar_obj);
-  const avatarFallback = (user?.producer_profile?.producer_name || user?.username || "U").slice(0, 1).toUpperCase();
+  const producerName = user?.producer_profile?.producer_name?.trim() || "";
+  const artistName = user?.artist_profile?.stage_name?.trim() || "";
+  const activeDisplayName = user?.active_role === "producer"
+    ? producerName || artistName || user?.username || "Producer"
+    : artistName || producerName || user?.username || "Artist";
+  const activeAvatarUrl = resolveMediaUrl(
+    user?.active_role === "artist"
+      ? user?.artist_profile?.avatar_obj || user?.producer_profile?.avatar_obj
+      : user?.producer_profile?.avatar_obj || user?.artist_profile?.avatar_obj,
+  );
+  const avatarFallback = activeDisplayName.slice(0, 1).toUpperCase();
 
   const normalizedPath = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   const producerWorkspaceRoutes = ["/producer/profile", "/producer/upload-wizard", "/producer/settings", "/producer/media-uploads", "/dashboard/selling", "/wallet"];
@@ -108,6 +123,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         setHoverMenuOpen(null);
         setNotificationsOpen(false);
         setUserMenuOpen(false);
+        setUserSettingsOpen(false);
+        setArtistEditorOpen(false);
         setUploadPickerOpen(false);
       }
     };
@@ -196,6 +213,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, [notificationsOpen, token]);
 
+  useEffect(() => {
+    setArtistProfileName(user?.artist_profile?.stage_name ?? "");
+    setArtistProfileAvatar(null);
+    setArtistProfileAvatarPreview(resolveMediaUrl(user?.artist_profile?.avatar_obj));
+    setArtistProfileError(null);
+  }, [user?.artist_profile?.avatar_obj, user?.artist_profile?.stage_name]);
+
+
   const openMenuKey = pinnedMenuOpen ?? hoverMenuOpen;
   const isBrowseActive = normalizedPath === "/activity";
   const isHomeActive =
@@ -205,12 +230,51 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     async (role: "artist" | "producer") => {
       await switchRole(role);
       setUserMenuOpen(false);
+      setUserSettingsOpen(false);
+      setArtistEditorOpen(false);
       setPinnedMenuOpen(null);
       setHoverMenuOpen(null);
       router.refresh();
     },
     [router, switchRole],
   );
+
+  const handleArtistAvatarChange = (event: ChangeEvent<HTMLInputElement>) => {
+    const nextFile = event.target.files?.[0] ?? null;
+    setArtistProfileAvatar(nextFile);
+    setArtistProfileAvatarPreview(nextFile ? URL.createObjectURL(nextFile) : resolveMediaUrl(user?.artist_profile?.avatar_obj));
+  };
+
+  const saveArtistProfile = async () => {
+    if (!token) {
+      return;
+    }
+
+    setArtistProfileSaving(true);
+    setArtistProfileError(null);
+    try {
+      if (artistProfileAvatar) {
+        const form = new FormData();
+        form.append("stage_name", artistProfileName.trim());
+        form.append("avatar_upload", artistProfileAvatar);
+        await apiRequest("/account/artist-profile/", { method: "PATCH", token, body: form, isFormData: true });
+      } else {
+        await apiRequest("/account/artist-profile/", {
+          method: "PATCH",
+          token,
+          body: { stage_name: artistProfileName.trim() },
+        });
+      }
+      await refreshMe();
+      setArtistEditorOpen(false);
+      setUserSettingsOpen(false);
+      router.refresh();
+    } catch (err) {
+      setArtistProfileError(err instanceof Error ? err.message : "Could not update artist profile");
+    } finally {
+      setArtistProfileSaving(false);
+    }
+  };
 
   const cancelUserMenuClose = () => {
     if (userMenuCloseTimeout.current) {
@@ -222,6 +286,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     cancelUserMenuClose();
     userMenuCloseTimeout.current = window.setTimeout(() => {
       setUserMenuOpen(false);
+      setUserSettingsOpen(false);
     }, 120);
   };
 
@@ -402,15 +467,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <ShoppingCart className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
             </Link>
 
-            <button
-              type="button"
-              onClick={toggleTheme}
-              className="hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] text-white/72 transition hover:bg-[#26202e] hover:text-white lg:inline-flex"
-              aria-label="Toggle color mode"
-              title="Toggle color mode"
-            >
-              <SunMoon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-            </button>
 
             {!user?.is_producer ? (
               <button
@@ -476,10 +532,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 aria-label="Open user menu"
                 aria-expanded={userMenuOpen}
               >
-                {avatarUrl ? (
+                {activeAvatarUrl ? (
                   <img
-                    src={avatarUrl}
-                    alt={user?.producer_profile?.producer_name || user?.username || "User avatar"}
+                    src={activeAvatarUrl}
+                    alt={activeDisplayName}
                     className="h-full w-full object-cover"
                   />
                 ) : (
@@ -488,14 +544,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
 
               <div
-                className={`theme-menu absolute right-0 top-[46px] z-50 w-[min(260px,calc(100vw-1.5rem))] rounded-2xl p-3 backdrop-blur-xl transition-all duration-220 ease-out ${userMenuOpen ? "pointer-events-auto translate-y-0 scale-100 opacity-100" : "pointer-events-none -translate-y-2 scale-[0.98] opacity-0"}`}
+                className={`theme-menu absolute right-0 top-[46px] z-50 w-[min(360px,calc(100vw-1.25rem))] max-h-[min(78vh,640px)] overflow-y-auto rounded-[26px] p-3 backdrop-blur-xl transition-all duration-220 ease-out ${userMenuOpen ? "pointer-events-auto translate-y-0 scale-100 opacity-100" : "pointer-events-none -translate-y-2 scale-[0.98] opacity-0"}`}
                 onMouseEnter={cancelUserMenuClose}
                 onMouseLeave={closeUserMenuSoon}
               >
-                <p className="px-2 pb-2 text-xs theme-text-faint">Signed in as {user?.username ?? ""}</p>
+                <div className="rounded-[22px] border border-white/10 bg-white/[0.03] p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-[#1c1722] text-sm font-semibold text-white">
+                      {activeAvatarUrl ? (
+                        <img src={activeAvatarUrl} alt={activeDisplayName} className="h-full w-full object-cover" />
+                      ) : (
+                        avatarFallback
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-[11px] uppercase tracking-[0.22em] theme-text-faint">
+                        {user?.active_role === "producer" ? "Producer account" : "Artist account"}
+                      </p>
+                      <p className="mt-1 break-words text-base font-semibold leading-5 theme-text-main">{activeDisplayName}</p>
+                      <p className="mt-1 break-all text-xs theme-text-faint">@{user?.username ?? ""}</p>
+                    </div>
+                  </div>
+                </div>
+
                 {user?.is_producer ? (
-                  <div className="mb-3 rounded-2xl border border-white/10 bg-white/[0.03] p-2">
-                    <p className="px-1 pb-2 text-[11px] uppercase tracking-[0.18em] theme-text-faint">Mode</p>
+                  <div className="mt-3 rounded-[22px] border border-white/10 bg-white/[0.03] p-2.5">
+                    <div className="flex items-center justify-between gap-3 px-1 pb-2">
+                      <p className="text-[11px] uppercase tracking-[0.18em] theme-text-faint">Switch mode</p>
+                      <p className="text-[11px] capitalize theme-text-faint">{user.active_role}</p>
+                    </div>
                     <div className="grid grid-cols-2 gap-2">
                       {(["artist", "producer"] as const).map((role) => {
                         const active = user.active_role === role;
@@ -520,51 +597,69 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     </div>
                   </div>
                 ) : null}
-                <div className="grid gap-2">
-                  {profileHref && user?.active_role === "producer" ? (
-                    <Link
-                      href={profileHref}
-                      className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                    >
-                      My Profile
+
+                <div className="mt-3 grid gap-2">
+                  {user?.active_role === "producer" && profileHref ? (
+                    <Link href={profileHref} className="theme-soft flex items-center justify-between rounded-xl px-3 py-3 text-sm theme-text-soft">
+                      <span>My profile</span>
+                      <ChevronRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                     </Link>
                   ) : null}
-                  <Link
-                    href={user?.active_role === "producer" ? "/dashboard/selling" : "/dashboard/listening"}
-                    className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                  >
-                    {user?.active_role === "producer" ? "Seller Dashboard" : "Listening Dashboard"}
-                  </Link>
-                  {user?.active_role === "producer" ? (
-                    <>
-                      <Link
-                        href="/producer/media-uploads"
-                        className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                      >
-                        Media Uploads
-                      </Link>
-                      <Link
-                        href="/producer/settings"
-                        className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                      >
-                        Seller Settings
-                      </Link>
-                    </>
-                  ) : (
-                    <Link
-                      href="/library"
-                      className="theme-soft rounded-xl px-3 py-2 text-sm theme-text-soft"
-                    >
-                      Library
-                    </Link>
-                  )}
+
                   <button
                     type="button"
-                    onClick={toggleTheme}
-                    className="theme-soft rounded-xl px-3 py-2 text-left text-sm theme-text-soft"
+                    onClick={() => setUserSettingsOpen((current) => !current)}
+                    className="theme-soft rounded-xl px-3 py-3 text-left text-sm theme-text-soft"
                   >
-                    Toggle {theme === "dark" ? "light" : "dark"} mode
+                    <span className="flex items-center justify-between gap-3">
+                      <span className="inline-flex items-center gap-3">
+                        <Settings className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                        <span>Settings</span>
+                      </span>
+                      <ChevronRight className={`h-4 w-4 transition ${userSettingsOpen ? "rotate-90" : "rotate-0"}`} strokeWidth={1.8} aria-hidden="true" />
+                    </span>
                   </button>
+
+                  {userSettingsOpen ? (
+                    <div className="rounded-[20px] border border-white/10 bg-black/10 p-2">
+                      {user?.active_role === "artist" ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setArtistProfileError(null);
+                            setArtistEditorOpen(true);
+                          }}
+                          className="theme-soft mb-2 flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm theme-text-soft"
+                        >
+                          <span className="inline-flex items-center gap-3">
+                            <UserRound className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                            <span>Edit profile</span>
+                          </span>
+                          <ChevronRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                        </button>
+                      ) : (
+                        <Link href="/producer/settings" className="theme-soft mb-2 flex items-center justify-between rounded-xl px-3 py-3 text-sm theme-text-soft">
+                          <span className="inline-flex items-center gap-3">
+                            <Settings className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                            <span>Seller settings</span>
+                          </span>
+                          <ChevronRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                        </Link>
+                      )}
+                      <button
+                        type="button"
+                        onClick={toggleTheme}
+                        className="theme-soft flex w-full items-center justify-between rounded-xl px-3 py-3 text-left text-sm theme-text-soft"
+                      >
+                        <span className="inline-flex items-center gap-3">
+                          <SunMoon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                          <span>Switch to {theme === "dark" ? "light" : "dark"} mode</span>
+                        </span>
+                        <ChevronRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                      </button>
+                    </div>
+                  ) : null}
+
                   <button
                     type="button"
                     disabled={logoutBusy}
@@ -575,19 +670,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                       } finally {
                         setLogoutBusy(false);
                         setUserMenuOpen(false);
+                        setUserSettingsOpen(false);
                         router.replace("/auth/login");
                       }
                     }}
-                    className="theme-soft rounded-xl px-3 py-2 text-left text-sm theme-text-soft disabled:opacity-60"
+                    className="theme-soft flex items-center justify-between rounded-xl px-3 py-3 text-left text-sm theme-text-soft disabled:opacity-60"
                   >
-                    {logoutBusy ? "Logging out..." : "Logout"}
+                    <span className="inline-flex items-center gap-3">
+                      <LogOut className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                      <span>{logoutBusy ? "Logging out..." : "Logout"}</span>
+                    </span>
+                    <ChevronRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                   </button>
                 </div>
               </div>
             </div>
           </div>
         </div>
-
         <div className="relative z-10 w-full bg-[#0b0b0f] px-3 pb-3 md:px-4 lg:px-5">
           <nav ref={navRef} className="relative flex items-center justify-center gap-6 text-sm theme-text-muted">
             <div className="flex w-full items-center gap-2 md:hidden">
@@ -673,6 +772,63 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
       </header>
+
+      {artistEditorOpen ? (
+        <div className="theme-overlay fixed inset-0 z-[125] flex items-start justify-center overflow-y-auto px-4 py-8 backdrop-blur-sm" onClick={() => setArtistEditorOpen(false)}>
+          <section className="theme-floating w-full max-w-xl rounded-[30px] p-5 sm:p-6" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Artist settings</p>
+                <h2 className="theme-text-main mt-2 text-2xl font-semibold">Edit profile</h2>
+                <p className="theme-text-muted mt-2 text-sm leading-6">Update the artist name and avatar shown in the header dropdown.</p>
+              </div>
+              <button type="button" onClick={() => setArtistEditorOpen(false)} className="theme-soft rounded-full px-3 py-2 text-xs theme-text-soft">
+                Close
+              </button>
+            </div>
+
+            <div className="mt-6 flex items-center gap-4">
+              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-[#1c1722] text-2xl font-semibold text-white">
+                {artistProfileAvatarPreview ? (
+                  <img src={artistProfileAvatarPreview} alt={artistProfileName || user?.username || "Artist"} className="h-full w-full object-cover" />
+                ) : (
+                  (artistProfileName || user?.username || "A").slice(0, 1).toUpperCase()
+                )}
+              </div>
+              <label className="theme-soft cursor-pointer rounded-2xl px-4 py-3 text-sm theme-text-soft">
+                {artistProfileAvatar ? `Selected image: ${artistProfileAvatar.name}` : "Choose profile photo"}
+                <input type="file" accept="image/*" className="hidden" onChange={handleArtistAvatarChange} />
+              </label>
+            </div>
+
+            <label className="mt-6 block text-sm theme-text-soft">
+              <span className="theme-text-faint mb-2 block text-xs uppercase tracking-[0.18em]">Artist name</span>
+              <input
+                value={artistProfileName}
+                onChange={(event) => setArtistProfileName(event.target.value)}
+                className="theme-input h-11 w-full rounded-2xl px-4 text-sm outline-none"
+                placeholder="Enter artist name"
+              />
+            </label>
+
+            {artistProfileError ? <p className="mt-4 text-sm text-[#ff9b87]">{artistProfileError}</p> : null}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button type="button" onClick={() => setArtistEditorOpen(false)} className="theme-soft rounded-full px-5 py-2.5 text-sm theme-text-soft">
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => void saveArtistProfile()}
+                disabled={artistProfileSaving}
+                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+              >
+                {artistProfileSaving ? "Saving..." : "Save changes"}
+              </button>
+            </div>
+          </section>
+        </div>
+      ) : null}
 
       {uploadPickerOpen ? (
         <div

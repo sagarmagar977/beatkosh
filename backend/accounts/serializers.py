@@ -9,9 +9,11 @@ User = get_user_model()
 
 
 class ArtistProfileSerializer(serializers.ModelSerializer):
+    avatar_upload = serializers.FileField(source="avatar_obj", required=False, allow_null=True, write_only=True)
+
     class Meta:
         model = ArtistProfile
-        fields = ("stage_name", "bio", "genres", "social_links", "verified")
+        fields = ("stage_name", "avatar_obj", "avatar_upload", "bio", "genres", "social_links", "verified")
         read_only_fields = ("verified",)
 
 

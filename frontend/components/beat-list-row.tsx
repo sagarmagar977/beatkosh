@@ -1,6 +1,6 @@
 "use client";
 
-import { Clock3, EllipsisVertical, Pause, Play, Share2 } from "lucide-react";
+import { Clock3, EllipsisVertical, ListMusic, Pause, Play, Share2 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -21,6 +21,7 @@ type BeatListRowProps = {
   actionTone?: "brand" | "neutral";
   actionState?: "default" | "success";
   message?: (text: string) => void;
+  onAddToQueue?: () => void;
 };
 
 function uniqueTags(beat: SavedBeatEntry) {
@@ -39,6 +40,7 @@ export function BeatListRow({
   actionTone = "brand",
   actionState = "default",
   message,
+  onAddToQueue,
 }: BeatListRowProps) {
   const router = useRouter();
   const { token, user } = useAuth();
@@ -97,6 +99,11 @@ export function BeatListRow({
     } else {
       void library.addToListenLater(beat).then(() => notify("Saved to Listen later."));
     }
+    setMenuOpen(false);
+  };
+
+  const handleAddToQueueClick = () => {
+    onAddToQueue?.();
     setMenuOpen(false);
   };
 
@@ -225,6 +232,12 @@ export function BeatListRow({
                       <Play className="h-4 w-4 text-[#9f8cff]" strokeWidth={1.8} aria-hidden="true" />
                       Add to playlist
                     </button>
+                    {onAddToQueue ? (
+                      <button type="button" onClick={handleAddToQueueClick} className="theme-soft theme-text-soft flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm">
+                        <ListMusic className="h-4 w-4 text-[#9f8cff]" strokeWidth={1.8} aria-hidden="true" />
+                        Add to queue
+                      </button>
+                    ) : null}
                     <button type="button" onClick={() => void handleShare()} className="theme-soft theme-text-soft flex w-full items-center gap-3 rounded-xl px-3 py-2 text-left text-sm">
                       <Share2 className="h-4 w-4 text-[#9f8cff]" strokeWidth={1.8} aria-hidden="true" />
                       Share

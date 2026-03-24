@@ -12,12 +12,60 @@ class ProposalSerializer(serializers.ModelSerializer):
         read_only_fields = ("producer", "created_at")
 
 
+class ProducerProposalSerializer(serializers.ModelSerializer):
+    producer_username = serializers.CharField(source="producer.username", read_only=True)
+    artist_username = serializers.CharField(source="project_request.artist.username", read_only=True)
+    artist_avatar_obj = serializers.SerializerMethodField()
+    project_title = serializers.CharField(source="project_request.title", read_only=True)
+    project_type = serializers.CharField(source="project_request.project_type", read_only=True)
+    project_budget = serializers.CharField(source="project_request.budget", read_only=True)
+    brief_status = serializers.CharField(source="project_request.status", read_only=True)
+    brief_created_at = serializers.DateTimeField(source="project_request.created_at", read_only=True)
+    application_status = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Proposal
+        fields = (
+            "id",
+            "project_request",
+            "project_title",
+            "project_type",
+            "project_budget",
+            "brief_status",
+            "brief_created_at",
+            "artist_username",
+            "artist_avatar_obj",
+            "producer",
+            "producer_username",
+            "amount",
+            "message",
+            "application_status",
+            "created_at",
+        )
+        read_only_fields = fields
+
+    def get_artist_avatar_obj(self, obj):
+        profile = getattr(obj.project_request.artist, "artist_profile", None)
+        if profile and profile.avatar_obj:
+            return profile.avatar_obj.url
+        return None
+
+    def get_application_status(self, obj):
+        brief = obj.project_request
+        if brief.status == ProjectRequest.STATUS_ACCEPTED:
+            return "accepted" if brief.producer_id == obj.producer_id else "rejected"
+        if brief.status == ProjectRequest.STATUS_REJECTED:
+            return "rejected"
+        return "pending"
+
+
 class ProjectRequestSerializer(serializers.ModelSerializer):
     workflow_label = serializers.SerializerMethodField()
     instrument_types = serializers.ListField(child=serializers.CharField(max_length=120), required=False)
     mood_types = serializers.ListField(child=serializers.CharField(max_length=80), required=False)
     producer_username = serializers.CharField(source="producer.username", read_only=True)
     artist_username = serializers.CharField(source="artist.username", read_only=True)
+    artist_avatar_obj = serializers.SerializerMethodField()
     proposal_count = serializers.SerializerMethodField()
     proposals = serializers.SerializerMethodField()
 
@@ -27,6 +75,7 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
             "id",
             "artist",
             "artist_username",
+            "artist_avatar_obj",
             "producer",
             "producer_username",
             "title",
@@ -84,6 +133,12 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
             return "Draft"
         return "Brief submitted" if obj.status == ProjectRequest.STATUS_PENDING else obj.get_status_display()
 
+    def get_artist_avatar_obj(self, obj):
+        profile = getattr(obj.artist, "artist_profile", None)
+        if profile and profile.avatar_obj:
+            return profile.avatar_obj.url
+        return None
+
     def get_proposal_count(self, obj):
         return obj.proposals.count()
 
@@ -121,6 +176,7 @@ class MilestoneSerializer(serializers.ModelSerializer):
 
 class ProjectSerializer(serializers.ModelSerializer):
     artist_username = serializers.CharField(source="artist.username", read_only=True)
+    artist_avatar_obj = serializers.SerializerMethodField()
     producer_username = serializers.CharField(source="producer.username", read_only=True)
     milestones = MilestoneSerializer(many=True, read_only=True)
     workflow_summary = serializers.SerializerMethodField()
@@ -131,6 +187,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "id",
             "artist",
             "artist_username",
+            "artist_avatar_obj",
             "producer",
             "producer_username",
             "title",
@@ -153,6 +210,12 @@ class ProjectSerializer(serializers.ModelSerializer):
             "milestones",
             "created_at",
         )
+
+    def get_artist_avatar_obj(self, obj):
+        profile = getattr(obj.artist, "artist_profile", None)
+        if profile and profile.avatar_obj:
+            return profile.avatar_obj.url
+        return None
 
     def get_workflow_summary(self, obj):
         milestones = list(obj.milestones.all())

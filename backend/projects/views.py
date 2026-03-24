@@ -10,6 +10,7 @@ from projects.models import Deliverable, Milestone, Project, ProjectRequest, Pro
 from projects.serializers import (
     DeliverableSerializer,
     MilestoneSerializer,
+    ProducerProposalSerializer,
     ProjectRequestSerializer,
     ProjectSerializer,
     ProposalSerializer,
@@ -130,6 +131,21 @@ class ProjectProposalCreateView(generics.CreateAPIView):
         serializer.save(producer=self.request.user)
 
 
+class ProducerProposalListView(generics.ListAPIView):
+    serializer_class = ProducerProposalSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if not user.is_producer:
+            raise PermissionDenied("Only producers can view submitted applications.")
+        return (
+            Proposal.objects.filter(producer=user)
+            .select_related("producer", "project_request", "project_request__artist", "project_request__producer")
+            .order_by("-created_at")
+        )
+
+
 class ProjectRequestListView(generics.ListAPIView):
     serializer_class = ProjectRequestSerializer
     permission_classes = [permissions.IsAuthenticated]
@@ -147,7 +163,7 @@ class ProjectRequestListView(generics.ListAPIView):
         if project_type:
             queryset = queryset.filter(project_type=project_type)
 
-        return queryset.select_related("artist", "producer").prefetch_related("proposals").order_by("-created_at")
+        return queryset.select_related("artist", "artist__producer_profile", "producer", "producer__producer_profile").prefetch_related("proposals").order_by("-created_at")
 
 
 class ProjectProposalAcceptView(APIView):

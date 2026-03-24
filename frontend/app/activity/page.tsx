@@ -50,10 +50,28 @@ type Proposal = {
   created_at: string;
 };
 
+type ProducerApplication = {
+  id: number;
+  project_request: number;
+  project_title: string;
+  project_type: string;
+  project_budget: string;
+  brief_status: string;
+  brief_created_at: string;
+  artist_username?: string;
+  producer: number;
+  producer_username?: string;
+  amount: string;
+  message: string;
+  application_status: "pending" | "accepted" | "rejected";
+  created_at: string;
+};
+
 type HiringBrief = {
   id: number;
   artist: number;
   artist_username?: string;
+  artist_avatar_obj?: string | null;
   producer?: number | null;
   producer_username?: string | null;
   title: string;
@@ -115,6 +133,9 @@ type SidebarMode =
   | "briefs"
   | "negotiations";
 
+type ArtistHiringTab = "my_ads" | "drafts" | "offers_received";
+type ProducerHiringTab = "marketplace" | "my_applications";
+
 const accentClasses = [
   "from-[#ff2d95] via-[#d1166d] to-[#821948]",
   "from-[#0fb58d] via-[#07786c] to-[#053d42]",
@@ -142,8 +163,12 @@ export default function ActivityPage() {
   const [selectedLicenseId, setSelectedLicenseId] = useState<number | null>(null);
   const [cartBeatIds, setCartBeatIds] = useState<number[]>([]);
   const [hiringBriefs, setHiringBriefs] = useState<HiringBrief[]>([]);
+  const [producerApplications, setProducerApplications] = useState<ProducerApplication[]>([]);
   const [hiringMetadata, setHiringMetadata] = useState<HiringMetadata | null>(null);
   const [hiringTypeFilter, setHiringTypeFilter] = useState("all");
+  const [artistHiringTab, setArtistHiringTab] = useState<ArtistHiringTab>("my_ads");
+  const [producerHiringTab, setProducerHiringTab] = useState<ProducerHiringTab>("marketplace");
+  const [producerApplicationStatusFilter, setProducerApplicationStatusFilter] = useState("all");
   const [expandedHiringBriefId, setExpandedHiringBriefId] = useState<number | null>(null);
   const [activeProposalBriefId, setActiveProposalBriefId] = useState<number | null>(null);
   const [proposalDrafts, setProposalDrafts] = useState<Record<number, string>>({});
@@ -166,22 +191,24 @@ export default function ActivityPage() {
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const [likeData, beatData, licenses, hiringData, hiringMeta] = await Promise.all([
+      const [likeData, beatData, licenses, hiringData, hiringMeta, applicationData] = await Promise.all([
         apiRequest<LikeItem[]>("/account/likes/beats/me/", { token }),
         apiRequest<Beat[]>("/beats/"),
         apiRequest<License[]>("/beats/licenses/"),
         apiRequest<HiringBrief[]>("/projects/requests/", { token }),
         apiRequest<HiringMetadata>("/projects/metadata-options/", { token }),
+        activeRole === "producer" ? apiRequest<ProducerApplication[]>("/projects/proposals/mine/", { token }) : Promise.resolve([] as ProducerApplication[]),
       ]);
       setLikes(likeData);
       setBeats(beatData);
       setLicenseCatalog(licenses);
       setHiringBriefs(hiringData);
       setHiringMetadata(hiringMeta);
+      setProducerApplications(applicationData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load activity");
     }
-  }, [token]);
+  }, [activeRole, token]);
 
   useEffect(() => {
     void load();
@@ -315,6 +342,10 @@ export default function ActivityPage() {
     return historyBeats.find((beat) => resolveMediaUrl(beat.cover_art_obj)) ?? historyBeats[0] ?? null;
   }, [beats]);
 
+  const hiringHeroBrief = useMemo(() => {
+    return hiringBriefs.find((brief) => resolveMediaUrl(brief.artist_avatar_obj)) ?? hiringBriefs[0] ?? null;
+  }, [hiringBriefs]);
+
   const playlistHeroBeat = useMemo(() => {
     const savedBeats = [...library.listenLater, ...library.playlists.flatMap((playlist) => playlist.beats)];
     return savedBeats.find((beat) => resolveMediaUrl(beat.cover_art_obj)) ?? savedBeats[0] ?? null;
@@ -328,7 +359,9 @@ export default function ActivityPage() {
         ? playlistHeroBeat
         : null;
 
-  const hubHeroCover = hubHeroBeat ? resolveMediaUrl(hubHeroBeat.cover_art_obj) : null;
+  const hubHeroCover = sidebarMode === "hiring"
+    ? resolveMediaUrl(hiringHeroBrief?.artist_avatar_obj)
+    : hubHeroBeat ? resolveMediaUrl(hubHeroBeat.cover_art_obj) : null;
 
   const hubHeroEyebrow = sidebarMode === "liked"
     ? "Latest liked beat"
@@ -336,7 +369,12 @@ export default function ActivityPage() {
       ? "Top replayed beat"
       : sidebarMode === "playlists"
         ? "Latest saved beat"
-        : "";
+        : sidebarMode === "hiring"
+          ? "Latest brief by"
+          : "";
+
+  const hubHeroTitle = sidebarMode === "hiring" ? hiringHeroBrief?.artist_username || "Hiring" : hubHeroBeat?.title || null;
+  const hubHeroMeta = sidebarMode === "hiring" ? hiringHeroBrief?.title || "Latest hiring post" : hubHeroBeat?.producer_username || null;
 
   const handleLibraryBeatPlay = (savedBeat: (typeof library.listenLater)[number], queue: Beat[]) => {
     const liveBeat = beats.find((item) => item.id === savedBeat.id);
@@ -502,6 +540,14 @@ export default function ActivityPage() {
   const visibleHiringDrafts = useMemo(() => {
     return hiringBriefs.filter((brief) => brief.status === "draft" && (hiringTypeFilter === "all" || brief.project_type === hiringTypeFilter));
   }, [hiringBriefs, hiringTypeFilter]);
+
+  const artistActiveBriefs = useMemo(() => hiringBriefs.filter((brief) => brief.status !== "draft"), [hiringBriefs]);
+
+  const artistOfferBriefs = useMemo(() => artistActiveBriefs.filter((brief) => brief.proposal_count > 0), [artistActiveBriefs]);
+
+  const filteredProducerApplications = useMemo(() => {
+    return producerApplications.filter((application) => producerApplicationStatusFilter === "all" || application.application_status === producerApplicationStatusFilter);
+  }, [producerApplicationStatusFilter, producerApplications]);
 
   const formatHiringDate = (value: string) => {
     const timestamp = new Date(value).getTime();
@@ -843,7 +889,7 @@ export default function ActivityPage() {
             <div className="space-y-5">
               <section className="relative overflow-hidden rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)] min-h-[260px]">
                 {hubHeroCover ? (
-                  <img src={hubHeroCover} alt={hubHeroBeat?.title || "Hub"} className="absolute inset-0 h-full w-full object-cover" />
+                  <img src={hubHeroCover} alt={hubHeroTitle || "Hub"} className="absolute inset-0 h-full w-full object-cover" />
                 ) : null}
                 <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,8,18,0.9)_0%,rgba(30,18,42,0.72)_42%,rgba(12,8,18,0.88)_100%)]" />
                 <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(172,115,220,0.32),rgba(17,13,20,0.84)_82%)]" />
@@ -865,11 +911,11 @@ export default function ActivityPage() {
                     {sidebarMode === "briefs" && "Use the Hub CTA to move into active briefs and project request flow."}
                     {sidebarMode === "negotiations" && "Surface collaboration and deal-making actions directly inside the activity workspace."}
                   </p>
-                  {hubHeroBeat ? (
+                  {(hubHeroBeat || hiringHeroBrief) && hubHeroTitle ? (
                     <div className="mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
                       <span className="text-white/58">{hubHeroEyebrow}</span>
-                      <span className="font-medium text-white">{hubHeroBeat.title}</span>
-                      <span className="text-white/58">{hubHeroBeat.producer_username}</span>
+                      <span className="font-medium text-white">{hubHeroTitle}</span>
+                      {hubHeroMeta ? <span className="text-white/58">{hubHeroMeta}</span> : null}
                     </div>
                   ) : null}
                 </div>
@@ -1000,31 +1046,48 @@ export default function ActivityPage() {
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.28em] text-white/55">Hiring Board</p>
-                        <h3 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">{isProducerMode ? "Open hiring across the marketplace" : "Manage the hiring ads you posted"}</h3>
+                        <h3 className="mt-3 text-3xl font-semibold tracking-tight text-white md:text-4xl">{isProducerMode ? "Browse and track your producer applications" : "Manage the hiring ads you posted"}</h3>
                         <p className="mt-3 max-w-3xl text-sm leading-6 text-white/66">
                           {isProducerMode
-                            ? "Browse active briefs, targeted requests sent to you, and jump into applications from one place."
-                            : "Review every hiring ad you created, open offers received from producers, and jump back into the form to manage them."}
+                            ? "Switch between the marketplace and every offer you have already submitted."
+                            : "Move between active ads, drafts, and the producer offers grouped under each project."}
                         </p>
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => router.push("/projects")}
-                        className="inline-flex items-center gap-2 rounded-[18px] bg-[linear-gradient(135deg,#ba9eff,#8f6cff)] px-5 py-3 text-sm font-semibold text-[#140f20] shadow-[0_16px_36px_rgba(114,76,201,0.28)] transition hover:scale-[1.01]"
-                      >
-                        <Plus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
-                        {isProducerMode ? "Post Or Apply" : "Create Hiring Ad"}
-                      </button>
+                      {!isProducerMode ? (
+                        <button
+                          type="button"
+                          onClick={() => router.push("/projects")}
+                          className="inline-flex items-center gap-2 rounded-[18px] bg-[linear-gradient(135deg,#ba9eff,#8f6cff)] px-5 py-3 text-sm font-semibold text-[#140f20] shadow-[0_16px_36px_rgba(114,76,201,0.28)] transition hover:scale-[1.01]"
+                        >
+                          <Plus className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                          Create Hiring Ad
+                        </button>
+                      ) : null}
                     </div>
 
                     <div className="mt-6 flex flex-wrap gap-3">
-                      {hiringTypeOptions.map((option) => {
-                        const active = hiringTypeFilter === option.value;
+                      {(isProducerMode
+                        ? [
+                            { value: "marketplace", label: "Marketplace" },
+                            { value: "my_applications", label: "My Applications" },
+                          ]
+                        : [
+                            { value: "my_ads", label: "My Ads" },
+                            { value: "drafts", label: "Drafts" },
+                            { value: "offers_received", label: "Offers Received" },
+                          ]).map((option) => {
+                        const active = isProducerMode ? producerHiringTab === option.value : artistHiringTab === option.value;
                         return (
                           <button
                             key={option.value}
                             type="button"
-                            onClick={() => setHiringTypeFilter(option.value)}
+                            onClick={() => {
+                              if (isProducerMode) {
+                                setProducerHiringTab(option.value as ProducerHiringTab);
+                              } else {
+                                setArtistHiringTab(option.value as ArtistHiringTab);
+                              }
+                            }}
                             className={`rounded-[18px] px-5 py-3 text-sm font-semibold transition ${active ? "border border-[#8e72e8] bg-[#20192d] text-[#ba9eff] shadow-[inset_0_0_0_1px_rgba(186,158,255,0.18)]" : "border border-transparent bg-white/[0.06] text-white/74 hover:bg-white/[0.09]"}`}
                           >
                             {option.label}
@@ -1032,9 +1095,50 @@ export default function ActivityPage() {
                         );
                       })}
                     </div>
+
+                    {isProducerMode && producerHiringTab === "marketplace" ? (
+                      <div className="mt-6 flex flex-wrap gap-3">
+                        {hiringTypeOptions.map((option) => {
+                          const active = hiringTypeFilter === option.value;
+                          return (
+                            <button
+                              key={`market-${option.value}`}
+                              type="button"
+                              onClick={() => setHiringTypeFilter(option.value)}
+                              className={`rounded-[16px] px-4 py-2.5 text-sm font-medium transition ${active ? "border border-[#8e72e8] bg-[#20192d] text-[#d5c6ff]" : "border border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08]"}`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+
+                    {isProducerMode && producerHiringTab === "my_applications" ? (
+                      <div className="mt-6 flex flex-wrap gap-3">
+                        {[
+                          { value: "all", label: "All" },
+                          { value: "pending", label: "Pending" },
+                          { value: "accepted", label: "Accepted" },
+                          { value: "rejected", label: "Rejected" },
+                        ].map((option) => {
+                          const active = producerApplicationStatusFilter === option.value;
+                          return (
+                            <button
+                              key={`application-${option.value}`}
+                              type="button"
+                              onClick={() => setProducerApplicationStatusFilter(option.value)}
+                              className={`rounded-[16px] px-4 py-2.5 text-sm font-medium transition ${active ? "border border-[#8e72e8] bg-[#20192d] text-[#d5c6ff]" : "border border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08]"}`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
                   </section>
 
-                  {!isProducerMode && visibleHiringDrafts.length > 0 ? (
+                  {!isProducerMode && artistHiringTab === "drafts" ? (
                     <section className="space-y-3">
                       <div className="flex items-center justify-between gap-3">
                         <h4 className="text-lg font-semibold text-white">Saved Drafts</h4>
@@ -1062,12 +1166,77 @@ export default function ActivityPage() {
                           </article>
                         ))}
                       </div>
+                      {visibleHiringDrafts.length === 0 ? (
+                        <div className="rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] px-6 py-10 text-center text-sm text-white/58">
+                          No drafts yet. Save one from the projects form when you want to come back later.
+                        </div>
+                      ) : null}
                     </section>
                   ) : null}
 
+                  {isProducerMode && producerHiringTab === "my_applications" ? (
+                    <section className="space-y-4">
+                      <div className="flex items-center justify-between gap-3">
+                        <div>
+                          <h4 className="text-lg font-semibold text-white">My Applications</h4>
+                          <p className="mt-1 text-sm text-white/55">Track every offer you have sent and see whether it is still pending, accepted, or rejected.</p>
+                        </div>
+                        <span className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/62">{filteredProducerApplications.length} applications</span>
+                      </div>
+
+                      <div className="space-y-4">
+                        {filteredProducerApplications.map((application) => (
+                          <article key={`application-${application.id}`} className="rounded-[24px] border border-white/8 bg-[#19191d] p-5 transition duration-300 hover:bg-[#1d1d22] hover:shadow-[0_22px_50px_rgba(0,0,0,0.28)]">
+                            <div className="flex flex-wrap items-start justify-between gap-4">
+                              <div>
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.16em] ${application.application_status === "accepted" ? "bg-[#9ee8dc]/14 text-[#9ee8dc]" : application.application_status === "rejected" ? "bg-[#ffb4a9]/12 text-[#ffb4a9]" : "bg-white/[0.07] text-white/68"}`}>{application.application_status}</span>
+                                  <span className="text-[11px] uppercase tracking-[0.16em] text-white/38">Applied {formatHiringDate(application.created_at)}</span>
+                                </div>
+                                <h4 className="mt-4 text-2xl font-semibold leading-tight text-white">{application.project_title}</h4>
+                                <p className="mt-2 text-sm text-white/54">{formatHiringType(application.project_type)} • Artist {application.artist_username || "Unknown"}</p>
+                              </div>
+                              <div className="rounded-[18px] border border-white/8 bg-black/20 px-4 py-3 text-right">
+                                <p className="text-[11px] uppercase tracking-[0.16em] text-white/42">Your Offer</p>
+                                <p className="mt-2 text-2xl font-semibold text-white">Rs {formatHiringCurrency(application.amount)}</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-5 grid gap-3 md:grid-cols-3">
+                              <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Project Budget</p>
+                                <p className="mt-2 text-sm font-medium text-white">Rs {formatHiringCurrency(application.project_budget)}</p>
+                              </div>
+                              <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Brief Status</p>
+                                <p className="mt-2 text-sm font-medium text-white">{application.brief_status}</p>
+                              </div>
+                              <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Project Posted</p>
+                                <p className="mt-2 text-sm font-medium text-white">{formatHiringDate(application.brief_created_at)}</p>
+                              </div>
+                            </div>
+
+                            <div className="mt-5 rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                              <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Your Pitch</p>
+                              <p className="mt-2 text-sm leading-6 text-white/72">{application.message || "No pitch message was added with this application."}</p>
+                            </div>
+                          </article>
+                        ))}
+                      </div>
+
+                      {filteredProducerApplications.length === 0 ? (
+                        <div className="rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] px-6 py-10 text-center text-sm text-white/58">
+                          No applications match this filter yet.
+                        </div>
+                      ) : null}
+                    </section>
+                  ) : null}
+
+                  {((isProducerMode && producerHiringTab === "marketplace") || (!isProducerMode && artistHiringTab !== "drafts")) ? (
                   <section className="space-y-4">
                     <div className="grid gap-4 xl:grid-cols-2 2xl:grid-cols-3">
-                      {visibleHiringBriefs.map((brief) => {
+                      {(isProducerMode ? visibleHiringBriefs : artistHiringTab === "offers_received" ? artistOfferBriefs : artistActiveBriefs).map((brief) => {
                         const isExpanded = expandedHiringBriefId === brief.id;
                         const isApplying = activeProposalBriefId === brief.id;
                         const { minimum, maximum, suggested } = getHiringNegotiationRange(brief);
@@ -1304,12 +1473,15 @@ export default function ActivityPage() {
                       })}
                     </div>
                   </section>
+                  ) : null}
 
-                  {visibleHiringBriefs.length === 0 ? (
+                  {((isProducerMode && producerHiringTab === "marketplace") || (!isProducerMode && artistHiringTab !== "drafts")) && (isProducerMode ? visibleHiringBriefs.length : (artistHiringTab === "offers_received" ? artistOfferBriefs.length : artistActiveBriefs.length)) === 0 ? (
                     <div className="rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] px-6 py-10 text-center text-sm text-white/58">
                       {isProducerMode
-                        ? "No active hiring ads match this filter yet. Try another production type or create a brief from the plus button."
-                        : "You have not posted any hiring ads in this filter yet. Use the plus button to open the hiring form and create one."}
+                        ? "No active hiring ads match this filter yet. Try another production type."
+                        : artistHiringTab === "offers_received"
+                          ? "No producer offers have arrived yet. They will appear grouped by project here."
+                          : "You have not posted any hiring ads in this filter yet. Use Create Hiring Ad to post one."}
                     </div>
                   ) : null}
                 </div>

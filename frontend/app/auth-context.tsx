@@ -22,6 +22,7 @@ export type User = {
   active_role: "artist" | "producer";
   artist_profile?: {
     stage_name?: string;
+    avatar_obj?: string | null;
     bio?: string;
     genres?: string;
     verified?: boolean;

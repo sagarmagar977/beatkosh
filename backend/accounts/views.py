@@ -317,6 +317,7 @@ class ProducerDetailByUserView(generics.RetrieveAPIView):
 class ArtistProfileMeView(generics.RetrieveUpdateAPIView):
     permission_classes = [permissions.IsAuthenticated]
     serializer_class = ArtistProfileSerializer
+    parser_classes = (JSONParser, MultiPartParser, FormParser)
 
     def get_object(self):
         profile, _ = ArtistProfile.objects.get_or_create(user=self.request.user)

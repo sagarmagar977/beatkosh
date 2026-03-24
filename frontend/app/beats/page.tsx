@@ -8,7 +8,7 @@ import { useAuth } from "@/app/auth-context";
 import { BeatListRowSkeleton } from "@/components/beat-list-row-skeleton";
 import { BeatListRow } from "@/components/beat-list-row";
 import { useCart } from "@/context/cart-context";
-import { usePlayer } from "@/context/player-context";
+import { usePlayer, type PlayerTrack } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 
 type License = {
@@ -62,6 +62,30 @@ type Beat = {
 const filters = ["Beat Type", "Moods", "Tempo", "Genre", "Keys", "Instruments", "Price"];
 const topFilters = ["Trending Beats", "Wav under Rs999", "Wav + Stems under Rs1,999", "Beats with Exclusive"];
 
+function buildPlayerTrack(beat: Beat): PlayerTrack | null {
+  const audioUrl = resolveMediaUrl(beat.preview_audio_obj || beat.audio_file_obj);
+  if (!audioUrl) {
+    return null;
+  }
+  return {
+    id: beat.id,
+    title: beat.title,
+    artist: beat.producer_username,
+    bpm: beat.bpm,
+    playCount: beat.play_count,
+    key: beat.key,
+    genre: beat.genre,
+    mood: beat.mood,
+    price: beat.base_price,
+    coverText: beat.title,
+    coverUrl: resolveMediaUrl(beat.cover_art_obj),
+    beatUrl: `/beats/${beat.id}`,
+    defaultLicenseId: beat.licenses?.[0]?.id ?? null,
+    audioUrl,
+    source: "beats-page",
+  };
+}
+
 export default function BeatsPage() {
   const router = useRouter();
   const { token } = useAuth();
@@ -75,7 +99,7 @@ export default function BeatsPage() {
   const [selectedLicenseId, setSelectedLicenseId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [cartBeatIds, setCartBeatIds] = useState<number[]>([]);
-  const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
+  const { currentTrack, isPlaying, playTrack, togglePlay, canPlay, addToQueue } = usePlayer();
 
   useEffect(() => {
     const run = async () => {
@@ -180,32 +204,42 @@ export default function BeatsPage() {
     window.setTimeout(() => setMessage(null), 2400);
   };
 
-  const handlePlayAttempt = (beat: Beat, playbackUrl: string, isCurrent: boolean) => {
+  const handlePlayAttempt = (beat: Beat, isCurrent: boolean) => {
     if (!token || !canPlay) {
       router.push("/auth/login");
       return;
     }
-    if (!playbackUrl) {
+
+    const track = buildPlayerTrack(beat);
+    if (!track) {
+      notify("No preview is available for this beat yet.");
       return;
     }
+
     if (isCurrent) {
       void togglePlay();
       return;
     }
-    void playTrack({
-      id: beat.id,
-      title: beat.title,
-      artist: beat.producer_username,
-      bpm: beat.bpm,
-      playCount: beat.play_count,
-      key: beat.key,
-      genre: beat.genre,
-      price: beat.base_price,
-      coverText: beat.title,
-      coverUrl: resolveMediaUrl(beat.cover_art_obj),
-      beatUrl: `/beats/${beat.id}`,
-      audioUrl: playbackUrl,
-    });
+
+    const queueTracks = filtered.map(buildPlayerTrack).filter((item): item is PlayerTrack => Boolean(item));
+    const startIndex = queueTracks.findIndex((item) => item.id === beat.id);
+    void playTrack(track, startIndex >= 0 ? { queue: queueTracks, startIndex } : undefined);
+  };
+
+  const handleAddBeatToQueue = (beat: Beat) => {
+    if (!token || !canPlay) {
+      router.push("/auth/login");
+      return;
+    }
+
+    const track = buildPlayerTrack(beat);
+    if (!track) {
+      notify("No preview is available for this beat yet.");
+      return;
+    }
+
+    addToQueue(track);
+    notify("Added to queue.");
   };
 
   const handleAddToCart = async () => {
@@ -273,7 +307,6 @@ export default function BeatsPage() {
         {!loading && !error ? (
           <>
             {filtered.map((beat) => {
-              const playbackUrl = resolveMediaUrl(beat.preview_audio_obj || beat.audio_file_obj);
               const isCurrent = currentTrack?.id === beat.id;
               const inCart = cartBeatIds.includes(beat.id);
               return (
@@ -284,7 +317,7 @@ export default function BeatsPage() {
                   detailHref={`/beats/${beat.id}`}
                   isCurrent={isCurrent}
                   isPlaying={isCurrent && isPlaying}
-                  onPlay={() => handlePlayAttempt(beat, playbackUrl, isCurrent)}
+                  onPlay={() => handlePlayAttempt(beat, isCurrent)}
                   actionLabel={inCart ? "Added to cart" : `Rs ${beat.base_price}`}
                   actionState={inCart ? "success" : "default"}
                   onAction={() => {
@@ -292,6 +325,7 @@ export default function BeatsPage() {
                     setSelectedLicenseId(beat.licenses?.[0]?.id ?? null);
                   }}
                   message={notify}
+                  onAddToQueue={() => handleAddBeatToQueue(beat)}
                 />
               );
             })}
