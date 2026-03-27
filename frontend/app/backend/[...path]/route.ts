@@ -10,6 +10,8 @@ function resolveBackendOrigin() {
 
 type RouteContext = { params: Promise<{ path: string[] }> };
 
+type StreamingRequestInit = RequestInit & { duplex?: "half" };
+
 async function proxy(request: NextRequest, context: RouteContext) {
   const origin = resolveBackendOrigin();
   const { path } = await context.params;
@@ -30,16 +32,20 @@ async function proxy(request: NextRequest, context: RouteContext) {
   }
 
   const method = request.method.toUpperCase();
-  const body = method === "GET" || method === "HEAD" ? undefined : await request.arrayBuffer();
+  const init: StreamingRequestInit = {
+    method,
+    headers,
+    redirect: "follow",
+  };
+
+  if (method !== "GET" && method !== "HEAD") {
+    init.body = request.body;
+    init.duplex = "half";
+  }
 
   let upstream: Response;
   try {
-    upstream = await fetch(targetUrl, {
-      method,
-      headers,
-      body,
-      redirect: "follow",
-    });
+    upstream = await fetch(targetUrl, init);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     // eslint-disable-next-line no-console

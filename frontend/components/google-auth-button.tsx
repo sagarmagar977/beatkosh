@@ -60,6 +60,7 @@ type GoogleAuthButtonProps = {
 
 export function GoogleAuthButton({ onCredential, onError }: GoogleAuthButtonProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const hostRef = useRef<HTMLDivElement | null>(null);
   const [ready, setReady] = useState(false);
 
   useEffect(() => {
@@ -72,10 +73,11 @@ export function GoogleAuthButton({ onCredential, onError }: GoogleAuthButtonProp
     const render = async () => {
       try {
         await loadGoogleScript();
-        if (cancelled || !containerRef.current || !window.google?.accounts?.id) {
+        if (cancelled || !containerRef.current || !hostRef.current || !window.google?.accounts?.id) {
           return;
         }
 
+        const availableWidth = Math.max(220, Math.floor(hostRef.current.getBoundingClientRect().width));
         containerRef.current.innerHTML = "";
         window.google.accounts.id.initialize({
           client_id: GOOGLE_CLIENT_ID,
@@ -92,7 +94,7 @@ export function GoogleAuthButton({ onCredential, onError }: GoogleAuthButtonProp
           size: "large",
           shape: "pill",
           text: "continue_with",
-          width: 360,
+          width: availableWidth,
           logo_alignment: "left",
         });
         setReady(true);
@@ -105,8 +107,20 @@ export function GoogleAuthButton({ onCredential, onError }: GoogleAuthButtonProp
 
     void render();
 
+    const resizeObserver =
+      typeof ResizeObserver !== "undefined"
+        ? new ResizeObserver(() => {
+            void render();
+          })
+        : null;
+
+    if (resizeObserver && hostRef.current) {
+      resizeObserver.observe(hostRef.current);
+    }
+
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
     };
   }, [onCredential, onError]);
 
@@ -121,7 +135,12 @@ export function GoogleAuthButton({ onCredential, onError }: GoogleAuthButtonProp
   return (
     <div className="space-y-2">
       {!ready ? <p className="text-sm text-white/60">Loading Google sign-in...</p> : null}
-      <div ref={containerRef} className="flex min-h-[44px] justify-center" />
+      <div
+        ref={hostRef}
+        className="w-full overflow-hidden rounded-full bg-white p-px shadow-[0_0_0_1px_rgba(255,255,255,0.06)]"
+      >
+        <div ref={containerRef} className="flex min-h-[44px] w-full justify-center rounded-full bg-white" />
+      </div>
     </div>
   );
 }

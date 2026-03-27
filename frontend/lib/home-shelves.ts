@@ -97,6 +97,25 @@ export function categoryPathFromKey(key: string) {
   return `/home-category/${key}`;
 }
 
+export function buildLatestUploadsShelf(beats: HomeBeat[]): Shelf {
+  const sortedItems = [...beats].sort((left, right) => {
+    const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0;
+    const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0;
+    if (rightTime !== leftTime) {
+      return rightTime - leftTime;
+    }
+
+    return right.id - left.id;
+  });
+
+  return {
+    key: "latest-uploads",
+    title: "Latest uploads",
+    subtitle: "Newest beats added to the catalog, ordered by recency.",
+    see_more_path: categoryPathFromKey("latest-uploads"),
+    beats: serializeShelfBeatItems(sortedItems.slice(0, 8)),
+  };
+}
 export function buildGenreShelves(beats: HomeBeat[]): Shelf[] {
   const grouped = beats.reduce<Map<string, HomeBeat[]>>((accumulator, beat) => {
     const genre = beat.genre?.trim();
@@ -172,3 +191,4 @@ export function trendShelfToBeatItems(beats: TrendingBeat[]): ShelfBeatItem[] {
     note: `Rank #${item.rank} trending score ${Math.round(item.trending_score)}`,
   }));
 }
+

@@ -5,8 +5,8 @@ import { Skeleton } from "@/components/skeleton";
 function HeaderShell() {
   return (
     <header className="theme-header fixed inset-x-0 top-0 z-[110] isolate border-b shadow-[0_14px_34px_rgba(0,0,0,0.32)]" style={{ borderColor: "var(--line)" }}>
-      <div className="absolute inset-0 -z-10 bg-[#17131b]" aria-hidden="true" />
-      <div className="relative z-10 flex w-full items-center gap-3 bg-[#17131b] px-3 py-3 md:grid md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-5 md:px-4 lg:px-5">
+      <div className="theme-app-shell-backdrop absolute inset-0 -z-10" aria-hidden="true" />
+      <div className="theme-app-shell-row relative z-10 flex w-full items-center gap-3 px-3 py-3 md:grid md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-5 md:px-4 lg:px-5">
         <Skeleton className="h-10 w-10 rounded-full" />
         <div className="hidden md:block">
           <Skeleton className="h-12 w-full rounded-full" />
@@ -18,7 +18,7 @@ function HeaderShell() {
           <Skeleton className="h-10 w-10 rounded-full" />
         </div>
       </div>
-      <div className="relative z-10 w-full bg-[#17131b] px-3 pb-3 md:px-4 lg:px-5">
+      <div className="theme-app-shell-row relative z-10 w-full px-3 pb-3 md:px-4 lg:px-5">
         <div className="flex items-center gap-2 md:hidden">
           <Skeleton className="h-11 w-11 rounded-full" />
           <Skeleton className="h-11 flex-1 rounded-full" />
@@ -31,7 +31,7 @@ function HeaderShell() {
 
 function RailCardSkeleton() {
   return (
-    <div className="w-[190px] flex-none rounded-[22px] border border-white/8 bg-white/[0.03] p-3">
+    <div className="theme-home-card w-[190px] flex-none rounded-[22px] p-3">
       <Skeleton className="aspect-square w-full rounded-[18px]" />
       <Skeleton className="mt-3 h-4 w-3/4 rounded-full" />
       <Skeleton className="mt-2 h-3 w-1/2 rounded-full" />
@@ -46,7 +46,7 @@ function RailCardSkeleton() {
 
 function ShelfSkeleton() {
   return (
-    <section className="rounded-[30px] border border-white/8 bg-[#111315]/94 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:p-6">
+    <section className="theme-home-rail rounded-[30px] p-5 md:p-6">
       <div className="mb-4 flex items-end justify-between gap-4">
         <div className="space-y-3">
           <Skeleton className="h-3 w-24 rounded-full" />

@@ -3,8 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
+import { Moon, Sun } from "lucide-react";
 
 import { useAuth } from "@/app/auth-context";
+import { useTheme } from "@/app/providers";
 import { GoogleAuthButton } from "@/components/google-auth-button";
 
 type Mode = "login" | "register";
@@ -12,6 +14,7 @@ type Mode = "login" | "register";
 export function AuthScreen({ mode }: { mode: Mode }) {
   const router = useRouter();
   const { login, loginWithGoogle, register, user, loading } = useAuth();
+  const { theme, toggleTheme } = useTheme();
 
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
@@ -73,22 +76,33 @@ export function AuthScreen({ mode }: { mode: Mode }) {
   return (
     <div className="mx-auto flex min-h-screen max-w-[1240px] items-center justify-center px-4 py-10 lg:px-6">
       <section className="surface-panel w-full max-w-md rounded-[30px] p-6">
-        <p className="eyebrow">Authentication</p>
-        <h1 className="mt-2 text-3xl font-semibold tracking-tight">{heading}</h1>
+        <div className="flex items-start justify-between gap-4">
+          <p className="eyebrow">Authentication</p>
+          <button
+            type="button"
+            onClick={toggleTheme}
+            className="theme-soft theme-text-main inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full transition hover:scale-[1.03]"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            title={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          >
+            {theme === "dark" ? <Sun className="h-[18px] w-[18px]" strokeWidth={1.9} /> : <Moon className="h-[18px] w-[18px]" strokeWidth={1.9} />}
+          </button>
+        </div>
+        <h1 className="theme-text-main mt-2 text-3xl font-semibold tracking-tight">{heading}</h1>
 
         <div className="mt-5">
           <GoogleAuthButton onCredential={handleGoogleLogin} onError={setError} />
         </div>
 
-        <div className="my-4 flex items-center gap-3 text-xs uppercase tracking-[0.24em] text-white/35">
-          <span className="h-px flex-1 bg-white/10" />
+        <div className="theme-text-faint my-4 flex items-center gap-3 text-xs uppercase tracking-[0.24em]">
+          <span className="h-px flex-1" style={{ backgroundColor: "var(--line)" }} />
           <span>or</span>
-          <span className="h-px flex-1 bg-white/10" />
+          <span className="h-px flex-1" style={{ backgroundColor: "var(--line)" }} />
         </div>
 
         <form onSubmit={onSubmit} className="space-y-3">
           <input
-            className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35"
+            className="theme-input w-full rounded-2xl px-4 py-3 outline-none"
             placeholder="Username"
             value={username}
             onChange={(e) => setUsername(e.target.value)}
@@ -97,7 +111,7 @@ export function AuthScreen({ mode }: { mode: Mode }) {
 
           {isRegister ? (
             <input
-              className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35"
+              className="theme-input w-full rounded-2xl px-4 py-3 outline-none"
               placeholder="Email"
               type="email"
               value={email}
@@ -107,7 +121,7 @@ export function AuthScreen({ mode }: { mode: Mode }) {
           ) : null}
 
           <input
-            className="w-full rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-white outline-none placeholder:text-white/35"
+            className="theme-input w-full rounded-2xl px-4 py-3 outline-none"
             placeholder="Password"
             type="password"
             value={password}
@@ -122,20 +136,20 @@ export function AuthScreen({ mode }: { mode: Mode }) {
             {submitting ? "Signing in..." : actionLabel}
           </button>
 
-          {error ? <p className="text-sm text-[#ffb4a9] break-words">{error}</p> : null}
+          {error ? <p className="break-words text-sm text-[#d84f6c]">{error}</p> : null}
         </form>
 
-        <div className="mt-4 flex items-center justify-between text-sm text-white/70">
+        <div className="theme-text-soft mt-4 flex items-center justify-between text-sm">
           {isRegister ? (
-            <Link href="/auth/login" className="underline underline-offset-4 hover:text-white">
+            <Link href="/auth/login" className="underline underline-offset-4 hover:text-[var(--text)]">
               Already have an account?
             </Link>
           ) : (
-            <Link href="/auth/register" className="underline underline-offset-4 hover:text-white">
+            <Link href="/auth/register" className="underline underline-offset-4 hover:text-[var(--text)]">
               Create an account
             </Link>
           )}
-          <Link href="/" className="underline underline-offset-4 hover:text-white">
+          <Link href="/" className="underline underline-offset-4 hover:text-[var(--text)]">
             Back to home
           </Link>
         </div>

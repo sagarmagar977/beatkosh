@@ -5,7 +5,8 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from beats.metadata_choices import GENRE_VALUES, INSTRUMENT_VALUES, MOOD_VALUES
-from accounts.models import User
+from accounts.models import User, UserNotification
+from messaging.models import Conversation
 from projects.models import Deliverable, Milestone, Project, ProjectRequest, Proposal
 from projects.serializers import (
     DeliverableSerializer,
@@ -209,6 +210,16 @@ class ProjectProposalAcceptView(APIView):
             project.workflow_stage = Project.WORKFLOW_PROPOSAL_ACCEPTED
             project.save(update_fields=["offer_price", "workflow_stage"])
 
+        conversation, _ = Conversation.objects.get_or_create(project=project)
+        conversation.participants.set([brief.artist, proposal.producer])
+
+        UserNotification.objects.create(
+            user=proposal.producer,
+            actor=request.user,
+            notification_type=UserNotification.TYPE_PROJECT_PROPOSAL_ACCEPTED,
+            message=f"{request.user.username} accepted your offer for {brief.title}.",
+        )
+
         return Response(
             {
                 "proposal": ProposalSerializer(proposal).data,
@@ -228,7 +239,7 @@ class ProjectListView(generics.ListAPIView):
         return (
             Project.objects.filter(Q(artist=user) | Q(producer=user))
             .select_related("artist", "producer")
-            .prefetch_related("milestones", "milestones__deliverables")
+            .prefetch_related("milestones", "milestones__deliverables", "conversations")
             .order_by("-created_at")
         )
 
@@ -310,4 +321,3 @@ class MilestoneDeliverableListView(generics.ListAPIView):
         if self.request.user.id not in (milestone.project.artist_id, milestone.project.producer_id):
             raise PermissionDenied("Only project participants can view deliverables.")
         return Deliverable.objects.filter(milestone=milestone).select_related("submitted_by")
-

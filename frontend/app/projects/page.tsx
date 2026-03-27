@@ -1,8 +1,8 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Minus, Music2, Plus, Search, Wand2 } from "lucide-react";
+import { ChevronDown, MessageSquareMore, Minus, Music2, Plus, Search, Wand2 } from "lucide-react";
 import { useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/context/auth-context";
@@ -38,6 +38,7 @@ type Project = {
   delivery_timeline_days?: number | null;
   revision_allowance: number;
   linked_conversation_hint?: string;
+  conversation_id?: number | null;
   workflow_summary?: { milestone_count: number; deliverable_count: number; funded_milestones: number; approved_milestones: number; stage_label: string };
   milestones: Milestone[];
 };
@@ -49,6 +50,8 @@ type Proposal = {
   producer_username?: string;
   amount: string;
   message: string;
+  project_id?: number | null;
+  conversation_id?: number | null;
   created_at: string;
 };
 
@@ -245,6 +248,13 @@ export default function ProjectsPage() {
   const [acceptingProposalId, setAcceptingProposalId] = useState<number | null>(null);
 
   const draftIdFromQuery = searchParams.get("draft");
+
+  const openConversationPanel = (conversationId: number) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("beatkosh:open-messages", { detail: { conversationId } }));
+  };
 
   const loadWorkspace = async (accessToken: string) => {
     const [projectData, requestData] = await Promise.all([
@@ -845,6 +855,14 @@ export default function ProjectsPage() {
                   {project.milestones.length === 0 ? <p className="text-sm text-white/55">No milestones added yet. This project is waiting for the next collaboration step.</p> : null}
                 </div>
                 {project.linked_conversation_hint ? <p className="mt-3 text-sm text-white/52">Chat hint: {project.linked_conversation_hint}</p> : null}
+                {project.conversation_id ? (
+                  <div className="mt-3">
+                    <button type="button" onClick={() => openConversationPanel(project.conversation_id!)} className="inline-flex items-center gap-2 rounded-[14px] border border-[#9ee8dc]/30 bg-[#9ee8dc]/10 px-4 py-2 text-sm font-semibold text-[#9ee8dc] transition hover:bg-[#9ee8dc]/18">
+                      <MessageSquareMore className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                      Open Chat
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ))}
           </div>
@@ -855,6 +873,7 @@ export default function ProjectsPage() {
     </div>
   );
 }
+
 
 
 

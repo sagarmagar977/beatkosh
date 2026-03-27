@@ -103,6 +103,10 @@ def extract_instruments(beat: Beat) -> set[str]:
     return {value for value in raw if value}
 
 
+def extract_tags(beat: Beat) -> set[str]:
+    return {value for value in beat.tags.values_list("name", flat=True) if value}
+
+
 def unique_latest_sessions(queryset, limit: int, *, predicate=None):
     sessions = []
     seen_beat_ids = set()
@@ -120,6 +124,39 @@ def unique_latest_sessions(queryset, limit: int, *, predicate=None):
 
 def top_values(counter: Counter, limit: int = 5):
     return [value for value, _count in counter.most_common(limit) if value]
+
+
+def build_seed_beats(user, *, today_only: bool = False, limit: int = 10):
+    sessions = list(
+        ListeningSession.objects.filter(user=user)
+        .select_related("beat", "beat__producer")
+        .prefetch_related("beat__tags")
+        .order_by("-started_at")[:240]
+    )
+    cutoff = timezone.now() - timedelta(hours=24)
+    seed_scores = Counter()
+    seed_beats: dict[int, Beat] = {}
+
+    for index, session in enumerate(sessions):
+        if today_only and session.started_at < cutoff:
+            continue
+        if not (session.is_completed or session.listened_seconds >= 15 or session.completion_percent >= 30):
+            continue
+        recency_weight = max(1, 14 - index)
+        completion_weight = 12 if session.is_completed else min(8, session.completion_percent // 10) + min(4, session.listened_seconds // 30)
+        seed_scores[session.beat_id] += recency_weight + completion_weight
+        seed_beats[session.beat_id] = session.beat
+
+    history_queryset = ListeningHistory.objects.filter(user=user)
+    if today_only:
+        history_queryset = history_queryset.filter(last_played_at__gte=cutoff)
+
+    for history in history_queryset.select_related("beat", "beat__producer").prefetch_related("beat__tags").order_by("-play_count", "-last_played_at")[:limit]:
+        seed_scores[history.beat_id] += history.play_count * 3
+        seed_beats[history.beat_id] = history.beat
+
+    ranked_ids = [beat_id for beat_id, _score in seed_scores.most_common(limit)]
+    return [seed_beats[beat_id] for beat_id in ranked_ids if beat_id in seed_beats]
 
 
 def serialize_home_beat_items(beats, *, session_map=None, note_builder=None):
@@ -278,35 +315,98 @@ def recommend_beats_for_user(user, *, today_only: bool = False, limit: int = 8):
     instrument_targets = set(snapshot.get("favorite_instruments", []))
     producer_targets = set(snapshot.get("favorite_producer_ids", []))
     bpm_average = int(snapshot.get("bpm_average") or 0)
+    seed_beats = build_seed_beats(user, today_only=today_only, limit=10)
+    seed_tag_targets = set()
+    seed_genres = set()
+    seed_moods = set()
+    seed_instruments = set()
+    seed_producers = set()
+    seed_bpms = []
+    for seed in seed_beats:
+        seed_tag_targets.update(extract_tags(seed))
+        seed_genres.add(seed.genre)
+        seed_moods.update(extract_moods(seed))
+        seed_instruments.update(extract_instruments(seed))
+        seed_producers.add(seed.producer_id)
+        if seed.bpm:
+            seed_bpms.append(seed.bpm)
+    seed_bpm_average = round(sum(seed_bpms) / len(seed_bpms)) if seed_bpms else 0
 
     ranked = []
+    now = timezone.now()
     for beat in candidate_queryset.exclude(id__in=exclude_ids)[:180]:
         score = 0
         if beat.genre in genre_targets:
             score += 38
         if beat.genre in set(profile.liked_genres):
             score += 18
+        if beat.genre in seed_genres:
+            score += 22
         beat_moods = extract_moods(beat)
         beat_instruments = extract_instruments(beat)
+        beat_tags = extract_tags(beat)
         score += len(mood_targets.intersection(beat_moods)) * 16
         score += len(instrument_targets.intersection(beat_instruments)) * 14
+        score += len(seed_moods.intersection(beat_moods)) * 10
+        score += len(seed_instruments.intersection(beat_instruments)) * 9
+        score += len(seed_tag_targets.intersection(beat_tags)) * 8
         if beat.producer_id in producer_targets:
             score += 24
         if beat.producer_id in followed_ids:
             score += 18
+        if beat.producer_id in seed_producers:
+            score += 14
         if bpm_average and beat.bpm:
             score += max(0, 18 - min(abs(beat.bpm - bpm_average), 18))
+        if seed_bpm_average and beat.bpm:
+            score += max(0, 12 - min(abs(beat.bpm - seed_bpm_average), 12))
         score += min(beat.likes.count(), 12)
         score += min(beat.listening_events.aggregate(total=Sum("play_count"))["total"] or 0, 18)
-        if score > 0:
-            ranked.append((score, beat.created_at, beat))
+        freshness_bonus = 6 if beat.created_at >= now - timedelta(days=14) else 0
+        ranked.append((score + freshness_bonus, beat.created_at, beat))
 
     ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    beats = [beat for _score, _created_at, beat in ranked[:limit]]
-    based_on = "your last 24 hours" if today_only else "your listening history and likes"
-    if not beats:
-        beats = list(candidate_queryset.order_by("-created_at")[:limit])
+    selected_beats = []
+    selected_ids = set()
+    for _score, _created_at, beat in ranked:
+        if beat.id in selected_ids:
+            continue
+        selected_beats.append(beat)
+        selected_ids.add(beat.id)
+        if len(selected_beats) >= limit:
+            break
+
+    if len(selected_beats) < limit:
+        followed_fallback = [
+            beat
+            for beat in candidate_queryset.exclude(id__in=exclude_ids.union(selected_ids)).filter(producer_id__in=followed_ids).order_by("-created_at")[:limit]
+            if beat.id not in selected_ids
+        ]
+        for beat in followed_fallback:
+            selected_beats.append(beat)
+            selected_ids.add(beat.id)
+            if len(selected_beats) >= limit:
+                break
+
+    if len(selected_beats) < limit:
+        fresh_fallback = [
+            beat
+            for beat in candidate_queryset.exclude(id__in=exclude_ids.union(selected_ids)).order_by("-created_at")[: limit * 2]
+            if beat.id not in selected_ids
+        ]
+        for beat in fresh_fallback:
+            selected_beats.append(beat)
+            selected_ids.add(beat.id)
+            if len(selected_beats) >= limit:
+                break
+
+    if today_only and seed_beats:
+        based_on = "top 10 from your last 24 hours"
+    elif seed_beats:
+        based_on = "your top listening history, completions, and likes"
+    else:
         based_on = "fresh catalog"
+    beats = selected_beats[:limit]
     return based_on, beats
 
 

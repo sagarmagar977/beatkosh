@@ -13,6 +13,7 @@ import { useCart } from "@/context/cart-context";
 import { usePlayer } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 import {
+  buildLatestUploadsShelf,
   buildGenreShelves,
   trendShelfToBeatItems,
   type HomeBeat,
@@ -100,6 +101,23 @@ function findCategoryDetail({
     };
   }
 
+  if (slug === "latest-uploads") {
+    const latestShelf = buildLatestUploadsShelf(discoveryBeats);
+    return {
+      title: latestShelf.title,
+      subtitle: latestShelf.subtitle,
+      items: [...discoveryBeats]
+        .sort((left, right) => {
+          const rightTime = right.created_at ? new Date(right.created_at).getTime() : 0;
+          const leftTime = left.created_at ? new Date(left.created_at).getTime() : 0;
+          if (rightTime !== leftTime) {
+            return rightTime - leftTime;
+          }
+          return right.id - left.id;
+        })
+        .map((beat) => ({ beat, note: "" })),
+    };
+  }
   const genreShelf = buildGenreShelves(discoveryBeats).find((shelf) => shelf.key === slug);
   if (genreShelf) {
     const genreName = genreShelf.title.replace(/ Beats$/, "");

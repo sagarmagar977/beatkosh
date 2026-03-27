@@ -41,19 +41,19 @@ function RailHeader({ title, subtitle, href, onPrev, onNext }: { title: string; 
   return (
     <div className="mb-4 flex items-end justify-between gap-4">
       <div>
-        <h2 className="text-2xl font-semibold tracking-tight text-white">{title}</h2>
-        {subtitle ? <p className="mt-1 text-sm text-white/55">{subtitle}</p> : null}
+        <h2 className="theme-text-main text-2xl font-semibold tracking-tight">{title}</h2>
+        {subtitle ? <p className="theme-text-muted mt-1 text-sm">{subtitle}</p> : null}
       </div>
       <div className="flex items-center gap-2">
         {href ? (
-          <Link href={href} className="rounded-full border border-white/10 px-3 py-2 text-xs font-medium text-white/72 transition hover:bg-white/[0.06] hover:text-white">
+          <Link href={href} className="theme-soft theme-text-soft rounded-full px-3 py-2 text-xs font-medium transition">
             See more
           </Link>
         ) : null}
-        <button type="button" onClick={onPrev} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/72 transition hover:bg-white/[0.06] hover:text-white">
+        <button type="button" onClick={onPrev} className="theme-soft theme-text-soft inline-flex h-10 w-10 items-center justify-center rounded-full transition">
           <ChevronLeft className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
         </button>
-        <button type="button" onClick={onNext} className="inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 text-white/72 transition hover:bg-white/[0.06] hover:text-white">
+        <button type="button" onClick={onNext} className="theme-soft theme-text-soft inline-flex h-10 w-10 items-center justify-center rounded-full transition">
           <ChevronRight className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
         </button>
       </div>
@@ -65,21 +65,21 @@ function BeatCard({ item }: { item: ShelfBeatItem }) {
   const beat = item.beat;
   const cover = resolveMediaUrl(beat.cover_art_obj);
   return (
-    <Link href={`/beats/${beat.id}`} className="group w-[190px] flex-none rounded-[22px] border border-white/8 bg-white/[0.03] p-3 transition hover:-translate-y-0.5 hover:border-white/16 hover:bg-white/[0.05]">
-      <div className="overflow-hidden rounded-[18px] bg-[linear-gradient(135deg,#17311f,#11151d_60%,#2f1a19)]">
+    <Link href={`/beats/${beat.id}`} className="theme-home-card group w-[190px] flex-none rounded-[22px] p-3 transition hover:-translate-y-0.5">
+      <div className="theme-home-art overflow-hidden rounded-[18px]">
         {cover ? (
           <img src={cover} alt={beat.title} className="aspect-square w-full object-cover transition duration-300 group-hover:scale-[1.04]" />
         ) : (
           <div className="aspect-square w-full" />
         )}
       </div>
-      <p className="mt-3 line-clamp-1 text-sm font-semibold text-white">{beat.title}</p>
-      <p className="mt-1 line-clamp-1 text-xs text-white/58">{beat.producer_username}</p>
-      <div className="mt-3 flex items-center justify-between text-[11px] text-white/48">
+      <p className="theme-text-main mt-3 line-clamp-1 text-sm font-semibold">{beat.title}</p>
+      <p className="theme-text-muted mt-1 line-clamp-1 text-xs">{beat.producer_username}</p>
+      <div className="theme-text-faint mt-3 flex items-center justify-between text-[11px]">
         <span>{beat.genre}</span>
         <span>{beat.bpm} BPM</span>
       </div>
-      <p className="mt-2 line-clamp-1 text-[11px] text-white/62">{formatNote(item)}</p>
+      <p className="theme-text-muted mt-2 line-clamp-1 text-[11px]">{formatNote(item)}</p>
     </Link>
   );
 }
@@ -87,22 +87,22 @@ function BeatCard({ item }: { item: ShelfBeatItem }) {
 function PlaylistCard({ playlist }: { playlist: Playlist }) {
   const preview = playlist.beats.slice(0, 4);
   return (
-    <Link href="/library" className="group w-[220px] flex-none rounded-[24px] border border-white/8 bg-white/[0.03] p-3 transition hover:-translate-y-0.5 hover:border-white/16 hover:bg-white/[0.05]">
-      <div className="grid aspect-square grid-cols-2 gap-2 overflow-hidden rounded-[18px] bg-[#12161d] p-2">
+    <Link href="/library" className="theme-home-card group w-[220px] flex-none rounded-[24px] p-3 transition hover:-translate-y-0.5">
+      <div className="theme-home-art grid aspect-square grid-cols-2 gap-2 overflow-hidden rounded-[18px] p-2">
         {preview.length > 0 ? preview.map((beat) => {
           const cover = resolveMediaUrl(beat.cover_art_obj);
           return cover ? (
             <img key={beat.id} src={cover} alt={beat.title} className="h-full w-full rounded-[12px] object-cover" />
           ) : (
-            <div key={beat.id} className="rounded-[12px] bg-[linear-gradient(135deg,#20402d,#151920)]" />
+            <div key={beat.id} className="theme-home-art rounded-[12px]" />
           );
         }) : Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="rounded-[12px] bg-[linear-gradient(135deg,#20402d,#151920)]" />
+          <div key={index} className="theme-home-art rounded-[12px]" />
         ))}
       </div>
-      <p className="mt-3 line-clamp-1 text-base font-semibold text-white">{playlist.name}</p>
-      <p className="mt-1 text-xs text-white/58">{playlist.beats.length} beats</p>
-      <p className="mt-2 line-clamp-2 text-[11px] text-white/44">
+      <p className="theme-text-main mt-3 line-clamp-1 text-base font-semibold">{playlist.name}</p>
+      <p className="theme-text-muted mt-1 text-xs">{playlist.beats.length} beats</p>
+      <p className="theme-text-faint mt-2 line-clamp-2 text-[11px]">
         {preview.map((beat) => beat.title).join(" ? ") || "Start adding beats to build this playlist."}
       </p>
     </Link>
@@ -122,7 +122,7 @@ function ShelfRail({ shelf }: { shelf: Shelf }) {
   }
 
   return (
-    <section className="rounded-[30px] border border-white/8 bg-[#111315]/94 p-5 shadow-[0_24px_80px_rgba(0,0,0,0.28)] md:p-6">
+    <section className="theme-home-rail rounded-[30px] p-5 md:p-6">
       <RailHeader
         title={shelf.title}
         subtitle={shelf.subtitle}
@@ -232,21 +232,21 @@ export default function HomePage() {
 
   return (
     <div className="space-y-4 pb-24">
-      <section className="relative overflow-hidden rounded-[30px] border border-white/8 bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)] min-h-[280px] p-6 md:p-8">
+      <section className="theme-home-hero relative min-h-[280px] overflow-hidden rounded-[30px] p-6 md:p-8">
         {homeHeroCover ? <img src={homeHeroCover} alt={homeHeroBeat?.title || headingGreeting} className="absolute inset-0 h-full w-full object-cover" /> : null}
-        <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,8,18,0.9)_0%,rgba(30,18,42,0.72)_42%,rgba(12,8,18,0.88)_100%)]" />
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(172,115,220,0.32),rgba(17,13,20,0.84)_82%)]" />
+        <div className="theme-home-hero-overlay-primary absolute inset-0" />
+        <div className="theme-home-hero-overlay-secondary absolute inset-0" />
         <div className="relative flex min-h-[248px] flex-col justify-end">
-          <p className="text-xs uppercase tracking-[0.28em] text-white/62">Home</p>
-          <h1 className="mt-3 max-w-[12ch] text-4xl font-semibold leading-[1.02] text-white md:text-6xl">
+          <p className="theme-text-faint text-xs uppercase tracking-[0.28em]">Home</p>
+          <h1 className="theme-text-main mt-3 max-w-[12ch] text-4xl font-semibold leading-[1.02] md:text-6xl">
             {headingGreeting}
           </h1>
-          <p className="mt-3 max-w-2xl text-sm text-white/76 md:text-base">Jump back into fresh discovery, trending beats, and the categories moving fastest right now.</p>
+          <p className="theme-text-soft mt-3 max-w-2xl text-sm md:text-base">Jump back into fresh discovery, trending beats, and the categories moving fastest right now.</p>
           {homeHeroBeat ? (
-            <div className="mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
-              <span className="text-white/58">Featured cover</span>
-              <span className="font-medium text-white">{homeHeroBeat.title}</span>
-              <span className="text-white/58">{homeHeroBeat.producer_username}</span>
+            <div className="theme-home-meta mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full px-4 py-2 text-sm">
+              <span className="theme-text-muted">Featured cover</span>
+              <span className="theme-text-main font-medium">{homeHeroBeat.title}</span>
+              <span className="theme-text-muted">{homeHeroBeat.producer_username}</span>
             </div>
           ) : null}
         </div>
@@ -255,7 +255,6 @@ export default function HomePage() {
       {(feed?.shelves ?? []).map((shelf) => (
         <ShelfRail key={shelf.key} shelf={shelf} />
       ))}
-
       <TrendingBeatShelf
         title="Trending Today"
         subtitle="The fastest-moving beats from the last 24 hours."
@@ -279,7 +278,4 @@ export default function HomePage() {
     </div>
   );
 }
-
-
-
 

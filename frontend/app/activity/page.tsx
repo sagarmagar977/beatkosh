@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { ArrowUpRight, BookOpen, Clock3, Compass, FileText, Heart, LayoutPanelLeft, MessageSquareMore, Minus, Package2, Pencil, Plus, ShoppingCart, SlidersHorizontal, Trash2, Upload, X } from "lucide-react";
+import { ArrowUpRight, BookOpen, Clock3, Compass, Disc3, Download, FileText, Heart, Info, LayoutPanelLeft, MessageSquareMore, Minus, Package2, Pencil, Plus, ShoppingCart, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
@@ -40,6 +40,23 @@ type CartSummary = {
   items: Array<{ product_type: string; product_id: number }>;
 };
 
+type PurchasedBeat = {
+  id: number;
+  beat: Beat;
+  order_id: number;
+  order_status: string;
+  license_name?: string | null;
+  purchase_price?: string;
+  granted_at: string;
+};
+
+type HistoryOrder = {
+  id: number;
+  total_price: string;
+  status: string;
+  created_at: string;
+};
+
 type Proposal = {
   id: number;
   project_request: number;
@@ -47,6 +64,8 @@ type Proposal = {
   producer_username?: string;
   amount: string;
   message: string;
+  project_id?: number | null;
+  conversation_id?: number | null;
   created_at: string;
 };
 
@@ -64,6 +83,8 @@ type ProducerApplication = {
   amount: string;
   message: string;
   application_status: "pending" | "accepted" | "rejected";
+  project_id?: number | null;
+  conversation_id?: number | null;
   created_at: string;
 };
 
@@ -128,8 +149,7 @@ type SidebarMode =
   | "liked"
   | "history"
   | "playlists"
-  | "studio"
-  | "uploads"
+  | "audioAssets"
   | "briefs"
   | "negotiations";
 
@@ -162,6 +182,10 @@ export default function ActivityPage() {
   const [licenseModalBeat, setLicenseModalBeat] = useState<Beat | null>(null);
   const [selectedLicenseId, setSelectedLicenseId] = useState<number | null>(null);
   const [cartBeatIds, setCartBeatIds] = useState<number[]>([]);
+  const [purchasedBeats, setPurchasedBeats] = useState<PurchasedBeat[]>([]);
+  const [purchaseOrders, setPurchaseOrders] = useState<HistoryOrder[]>([]);
+  const [downloadingBeatId, setDownloadingBeatId] = useState<number | null>(null);
+  const [activePurchase, setActivePurchase] = useState<PurchasedBeat | null>(null);
   const [hiringBriefs, setHiringBriefs] = useState<HiringBrief[]>([]);
   const [producerApplications, setProducerApplications] = useState<ProducerApplication[]>([]);
   const [hiringMetadata, setHiringMetadata] = useState<HiringMetadata | null>(null);
@@ -191,20 +215,24 @@ export default function ActivityPage() {
   const load = useCallback(async () => {
     if (!token) return;
     try {
-      const [likeData, beatData, licenses, hiringData, hiringMeta, applicationData] = await Promise.all([
-        apiRequest<LikeItem[]>("/account/likes/beats/me/", { token }),
-        apiRequest<Beat[]>("/beats/"),
-        apiRequest<License[]>("/beats/licenses/"),
-        apiRequest<HiringBrief[]>("/projects/requests/", { token }),
-        apiRequest<HiringMetadata>("/projects/metadata-options/", { token }),
-        activeRole === "producer" ? apiRequest<ProducerApplication[]>("/projects/proposals/mine/", { token }) : Promise.resolve([] as ProducerApplication[]),
-      ]);
+        const [likeData, beatData, licenses, hiringData, hiringMeta, applicationData, downloadData, orderData] = await Promise.all([
+          apiRequest<LikeItem[]>("/account/likes/beats/me/", { token }),
+          apiRequest<Beat[]>("/beats/"),
+          apiRequest<License[]>("/beats/licenses/"),
+          apiRequest<HiringBrief[]>("/projects/requests/", { token }),
+          apiRequest<HiringMetadata>("/projects/metadata-options/", { token }),
+          activeRole === "producer" ? apiRequest<ProducerApplication[]>("/projects/proposals/mine/", { token }) : Promise.resolve([] as ProducerApplication[]),
+          apiRequest<PurchasedBeat[]>("/orders/downloads/", { token }),
+          apiRequest<HistoryOrder[]>("/orders/history/", { token }),
+        ]);
       setLikes(likeData);
       setBeats(beatData);
-      setLicenseCatalog(licenses);
-      setHiringBriefs(hiringData);
-      setHiringMetadata(hiringMeta);
-      setProducerApplications(applicationData);
+        setLicenseCatalog(licenses);
+        setHiringBriefs(hiringData);
+        setHiringMetadata(hiringMeta);
+        setProducerApplications(applicationData);
+        setPurchasedBeats(downloadData);
+        setPurchaseOrders(orderData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load activity");
     }
@@ -236,6 +264,13 @@ export default function ActivityPage() {
     const timeout = window.setTimeout(() => setMessage(null), 2400);
     return () => window.clearTimeout(timeout);
   }, [message]);
+
+  const openConversationPanel = useCallback((conversationId: number) => {
+    if (typeof window === "undefined") {
+      return;
+    }
+    window.dispatchEvent(new CustomEvent("beatkosh:open-messages", { detail: { conversationId } }));
+  }, []);
 
 
   const availableGenres = useMemo(() => {
@@ -357,6 +392,8 @@ export default function ActivityPage() {
       ? historyHeroBeat
       : sidebarMode === "playlists"
         ? playlistHeroBeat
+        : sidebarMode === "audioAssets"
+          ? purchasedBeats[0]?.beat ?? null
         : null;
 
   const hubHeroCover = sidebarMode === "hiring"
@@ -369,12 +406,15 @@ export default function ActivityPage() {
       ? "Top replayed beat"
       : sidebarMode === "playlists"
         ? "Latest saved beat"
+        : sidebarMode === "audioAssets"
+          ? "Latest purchased beat"
         : sidebarMode === "hiring"
           ? "Latest brief by"
           : "";
 
   const hubHeroTitle = sidebarMode === "hiring" ? hiringHeroBrief?.artist_username || "Hiring" : hubHeroBeat?.title || null;
   const hubHeroMeta = sidebarMode === "hiring" ? hiringHeroBrief?.title || "Latest hiring post" : hubHeroBeat?.producer_username || null;
+  const purchaseOrdersById = useMemo(() => new Map(purchaseOrders.map((order) => [order.id, order])), [purchaseOrders]);
 
   const handleLibraryBeatPlay = (savedBeat: (typeof library.listenLater)[number], queue: Beat[]) => {
     const liveBeat = beats.find((item) => item.id === savedBeat.id);
@@ -383,6 +423,30 @@ export default function ActivityPage() {
       return;
     }
     router.push(`/beats/${savedBeat.id}`);
+  };
+
+  const handlePurchasedBeatPlay = (item: PurchasedBeat) => {
+    void handlePlayAttempt(item.beat, purchasedBeats.map((entry) => entry.beat));
+  };
+
+  const handlePurchasedBeatDownload = async (item: PurchasedBeat) => {
+    if (!token) return;
+    setDownloadingBeatId(item.beat.id);
+    setError(null);
+    try {
+      const response = await apiRequest<{ download_url: string; filename: string }>(`/orders/downloads/${item.beat.id}/hq-url/`, { token });
+      const anchor = document.createElement("a");
+      anchor.href = resolveMediaUrl(response.download_url) || response.download_url;
+      anchor.download = response.filename || `${item.beat.title}.wav`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      notify(`Download started for ${item.beat.title}.`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Download failed");
+    } finally {
+      setDownloadingBeatId(null);
+    }
   };
 
   const handleGenreSelect = (genre: string | null) => {
@@ -493,7 +557,7 @@ export default function ActivityPage() {
   };
 
   const sidebarActions = useMemo(() => {
-    const baseActions = [
+    return [
       { key: "browse" as const, label: "Genre Browse", icon: Compass },
       { key: "kits" as const, label: "Sound Kits", icon: Package2 },
       { key: "hiring" as const, label: "Hiring", icon: FileText },
@@ -501,19 +565,9 @@ export default function ActivityPage() {
       { key: "liked" as const, label: "Liked", icon: Heart },
       { key: "history" as const, label: "Play History", icon: Clock3 },
       { key: "playlists" as const, label: "Playlists", icon: Clock3 },
+      { key: "audioAssets" as const, label: "Audio Assets", icon: Disc3 },
     ];
-
-    if (isProducerMode) {
-      return [
-        ...baseActions,
-        { key: "studio" as const, label: "Studio", icon: SlidersHorizontal },
-        { key: "uploads" as const, label: "Media Uploads", icon: Upload },
-        { key: "negotiations" as const, label: "Negotiations", icon: MessageSquareMore },
-      ];
-    }
-
-    return baseActions;
-  }, [isProducerMode]);
+  }, []);
 
   const soundKitHighlights = [
     { title: "Starter packs", detail: "Quick one-shots, chord loops, and drum textures for fast sketching.", href: "/catalog" },
@@ -668,7 +722,7 @@ export default function ActivityPage() {
       setAcceptingProposalId(proposalId);
       setError(null);
       await apiRequest(`/projects/proposal/${proposalId}/accept/`, { method: "POST", token });
-      setMessage("Offer accepted. The collaboration is now active in projects.");
+      setMessage("Offer accepted. Messaging is now unlocked for this collaboration.");
       await load();
       setExpandedHiringBriefId(briefId);
     } catch (err) {
@@ -679,11 +733,11 @@ export default function ActivityPage() {
   };
 
   return (
-    <div className="flex h-[calc(100vh-10rem)] min-h-0 flex-col overflow-hidden rounded-[34px] border border-white/8 bg-[#090909] p-3 text-white shadow-[0_30px_120px_rgba(0,0,0,0.42)]">
+    <div className="activity-workspace flex h-[calc(100vh-10rem)] min-h-0 flex-col overflow-hidden rounded-[34px] border border-white/8 p-3 text-white shadow-[0_30px_120px_rgba(0,0,0,0.42)]">
       <div className={`grid min-h-0 flex-1 gap-3 ${sidebarCollapsed ? "xl:grid-cols-[92px_minmax(0,1fr)]" : "xl:grid-cols-[280px_minmax(0,1fr)]"}`}>
         <aside className="hidden min-h-0 xl:block">
-          <div className={`flex h-full flex-col overflow-hidden rounded-[24px] bg-[#121212] p-4 transition-[width,padding] duration-200 ${sidebarCollapsed ? "items-center px-3" : ""}`}>
-            <div className={`mb-3 flex w-full items-center ${sidebarCollapsed ? "justify-center" : "justify-start"}`}>
+          <div className={`activity-sidebar flex h-full flex-col overflow-hidden rounded-[24px] p-3 transition-[width,padding] duration-200 ${sidebarCollapsed ? "items-center px-2.5" : ""}`}>
+            <div className={`mb-2 flex w-full items-center ${sidebarCollapsed ? "justify-center" : "justify-start"}`}>
               <button
                 type="button"
                 onClick={() => setSidebarCollapsed((current) => !current)}
@@ -695,7 +749,7 @@ export default function ActivityPage() {
               </button>
             </div>
 
-            <div className={`${sidebarCollapsed ? "flex flex-1 w-full flex-col items-center justify-between py-2" : "grid gap-2"}`}>
+            <div className={`${sidebarCollapsed ? "flex flex-1 w-full flex-col items-center justify-between py-1" : "grid gap-1.5"}`}>
               {sidebarActions.map((action) => {
                 const Icon = action.icon;
                 const active = sidebarMode === action.key;
@@ -706,14 +760,14 @@ export default function ActivityPage() {
                     onClick={() => {
                       setSidebarMode(action.key);
                     }}
-                    className={`group flex w-full items-center rounded-[18px] border border-transparent bg-transparent text-left shadow-none transition ${sidebarCollapsed ? "max-w-[52px] justify-center px-0 py-3" : "gap-3 px-3 py-2.5"} hover:bg-white/[0.05]`}
+                    className={`group flex w-full items-center rounded-[16px] border border-transparent bg-transparent text-left shadow-none transition ${sidebarCollapsed ? "max-w-[50px] justify-center px-0 py-2.5" : "gap-2.5 px-2.5 py-2"} hover:bg-white/[0.05]`}
                     aria-label={action.label}
                     title={action.label}
                   >
-                    <div className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-[14px] transition ${active ? "bg-transparent text-[#b598ff]" : "bg-transparent text-white/68 group-hover:text-white/82"}`}>
-                      <Icon className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+                    <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-[12px] transition ${active ? "bg-transparent text-[#b598ff]" : "bg-transparent text-white/68 group-hover:text-white/82"}`}>
+                      <Icon className="h-[15px] w-[15px]" strokeWidth={1.9} aria-hidden="true" />
                     </div>
-                    {!sidebarCollapsed ? <p className={`min-w-0 truncate text-sm font-medium transition ${active ? "text-white" : "text-white/92 group-hover:text-white"}`}>{action.label}</p> : null}
+                    {!sidebarCollapsed ? <p className={`min-w-0 truncate text-[13px] font-medium transition ${active ? "text-white" : "text-white/92 group-hover:text-white"}`}>{action.label}</p> : null}
                   </button>
                 );
               })}
@@ -721,10 +775,10 @@ export default function ActivityPage() {
           </div>
         </aside>
 
-        <main className="min-h-0 overflow-y-auto rounded-[24px] bg-[#121212] p-4 md:p-5">
+        <main className="activity-main min-h-0 overflow-y-auto rounded-[24px] p-4 md:p-5">
           {sidebarMode === "browse" ? (
             <>
-          <div className="rounded-[22px] bg-[linear-gradient(180deg,rgba(66,154,110,0.35),rgba(18,18,18,0.95)_45%)] p-5">
+          <div className="activity-filter-bar rounded-[22px] p-5">
             <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
               <div>
                 
@@ -737,7 +791,7 @@ export default function ActivityPage() {
               <button
                 type="button"
                 onClick={() => handleGenreSelect(null)}
-                className={`rounded-full px-4 py-2 text-sm transition ${selectedGenre === null ? "bg-white text-black" : "bg-white/10 text-white/86 hover:bg-white/16"}`}
+                className={`activity-filter-chip rounded-full px-4 py-2 text-sm transition ${selectedGenre === null ? "activity-filter-chip-active" : ""}`}
               >
                 All genres
               </button>
@@ -749,7 +803,7 @@ export default function ActivityPage() {
                     handleGenreSelect(chip);
                     setSidebarMode("browse");
                   }}
-                  className={`rounded-full px-4 py-2 text-sm transition ${selectedGenre === chip ? "bg-white text-black" : "bg-white/10 text-white/86 hover:bg-white/16"}`}
+                  className={`activity-filter-chip rounded-full px-4 py-2 text-sm transition ${selectedGenre === chip ? "activity-filter-chip-active" : ""}`}
                 >
                   {chip}
                 </button>
@@ -760,7 +814,7 @@ export default function ActivityPage() {
           <div className="mt-6 space-y-6">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-2xl font-semibold">Genre shelf</h2>
-              <span className="rounded-full bg-white/7 px-3 py-1 text-xs text-white/65">{genreTiles.length} genres loaded</span>
+              <span className="activity-count-pill rounded-full px-3 py-1 text-xs">{genreTiles.length} genres loaded</span>
             </div>
 
             <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
@@ -798,7 +852,7 @@ export default function ActivityPage() {
             {selectedGenreName ? (
               <section
                 ref={selectedGenreSectionRef}
-                className="relative overflow-hidden rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)] min-h-[260px]"
+                className="theme-home-hero relative min-h-[260px] overflow-hidden rounded-[24px]"
               >
                 {selectedGenreHeroCover ? (
                   <img
@@ -807,8 +861,8 @@ export default function ActivityPage() {
                     className="absolute inset-0 h-full w-full object-cover"
                   />
                 ) : null}
-                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,8,18,0.9)_0%,rgba(30,18,42,0.72)_42%,rgba(12,8,18,0.88)_100%)]" />
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(172,115,220,0.32),rgba(17,13,20,0.84)_82%)]" />
+                <div className="theme-home-hero-overlay-primary absolute inset-0" />
+                <div className="theme-home-hero-overlay-secondary absolute inset-0" />
 
                 <div className="relative flex min-h-[260px] flex-col justify-end px-6 py-8 md:px-8 md:py-10">
                   <p className="text-xs uppercase tracking-[0.28em] text-white/62">Genre</p>
@@ -817,10 +871,10 @@ export default function ActivityPage() {
                     Browse curated beat rows for this genre by popularity, likes, and release freshness.
                   </p>
                   {selectedGenreHeroBeat ? (
-                    <div className="mt-5 inline-flex w-fit items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
-                      <span className="text-white/58">Top track</span>
-                      <span className="font-medium text-white">{selectedGenreHeroBeat.title}</span>
-                      <span className="text-white/58">{selectedGenreHeroBeat.producer_username}</span>
+                    <div className="theme-home-meta mt-5 inline-flex w-fit items-center gap-3 rounded-full px-4 py-2 text-sm backdrop-blur-md">
+                      <span className="theme-text-muted">Top track</span>
+                      <span className="theme-text-main font-medium">{selectedGenreHeroBeat.title}</span>
+                      <span className="theme-text-muted">{selectedGenreHeroBeat.producer_username}</span>
                     </div>
                   ) : null}
                 </div>
@@ -887,12 +941,12 @@ export default function ActivityPage() {
             </>
           ) : (
             <div className="space-y-5">
-              <section className="relative overflow-hidden rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,#7f5a95_0%,#4b3457_55%,#1a171d_100%)] min-h-[260px]">
+              <section className="theme-home-hero relative min-h-[260px] overflow-hidden rounded-[24px] border border-white/8">
                 {hubHeroCover ? (
                   <img src={hubHeroCover} alt={hubHeroTitle || "Hub"} className="absolute inset-0 h-full w-full object-cover" />
                 ) : null}
-                <div className="absolute inset-0 bg-[linear-gradient(90deg,rgba(12,8,18,0.9)_0%,rgba(30,18,42,0.72)_42%,rgba(12,8,18,0.88)_100%)]" />
-                <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(172,115,220,0.32),rgba(17,13,20,0.84)_82%)]" />
+                <div className="theme-home-hero-overlay-primary absolute inset-0" />
+                <div className="theme-home-hero-overlay-secondary absolute inset-0" />
 
                 <div className="relative flex min-h-[260px] flex-col justify-end px-6 py-8 md:px-8 md:py-10">
                   <p className="text-xs uppercase tracking-[0.28em] text-white/62">Hub</p>
@@ -903,16 +957,15 @@ export default function ActivityPage() {
                     {sidebarMode === "liked" && "Jump through the beats you already saved and keep discovery anchored around your taste."}
                     {sidebarMode === "history" && "Use recent activity as a quick-return lane for replaying beats you were exploring."}
                     {sidebarMode === "playlists" && "Open your backend-saved Listen later queue and custom playlists without switching into producer tools."}
+                    {sidebarMode === "audioAssets" && "Keep your purchased beats and future sound kits in the same activity workspace, with play, download, and order details."}
                     {sidebarMode === "kits" && "Browse sound kits from the sidebar instead of relying on the old top navigation tab."}
                     {sidebarMode === "resources" && "Open learning and support content directly from the browse sidebar."}
                     {sidebarMode === "hiring" && "Move into the hiring workspace from the browse sidebar when you want to post or review briefs."}
-                    {sidebarMode === "studio" && "Open the producer studio workflow from here instead of relying on the top navigation Hub entry."}
-                    {sidebarMode === "uploads" && "Manage upload and media workflow shortcuts from the left sidebar Hub CTA area."}
                     {sidebarMode === "briefs" && "Use the Hub CTA to move into active briefs and project request flow."}
                     {sidebarMode === "negotiations" && "Surface collaboration and deal-making actions directly inside the activity workspace."}
                   </p>
                   {(hubHeroBeat || hiringHeroBrief) && hubHeroTitle ? (
-                    <div className="mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
+                    <div className="activity-hero-meta mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full px-4 py-2 text-sm text-white/82 backdrop-blur-md">
                       <span className="text-white/58">{hubHeroEyebrow}</span>
                       <span className="font-medium text-white">{hubHeroTitle}</span>
                       {hubHeroMeta ? <span className="text-white/58">{hubHeroMeta}</span> : null}
@@ -925,11 +978,10 @@ export default function ActivityPage() {
                 {(sidebarMode === "liked" ? beats.filter((beat) => likes.some((item) => item.beat.id === beat.id)) :
                   sidebarMode === "history" ? [...beats].sort((a, b) => (b.play_count ?? 0) - (a.play_count ?? 0)) :
                   sidebarMode === "playlists" ? [] :
+                  sidebarMode === "audioAssets" ? purchasedBeats.map((item) => item.beat) :
                   sidebarMode === "kits" ? [] :
                   sidebarMode === "resources" ? [] :
                   sidebarMode === "hiring" ? [] :
-                  sidebarMode === "studio" ? [] :
-                  sidebarMode === "uploads" ? [] :
                   sidebarMode === "briefs" ? [] :
                   sidebarMode === "negotiations" ? [] : []
                 ).slice(0, 6).map((beat) => {
@@ -953,7 +1005,7 @@ export default function ActivityPage() {
 
               {sidebarMode === "playlists" ? (
                 <div className="grid gap-4 xl:grid-cols-2">
-                  <div className="rounded-[26px] border border-white/10 bg-[#171a22] p-5">
+                  <div className="activity-panel rounded-[26px] p-5">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <p className="text-xs uppercase tracking-[0.18em] text-white/42">System playlist</p>
@@ -983,7 +1035,7 @@ export default function ActivityPage() {
 
                   <div className="space-y-4">
                     {library.playlists.map((playlist) => (
-                      <section key={playlist.id} className="rounded-[26px] border border-white/10 bg-[#171a22] p-5">
+                      <section key={playlist.id} className="activity-panel rounded-[26px] p-5">
                         <div className="flex items-center justify-between gap-3">
                           <div>
                             <p className="text-xs uppercase tracking-[0.18em] text-white/42">Custom playlist</p>
@@ -1011,8 +1063,115 @@ export default function ActivityPage() {
                         </div>
                       </section>
                     ))}
-                    {library.playlists.length === 0 ? <p className="rounded-[26px] border border-white/10 bg-[#171a22] p-5 text-sm text-white/55">No custom playlists yet. Use the three-dot menu on any beat to create one.</p> : null}
+                    {library.playlists.length === 0 ? <p className="activity-panel rounded-[26px] p-5 text-sm text-white/55">No custom playlists yet. Use the three-dot menu on any beat to create one.</p> : null}
                   </div>
+                </div>
+              ) : null}
+
+              {sidebarMode === "audioAssets" ? (
+                <div className={`grid gap-4 ${sidebarCollapsed ? "2xl:grid-cols-[minmax(0,1.35fr)_320px]" : "xl:grid-cols-[minmax(0,1.45fr)_340px]"}`}>
+                  <section className="activity-panel rounded-[26px] p-4 md:p-5">
+                    <div className="flex flex-wrap items-end justify-between gap-3">
+                      <div>
+                        <p className="text-xs uppercase tracking-[0.18em] text-white/42">Audio Assets</p>
+                        <h3 className="mt-2 text-2xl font-semibold text-white">Purchased Beats</h3>
+                        <p className="mt-2 text-sm text-white/58">Owned beats stay here inside activity so you can play, download, and review purchase details without leaving this workspace.</p>
+                      </div>
+                      <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/55">{purchasedBeats.length} owned</div>
+                    </div>
+
+                    <div className="mt-5 space-y-3">
+                      {purchasedBeats.map((item) => {
+                        const coverUrl = resolveMediaUrl(item.beat.cover_art_obj);
+                        const isCurrent = currentTrack?.id === item.beat.id;
+                        return (
+                          <article key={`asset-${item.id}`} className="activity-audio-asset-card activity-soft-card grid gap-3 rounded-[22px] p-3 md:grid-cols-[64px_minmax(0,1fr)_auto] md:items-center">
+                            <div className="activity-audio-asset-cover activity-soft-card h-16 w-16 overflow-hidden rounded-[16px]">
+                              {coverUrl ? <img src={coverUrl} alt={item.beat.title} className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center text-sm text-white/40">No cover</div>}
+                            </div>
+                            <div className="min-w-0">
+                              <p className={`line-clamp-1 text-base font-semibold ${isCurrent && isPlaying ? "text-[#8b4dff]" : "text-white"}`}>{item.beat.title}</p>
+                              <p className="mt-1 text-sm text-white/55">{item.beat.producer_username}</p>
+                              <div className="activity-audio-asset-meta mt-2 flex flex-wrap gap-2 text-[11px] text-white/56">
+                                <span className="activity-audio-asset-pill rounded-full border border-white/10 px-2.5 py-1">{item.beat.genre || "Genre N/A"}</span>
+                                <span className="activity-audio-asset-pill rounded-full border border-white/10 px-2.5 py-1">{item.beat.bpm ? `${item.beat.bpm} BPM` : "BPM N/A"}</span>
+                                <span className="activity-audio-asset-pill rounded-full border border-white/10 px-2.5 py-1">{item.beat.key || "Key N/A"}</span>
+                                <span className="activity-audio-asset-pill rounded-full border border-white/10 px-2.5 py-1">{item.license_name || "Included"}</span>
+                              </div>
+                            </div>
+                            <div className="activity-audio-asset-actions flex items-center gap-2 md:justify-self-end">
+                              <button
+                                type="button"
+                                onClick={() => handlePurchasedBeatPlay(item)}
+                                className="activity-audio-asset-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/80 transition hover:bg-white/[0.08]"
+                                title="Play"
+                                aria-label={`Play ${item.beat.title}`}
+                              >
+                                <Disc3 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void handlePurchasedBeatDownload(item)}
+                                disabled={downloadingBeatId === item.beat.id}
+                                className="activity-audio-asset-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/80 transition hover:bg-white/[0.08] disabled:opacity-60"
+                                title="Download"
+                                aria-label={`Download ${item.beat.title}`}
+                              >
+                                <Download className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setActivePurchase(item)}
+                                className="activity-audio-asset-button inline-flex h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-white/[0.04] text-white/80 transition hover:bg-white/[0.08]"
+                                title="Info"
+                                aria-label={`Open purchase info for ${item.beat.title}`}
+                              >
+                                <Info className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                              </button>
+                            </div>
+                          </article>
+                        );
+                      })}
+                      {purchasedBeats.length === 0 ? <p className="text-sm text-white/55">No purchased beats yet.</p> : null}
+                    </div>
+                  </section>
+
+                  <aside className="activity-audio-info-panel rounded-[26px] border border-white/10 bg-[#171a22] p-4 md:p-5">
+                    <p className="text-xs uppercase tracking-[0.18em] text-white/42">Purchase Info</p>
+                    {activePurchase ? (
+                      <div className="mt-4 space-y-3">
+                        <div className="activity-audio-info-card rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+                          <p className="text-base font-semibold text-white">{activePurchase.beat.title}</p>
+                          <p className="mt-1 text-sm text-white/55">{activePurchase.beat.producer_username}</p>
+                        </div>
+                        <div className="activity-audio-info-card rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-white/38">Purchased</p>
+                          <p className="mt-2 text-sm font-semibold text-white">{new Date(activePurchase.granted_at).toLocaleDateString()}</p>
+                        </div>
+                        <div className="activity-audio-info-card rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-white/38">Order</p>
+                          <p className="mt-2 text-sm font-semibold text-white">#{activePurchase.order_id}</p>
+                          <p className="mt-1 text-xs text-white/50">{purchaseOrdersById.get(activePurchase.order_id)?.status || activePurchase.order_status}</p>
+                        </div>
+                        <div className="activity-audio-info-card rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-white/38">License</p>
+                          <p className="mt-2 text-sm font-semibold text-white">{activePurchase.license_name || "Included"}</p>
+                        </div>
+                        <div className="activity-audio-info-card rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
+                          <p className="text-xs uppercase tracking-[0.18em] text-white/38">Paid</p>
+                          <p className="mt-2 text-sm font-semibold text-white">Rs {activePurchase.purchase_price || purchaseOrdersById.get(activePurchase.order_id)?.total_price || activePurchase.beat.base_price}</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="activity-audio-info-empty mt-4 rounded-[18px] border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+                        Select the info icon on any purchased beat to see its order details here.
+                      </div>
+                    )}
+
+                    <div className="activity-audio-info-empty mt-4 rounded-[18px] border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+                      Sound kits will be added to this same panel once purchased sound-kit access is wired into the ownership flow.
+                    </div>
+                  </aside>
                 </div>
               ) : null}
 
@@ -1042,7 +1201,7 @@ export default function ActivityPage() {
 
               {sidebarMode === "hiring" ? (
                 <div className="space-y-5">
-                  <section className="overflow-hidden rounded-[24px] border border-white/8 bg-[linear-gradient(180deg,rgba(52,43,78,0.98),rgba(18,18,18,0.98))] p-5 md:p-6">
+                  <section className="activity-hiring-hero overflow-hidden rounded-[24px] p-5 md:p-6">
                     <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
                       <div>
                         <p className="text-xs uppercase tracking-[0.28em] text-white/55">Hiring Board</p>
@@ -1088,7 +1247,7 @@ export default function ActivityPage() {
                                 setArtistHiringTab(option.value as ArtistHiringTab);
                               }
                             }}
-                            className={`rounded-[18px] px-5 py-3 text-sm font-semibold transition ${active ? "border border-[#8e72e8] bg-[#20192d] text-[#ba9eff] shadow-[inset_0_0_0_1px_rgba(186,158,255,0.18)]" : "border border-transparent bg-white/[0.06] text-white/74 hover:bg-white/[0.09]"}`}
+                            className={`activity-hiring-tab rounded-[18px] px-5 py-3 text-sm font-semibold transition ${active ? "activity-hiring-tab-active" : ""}`}
                           >
                             {option.label}
                           </button>
@@ -1105,7 +1264,7 @@ export default function ActivityPage() {
                               key={`market-${option.value}`}
                               type="button"
                               onClick={() => setHiringTypeFilter(option.value)}
-                              className={`rounded-[16px] px-4 py-2.5 text-sm font-medium transition ${active ? "border border-[#8e72e8] bg-[#20192d] text-[#d5c6ff]" : "border border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08]"}`}
+                              className={`activity-hiring-filter rounded-[16px] px-4 py-2.5 text-sm font-medium transition ${active ? "activity-hiring-filter-active" : ""}`}
                             >
                               {option.label}
                             </button>
@@ -1128,7 +1287,7 @@ export default function ActivityPage() {
                               key={`application-${option.value}`}
                               type="button"
                               onClick={() => setProducerApplicationStatusFilter(option.value)}
-                              className={`rounded-[16px] px-4 py-2.5 text-sm font-medium transition ${active ? "border border-[#8e72e8] bg-[#20192d] text-[#d5c6ff]" : "border border-white/10 bg-white/[0.04] text-white/70 hover:bg-white/[0.08]"}`}
+                              className={`activity-hiring-filter rounded-[16px] px-4 py-2.5 text-sm font-medium transition ${active ? "activity-hiring-filter-active" : ""}`}
                             >
                               {option.label}
                             </button>
@@ -1186,7 +1345,7 @@ export default function ActivityPage() {
 
                       <div className="space-y-4">
                         {filteredProducerApplications.map((application) => (
-                          <article key={`application-${application.id}`} className="rounded-[24px] border border-white/8 bg-[#19191d] p-5 transition duration-300 hover:bg-[#1d1d22] hover:shadow-[0_22px_50px_rgba(0,0,0,0.28)]">
+                          <article key={`application-${application.id}`} className="activity-card rounded-[24px] p-5 transition duration-300 hover:-translate-y-0.5">
                             <div className="flex flex-wrap items-start justify-between gap-4">
                               <div>
                                 <div className="flex flex-wrap items-center gap-2">
@@ -1194,33 +1353,46 @@ export default function ActivityPage() {
                                   <span className="text-[11px] uppercase tracking-[0.16em] text-white/38">Applied {formatHiringDate(application.created_at)}</span>
                                 </div>
                                 <h4 className="mt-4 text-2xl font-semibold leading-tight text-white">{application.project_title}</h4>
-                                <p className="mt-2 text-sm text-white/54">{formatHiringType(application.project_type)} • Artist {application.artist_username || "Unknown"}</p>
+                                <p className="mt-2 text-sm text-white/54">{formatHiringType(application.project_type)} â€¢ Artist {application.artist_username || "Unknown"}</p>
                               </div>
-                              <div className="rounded-[18px] border border-white/8 bg-black/20 px-4 py-3 text-right">
+                              <div className="activity-subpanel rounded-[18px] px-4 py-3 text-right">
                                 <p className="text-[11px] uppercase tracking-[0.16em] text-white/42">Your Offer</p>
                                 <p className="mt-2 text-2xl font-semibold text-white">Rs {formatHiringCurrency(application.amount)}</p>
                               </div>
                             </div>
 
                             <div className="mt-5 grid gap-3 md:grid-cols-3">
-                              <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                              <div className="activity-soft-card rounded-[18px] p-4">
                                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Project Budget</p>
                                 <p className="mt-2 text-sm font-medium text-white">Rs {formatHiringCurrency(application.project_budget)}</p>
                               </div>
-                              <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                              <div className="activity-soft-card rounded-[18px] p-4">
                                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Brief Status</p>
                                 <p className="mt-2 text-sm font-medium text-white">{application.brief_status}</p>
                               </div>
-                              <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                              <div className="activity-soft-card rounded-[18px] p-4">
                                 <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Project Posted</p>
                                 <p className="mt-2 text-sm font-medium text-white">{formatHiringDate(application.brief_created_at)}</p>
                               </div>
                             </div>
 
-                            <div className="mt-5 rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                            <div className="activity-soft-card mt-5 rounded-[18px] p-4">
                               <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Your Pitch</p>
                               <p className="mt-2 text-sm leading-6 text-white/72">{application.message || "No pitch message was added with this application."}</p>
                             </div>
+
+                            {application.application_status === "accepted" && application.conversation_id ? (
+                              <div className="mt-4 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => openConversationPanel(application.conversation_id!)}
+                                  className="inline-flex items-center gap-2 rounded-[14px] bg-[#9ee8dc] px-4 py-2 text-sm font-semibold text-[#0d1716] transition hover:bg-[#b5f3e8]"
+                                >
+                                  <MessageSquareMore className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                                  Message Artist
+                                </button>
+                              </div>
+                            ) : null}
                           </article>
                         ))}
                       </div>
@@ -1246,7 +1418,7 @@ export default function ActivityPage() {
 
                         return (
                           <div key={`hiring-brief-${brief.id}`} className={isExpanded ? "xl:col-span-2 2xl:col-span-3" : ""}>
-                            <article className="group rounded-[24px] border border-white/8 bg-[#19191d] p-5 transition duration-300 hover:-translate-y-0.5 hover:bg-[#1d1d22] hover:shadow-[0_22px_50px_rgba(0,0,0,0.28)]">
+                            <article className="activity-card group rounded-[24px] p-5 transition duration-300 hover:-translate-y-0.5">
                               <div className="flex items-start justify-between gap-4">
                                 <div>
                                   <div className="flex flex-wrap items-center gap-2">
@@ -1258,7 +1430,7 @@ export default function ActivityPage() {
                                   <h4 className="mt-4 text-2xl font-semibold leading-tight text-white">{brief.title}</h4>
                                   <p className="mt-2 text-sm text-white/54">{formatHiringType(brief.project_type)}</p>
                                 </div>
-                                <div className="rounded-[18px] border border-white/8 bg-black/20 px-4 py-3 text-right">
+                                <div className="activity-subpanel rounded-[18px] px-4 py-3 text-right">
                                   <p className="text-[11px] uppercase tracking-[0.16em] text-white/42">Budget</p>
                                   <p className="mt-2 text-2xl font-semibold text-white">Rs {formatHiringCurrency(brief.offer_price || brief.budget)}</p>
                                 </div>
@@ -1308,7 +1480,7 @@ export default function ActivityPage() {
                             </article>
 
                             {isExpanded ? (
-                              <section className="mt-3 rounded-[24px] border border-[#8f6cff]/18 bg-[linear-gradient(180deg,rgba(37,33,49,0.96),rgba(20,20,24,0.98))] p-5 md:p-6">
+                              <section className="activity-expanded mt-3 rounded-[24px] p-5 md:p-6">
                                 <div className="grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(320px,0.8fr)]">
                                   <div>
                                     <p className="text-xs uppercase tracking-[0.24em] text-white/48">Brief Details</p>
@@ -1316,22 +1488,22 @@ export default function ActivityPage() {
                                     <p className="mt-3 max-w-3xl text-sm leading-7 text-white/68">{brief.description}</p>
 
                                     <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                                      <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                      <div className="activity-soft-card rounded-[18px] p-4">
                                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Genre</p>
                                         <p className="mt-2 text-sm font-medium text-white">{brief.preferred_genre || "Open"}</p>
                                       </div>
-                                      <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                      <div className="activity-soft-card rounded-[18px] p-4">
                                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Tracks</p>
                                         <p className="mt-2 text-sm font-medium text-white">{brief.expected_track_count}</p>
                                       </div>
-                                      <div className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                      <div className="activity-soft-card rounded-[18px] p-4">
                                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Timeline</p>
                                         <p className="mt-2 text-sm font-medium text-white">{brief.delivery_timeline_days ? `${brief.delivery_timeline_days} days` : "Flexible"}</p>
                                       </div>
                                     </div>
 
                                     {brief.target_genre_style ? (
-                                      <div className="mt-5 rounded-[20px] border border-white/10 bg-black/20 p-4">
+                                      <div className="activity-subpanel mt-5 rounded-[20px] p-4">
                                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Style Direction</p>
                                         <p className="mt-2 text-sm leading-6 text-white/72">{brief.target_genre_style}</p>
                                       </div>
@@ -1372,7 +1544,7 @@ export default function ActivityPage() {
                                   </div>
 
                                   <div className="space-y-4">
-                                    <div className="rounded-[22px] border border-white/10 bg-[#111217] p-5">
+                                    <div className="activity-panel rounded-[22px] p-5">
                                       <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Project Type</p>
                                       <p className="mt-2 text-lg font-semibold text-white">{formatHiringType(brief.project_type)}</p>
                                       <p className="mt-4 text-[11px] uppercase tracking-[0.18em] text-white/45">Budget</p>
@@ -1394,7 +1566,7 @@ export default function ActivityPage() {
                                     </div>
 
                                     {!isProducerMode ? (
-                                      <div className="rounded-[22px] border border-white/10 bg-[#111217] p-5">
+                                      <div className="activity-panel rounded-[22px] p-5">
                                         <div className="flex items-center justify-between gap-3">
                                           <div>
                                             <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Offers</p>
@@ -1404,7 +1576,7 @@ export default function ActivityPage() {
                                         </div>
                                         <div className="mt-4 space-y-3">
                                           {brief.proposals.length > 0 ? brief.proposals.map((proposal) => (
-                                            <div key={`proposal-${proposal.id}`} className="rounded-[18px] border border-white/10 bg-white/[0.04] p-4">
+                                            <div key={`proposal-${proposal.id}`} className="activity-soft-card rounded-[18px] p-4">
                                               <div className="flex flex-wrap items-start justify-between gap-3">
                                                 <div>
                                                   <p className="text-base font-semibold text-white">{proposal.producer_username || "Producer"}</p>
@@ -1424,6 +1596,16 @@ export default function ActivityPage() {
                                                 <button type="button" onClick={() => void handleAcceptProposal(brief.id, proposal.id)} disabled={acceptingProposalId === proposal.id || brief.status !== "pending"} className="inline-flex items-center gap-2 rounded-[14px] bg-[#a887ff] px-4 py-2 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff] disabled:opacity-60">
                                                   {acceptingProposalId === proposal.id ? "Accepting..." : "Accept Offer"}
                                                 </button>
+                                                {brief.status === "accepted" && proposal.conversation_id ? (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => openConversationPanel(proposal.conversation_id!)}
+                                                    className="inline-flex items-center gap-2 rounded-[14px] border border-[#9ee8dc]/30 bg-[#9ee8dc]/10 px-4 py-2 text-sm font-semibold text-[#9ee8dc] transition hover:bg-[#9ee8dc]/18"
+                                                  >
+                                                    <MessageSquareMore className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                                                    Message Creator
+                                                  </button>
+                                                ) : null}
                                               </div>
                                             </div>
                                           )) : <p className="text-sm text-white/50">No offers yet. Producers will appear here after they apply.</p>}
@@ -1434,7 +1616,7 @@ export default function ActivityPage() {
                                 </div>
 
                                 {isProducerMode && isApplying ? (
-                                  <form onSubmit={(event) => void handleSubmitProposal(event, brief)} className="mt-6 rounded-[22px] border border-[#a887ff]/18 bg-[#111217] p-5">
+                                  <form onSubmit={(event) => void handleSubmitProposal(event, brief)} className="activity-panel mt-6 rounded-[22px] border border-[#a887ff]/18 p-5">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                       <div>
                                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Send Offer</p>
@@ -1447,7 +1629,7 @@ export default function ActivityPage() {
                                         <span className="text-xs uppercase tracking-[0.22em] text-white/52">Why are you a fit?</span>
                                         <textarea value={proposalMessages[brief.id] ?? ""} onChange={(event) => handleProposalMessageChange(brief.id, event.target.value)} placeholder="Share your sound, turnaround, and what you would deliver for this project..." className="min-h-[150px] w-full rounded-[18px] border border-white/10 bg-[#1c1f27] px-4 py-4 text-sm text-white outline-none placeholder:text-white/28 focus:border-[#a887ff]" />
                                       </label>
-                                      <div className="rounded-[20px] border border-white/10 bg-[#171922] p-4">
+                                      <div className="activity-panel rounded-[20px] p-4">
                                         <p className="text-xs uppercase tracking-[0.22em] text-white/52">Your Offer</p>
                                         <div className="mt-4 grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-3">
                                           <button type="button" onClick={() => adjustProposalAmount(brief, "down")} className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/10 bg-white/[0.04] text-white/78 transition hover:bg-white/[0.08]">
@@ -1487,16 +1669,10 @@ export default function ActivityPage() {
                 </div>
               ) : null}
 
-              {["studio", "uploads", "briefs", "negotiations"].includes(sidebarMode) ? (
+              {["briefs", "negotiations"].includes(sidebarMode) ? (
                 <div className="grid gap-4 md:grid-cols-2">
                   <Link
-                    href={
-                      sidebarMode === "briefs" || sidebarMode === "negotiations"
-                        ? "/projects"
-                        : sidebarMode === "studio"
-                          ? "/producer/profile"
-                          : "/producer/media-uploads"
-                    }
+                    href="/projects"
                     className="rounded-[18px] bg-white/[0.04] p-5 transition hover:bg-white/[0.06]"
                   >
                     <p className="text-lg font-semibold text-white">Open {sidebarActions.find((item) => item.key === sidebarMode)?.label}</p>

@@ -421,6 +421,17 @@ class MyNotificationsReadView(APIView):
         return Response({"marked_read": True}, status=status.HTTP_200_OK)
 
 
+class NotificationReadDetailView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk: int):
+        notification = get_object_or_404(UserNotification, id=pk, user=request.user)
+        if not notification.is_read:
+            notification.is_read = True
+            notification.save(update_fields=["is_read"])
+        return Response({"marked_read": True, "id": notification.id}, status=status.HTTP_200_OK)
+
+
 class ProducerSellerAgreementMeView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 

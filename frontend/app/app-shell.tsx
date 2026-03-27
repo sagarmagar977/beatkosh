@@ -1,9 +1,9 @@
 "use client";
 
-import { ChevronRight, Compass, Home, LogOut, Search, Settings, ShoppingCart, SunMoon, UserRound } from "lucide-react";
+import { ChevronRight, Compass, FileAudio, FileImage, FileText, Home, LogOut, MessageSquareMore, Paperclip, Search, Send, Settings, ShoppingCart, SunMoon, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type ChangeEvent, type CSSProperties, useCallback, useEffect, useRef, useState } from "react";
+import { type ChangeEvent, type CSSProperties, type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
@@ -11,6 +11,17 @@ import { AppBootSkeleton } from "@/app/page-skeletons";
 import { useTheme } from "@/app/providers";
 import { GlobalPlayer } from "@/components/global-player";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import {
+  type ConversationItem,
+  type MessageAttachmentItem,
+  formatAttachmentSize,
+  getLatestMessage,
+  isConversationUnread,
+  loadSeenMessageMap,
+  markConversationSeen,
+  persistSeenMessageMap,
+  sortConversationsByLatestActivity,
+} from "@/lib/messaging";
 
 const GLOBAL_FLASH_SESSION_KEY = "beatkosh-global-flash";
 
@@ -26,6 +37,24 @@ type AppNotification = {
   beat_title?: string | null;
 };
 
+function getMessageAttachmentIcon(attachment: Pick<MessageAttachmentItem, "content_type"> | File) {
+  const contentType = attachment.content_type || attachment.type || "";
+  if (contentType.startsWith("image/")) {
+    return FileImage;
+  }
+  if (contentType.startsWith("audio/")) {
+    return FileAudio;
+  }
+  return FileText;
+}
+
+type MessageDrawerTarget = {
+  conversationId?: number;
+  participantId?: number;
+};
+
+type FloatingOverlay = "messages" | "notifications" | "userMenu";
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const HEADER_CLEARANCE_PX = 3;
   const DEFAULT_HEADER_HEIGHT = 112;
@@ -39,6 +68,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [notifications, setNotifications] = useState<AppNotification[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(false);
+  const [messagesOpen, setMessagesOpen] = useState(false);
+  const [conversations, setConversations] = useState<ConversationItem[]>([]);
+  const [messagesLoading, setMessagesLoading] = useState(false);
+  const [messagesError, setMessagesError] = useState<string | null>(null);
+  const [messageDraft, setMessageDraft] = useState("");
+  const [pendingMessageFiles, setPendingMessageFiles] = useState<File[]>([]);
+  const [sendingMessage, setSendingMessage] = useState(false);
+  const [selectedConversationId, setSelectedConversationId] = useState<number | null>(null);
+  const [seenMessageMap, setSeenMessageMap] = useState<Record<number, number>>({});
+  const [pendingMessageTarget, setPendingMessageTarget] = useState<MessageDrawerTarget | null>(null);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const [userSettingsOpen, setUserSettingsOpen] = useState(false);
   const [artistEditorOpen, setArtistEditorOpen] = useState(false);
@@ -54,10 +93,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const [artistProfileAvatarPreview, setArtistProfileAvatarPreview] = useState("");
   const [artistProfileSaving, setArtistProfileSaving] = useState(false);
   const [artistProfileError, setArtistProfileError] = useState<string | null>(null);
+  const [activeOverlay, setActiveOverlay] = useState<FloatingOverlay | null>(null);
 
   const userMenuCloseTimeout = useRef<number | null>(null);
   const navRef = useRef<HTMLDivElement | null>(null);
   const headerRef = useRef<HTMLElement | null>(null);
+  const notificationsRef = useRef<HTMLDivElement | null>(null);
+  const notificationsPanelRef = useRef<HTMLDivElement | null>(null);
+  const messageAttachmentInputRef = useRef<HTMLInputElement | null>(null);
   const [headerHeight, setHeaderHeight] = useState(DEFAULT_HEADER_HEIGHT);
 
   const hasSession = Boolean(token);
@@ -73,6 +116,22 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       : user?.producer_profile?.avatar_obj || user?.artist_profile?.avatar_obj,
   );
   const avatarFallback = activeDisplayName.slice(0, 1).toUpperCase();
+  const unreadNotificationsCount = notifications.filter((item) => !item.is_read).length;
+  const sortedConversations = useMemo(() => sortConversationsByLatestActivity(conversations), [conversations]);
+  const selectedConversation = useMemo(
+    () => sortedConversations.find((item) => item.id === selectedConversationId) ?? null,
+    [selectedConversationId, sortedConversations],
+  );
+  const selectedConversationPartner = useMemo(() => {
+    if (!selectedConversation || !user) {
+      return null;
+    }
+    return selectedConversation.participant_details.find((participant) => participant.id !== user.id) ?? null;
+  }, [selectedConversation, user]);
+  const unreadMessagesCount = useMemo(
+    () => sortedConversations.filter((conversation) => isConversationUnread(conversation, user?.id, seenMessageMap)).length,
+    [seenMessageMap, sortedConversations, user?.id],
+  );
 
   const normalizedPath = pathname.length > 1 && pathname.endsWith("/") ? pathname.slice(0, -1) : pathname;
   const producerWorkspaceRoutes = ["/producer/profile", "/producer/upload-wizard", "/producer/settings", "/producer/media-uploads", "/dashboard/selling", "/wallet"];
@@ -130,6 +189,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
 
     const onPointerDown = (event: MouseEvent | PointerEvent) => {
+      const clickedNotificationsButton = notificationsRef.current?.contains(event.target as Node) ?? false;
+      const clickedNotificationsPanel = notificationsPanelRef.current?.contains(event.target as Node) ?? false;
+      if (!clickedNotificationsButton && !clickedNotificationsPanel) {
+        setNotificationsOpen(false);
+      }
       if (!navRef.current) {
         return;
       }
@@ -182,36 +246,300 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!token || !notificationsOpen) {
+  const loadNotifications = useCallback(async () => {
+    if (!token) {
       return;
     }
 
-    let cancelled = false;
-    const run = async () => {
-      setNotificationsLoading(true);
-      try {
-        const data = await apiRequest<AppNotification[]>("/account/notifications/me/", { token });
-        if (!cancelled) {
-          setNotifications(data);
-        }
-        await apiRequest("/account/notifications/read/", { method: "POST", token, body: {} });
-        if (!cancelled) {
-          setNotifications((current) => current.map((item) => ({ ...item, is_read: true })));
-        }
-      } catch {
-      } finally {
-        if (!cancelled) {
-          setNotificationsLoading(false);
-        }
+    setNotificationsLoading(true);
+    try {
+      const data = await apiRequest<AppNotification[]>("/account/notifications/me/", { token });
+      setNotifications(data);
+    } catch {
+      // Ignore transient notification failures so the rest of the shell stays usable.
+    } finally {
+      setNotificationsLoading(false);
+    }
+  }, [token]);
+
+  const loadConversations = useCallback(async (preferredTarget?: MessageDrawerTarget | null) => {
+    if (!token) {
+      return;
+    }
+
+    setMessagesLoading(true);
+    setMessagesError(null);
+    try {
+      const data = sortConversationsByLatestActivity(await apiRequest<ConversationItem[]>("/conversations/", { token }));
+      setConversations(data);
+      const preferredConversationId = preferredTarget?.conversationId;
+      const preferredParticipantId = preferredTarget?.participantId;
+      const preferredConversation = preferredConversationId
+        ? data.find((item) => item.id === preferredConversationId)
+        : preferredParticipantId
+          ? data.find((item) => item.participant_details.some((participant) => participant.id === preferredParticipantId))
+          : null;
+
+      if (preferredConversation) {
+        setSelectedConversationId(preferredConversation.id);
+      } else if (data.length > 0) {
+        setSelectedConversationId((current) => (
+          current && data.some((item) => item.id === current) ? current : data[0].id
+        ));
+      } else {
+        setSelectedConversationId(null);
       }
+    } catch (err) {
+      setMessagesError(err instanceof Error ? err.message : "Failed to load messages");
+    } finally {
+      setMessagesLoading(false);
+    }
+  }, [token]);
+
+  const markNotificationRead = useCallback(async (notificationId: number) => {
+    if (!token) {
+      return;
+    }
+
+    try {
+      await apiRequest(`/account/notifications/${notificationId}/read/`, { method: "POST", token, body: {} });
+      setNotifications((current) => current.map((item) => (
+        item.id === notificationId ? { ...item, is_read: true } : item
+      )));
+    } catch {
+      // Keep the notification visible if marking as read fails.
+    }
+  }, [token]);
+
+  const openMessagesPanel = useCallback((target?: MessageDrawerTarget | null) => {
+    setUserMenuOpen(false);
+    setUserSettingsOpen(false);
+    setMessagesOpen(true);
+    setActiveOverlay("messages");
+    if (target) {
+      setPendingMessageTarget(target);
+    }
+  }, []);
+
+  const handleMessagePanelToggle = useCallback(() => {
+    setMessagesOpen((current) => {
+      if (current) {
+        setPendingMessageTarget(null);
+        return false;
+      }
+      setActiveOverlay("messages");
+      return true;
+    });
+    setUserMenuOpen(false);
+    setUserSettingsOpen(false);
+  }, []);
+
+  const handleNotificationSelect = useCallback(async (item: AppNotification) => {
+    await markNotificationRead(item.id);
+    setNotificationsOpen(false);
+
+    if (item.notification_type === "project_proposal_accepted") {
+      openMessagesPanel({ participantId: item.actor_id });
+      return;
+    }
+
+    if (item.beat_id) {
+      router.push(`/beats/${item.beat_id}`);
+      return;
+    }
+
+    if (item.notification_type === "producer_followed") {
+      router.push(`/producers/${item.actor_id}`);
+    }
+  }, [markNotificationRead, openMessagesPanel, router]);
+
+  const handleSendMessage = useCallback(async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
+    if (!token || !selectedConversation || (!messageDraft.trim() && pendingMessageFiles.length === 0)) {
+      return;
+    }
+
+    setSendingMessage(true);
+    setMessagesError(null);
+    try {
+      if (pendingMessageFiles.length > 0) {
+        const formData = new FormData();
+        formData.append("conversation", String(selectedConversation.id));
+        formData.append("content", messageDraft.trim());
+        pendingMessageFiles.forEach((file) => formData.append("files", file));
+        await apiRequest("/messages/", {
+          method: "POST",
+          token,
+          body: formData,
+          isFormData: true,
+        });
+      } else {
+        await apiRequest("/messages/", {
+          method: "POST",
+          token,
+          body: {
+            conversation: selectedConversation.id,
+            content: messageDraft.trim(),
+          },
+        });
+      }
+      setMessageDraft("");
+      setPendingMessageFiles([]);
+      if (messageAttachmentInputRef.current) {
+        messageAttachmentInputRef.current.value = "";
+      }
+      await loadConversations({ conversationId: selectedConversation.id });
+    } catch (err) {
+      setMessagesError(err instanceof Error ? err.message : "Could not send message");
+    } finally {
+      setSendingMessage(false);
+    }
+  }, [loadConversations, messageDraft, pendingMessageFiles, selectedConversation, token]);
+
+  const handleMessageComposerKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+    if (event.key !== "Enter" || event.shiftKey) {
+      return;
+    }
+    event.preventDefault();
+    if (sendingMessage || (!messageDraft.trim() && pendingMessageFiles.length === 0)) {
+      return;
+    }
+    void handleSendMessage();
+  }, [handleSendMessage, messageDraft, pendingMessageFiles.length, sendingMessage]);
+
+  const handleMessageAttachmentChange = useCallback((event: ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(event.target.files ?? []);
+    if (files.length === 0) {
+      return;
+    }
+    setPendingMessageFiles((current) => {
+      const existing = new Set(current.map((file) => `${file.name}-${file.size}-${file.lastModified}`));
+      const nextFiles = files.filter((file) => !existing.has(`${file.name}-${file.size}-${file.lastModified}`));
+      return [...current, ...nextFiles];
+    });
+    event.target.value = "";
+  }, []);
+
+  const removePendingMessageFile = useCallback((fileToRemove: File) => {
+    setPendingMessageFiles((current) => current.filter((file) => file !== fileToRemove));
+  }, []);
+
+  useEffect(() => {
+    if (!token) {
+      setNotifications([]);
+      return;
+    }
+
+    void loadNotifications();
+    const intervalId = window.setInterval(() => {
+      void loadNotifications();
+    }, 30000);
+
+    return () => window.clearInterval(intervalId);
+  }, [loadNotifications, token]);
+
+  useEffect(() => {
+    if (!token || !messagesOpen) {
+      return;
+    }
+    void loadConversations(pendingMessageTarget);
+  }, [loadConversations, messagesOpen, pendingMessageTarget, token]);
+
+  useEffect(() => {
+    setSeenMessageMap(loadSeenMessageMap(user?.id));
+  }, [user?.id]);
+
+  useEffect(() => {
+    if (!user?.id || !selectedConversation) {
+      return;
+    }
+    setSeenMessageMap((current) => {
+      const next = markConversationSeen(selectedConversation, user.id, current);
+      if (next !== current) {
+        persistSeenMessageMap(user.id, next);
+      }
+      return next;
+    });
+  }, [selectedConversation, user?.id]);
+
+  useEffect(() => {
+    if (typeof document === "undefined" || !messagesOpen) {
+      return;
+    }
+
+    const previousBodyOverflow = document.body.style.overflow;
+    const previousHtmlOverflow = document.documentElement.style.overflow;
+    document.body.style.overflow = "hidden";
+    document.documentElement.style.overflow = "hidden";
+
+    return () => {
+      document.body.style.overflow = previousBodyOverflow;
+      document.documentElement.style.overflow = previousHtmlOverflow;
+    };
+  }, [messagesOpen]);
+
+  useEffect(() => {
+    if (!notificationsOpen) {
+      return;
+    }
+    void loadNotifications();
+  }, [loadNotifications, notificationsOpen]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const onOpenMessages = (event: Event) => {
+      const detail = (event as CustomEvent<MessageDrawerTarget>).detail ?? {};
+      openMessagesPanel(detail);
     };
 
-    void run();
+    window.addEventListener("beatkosh:open-messages", onOpenMessages as EventListener);
     return () => {
-      cancelled = true;
+      window.removeEventListener("beatkosh:open-messages", onOpenMessages as EventListener);
     };
-  }, [notificationsOpen, token]);
+  }, [openMessagesPanel]);
+
+  useEffect(() => {
+    if (!pendingMessageTarget || messagesLoading) {
+      return;
+    }
+
+    const matchedConversation = pendingMessageTarget.conversationId
+      ? conversations.some((item) => item.id === pendingMessageTarget.conversationId)
+      : pendingMessageTarget.participantId
+        ? conversations.some((item) => item.participant_details.some((participant) => participant.id === pendingMessageTarget.participantId))
+        : true;
+
+    if (matchedConversation || conversations.length === 0) {
+      setPendingMessageTarget(null);
+    }
+  }, [conversations, messagesLoading, pendingMessageTarget]);
+
+  useEffect(() => {
+    setActiveOverlay((current) => {
+      if (current === "userMenu" && userMenuOpen) {
+        return current;
+      }
+      if (current === "notifications" && notificationsOpen) {
+        return current;
+      }
+      if (current === "messages" && messagesOpen) {
+        return current;
+      }
+      if (userMenuOpen) {
+        return "userMenu";
+      }
+      if (notificationsOpen) {
+        return "notifications";
+      }
+      if (messagesOpen) {
+        return "messages";
+      }
+      return null;
+    });
+  }, [messagesOpen, notificationsOpen, userMenuOpen]);
 
   useEffect(() => {
     setArtistProfileName(user?.artist_profile?.stage_name ?? "");
@@ -222,6 +550,62 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
 
   const openMenuKey = pinnedMenuOpen ?? hoverMenuOpen;
+  const messagesOverlayZClass = activeOverlay === "messages" ? "z-[117]" : "z-[70]";
+  const messagesPanelZClass = activeOverlay === "messages" ? "z-[118]" : "z-[71]";
+  const notificationsPanelZClass = activeOverlay === "notifications" ? "z-[140]" : "z-[90]";
+  const userMenuPanelZClass = activeOverlay === "userMenu" ? "z-[150]" : "z-[95]";
+  const menuPrimaryAction = !(user?.is_producer) ? (
+    <button
+      type="button"
+      onClick={async () => {
+        setStartSellingBusy(true);
+        setStartSellingError(null);
+        try {
+          await startSelling();
+          setUserMenuOpen(false);
+          router.push("/producer/profile");
+        } catch (err) {
+          setStartSellingError(err instanceof Error ? err.message : "Unable to start selling");
+        } finally {
+          setStartSellingBusy(false);
+        }
+      }}
+      disabled={startSellingBusy}
+      className="rounded-xl bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-3 py-3 text-left text-sm font-semibold text-white disabled:opacity-60"
+    >
+      {startSellingBusy ? "Starting..." : "Start Selling"}
+    </button>
+  ) : user.active_role === "producer" ? (
+    <button
+      type="button"
+      onClick={() => {
+        setUserMenuOpen(false);
+        setUploadPickerOpen(true);
+      }}
+      className="rounded-xl bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-3 py-3 text-left text-sm font-semibold text-white"
+    >
+      Upload
+    </button>
+  ) : (
+    <button
+      type="button"
+      onClick={async () => {
+        setStartSellingBusy(true);
+        setStartSellingError(null);
+        try {
+          await switchRoleInPlace("producer");
+        } catch (err) {
+          setStartSellingError(err instanceof Error ? err.message : "Unable to switch to producer mode");
+        } finally {
+          setStartSellingBusy(false);
+        }
+      }}
+      disabled={startSellingBusy}
+      className="rounded-xl bg-gradient-to-r from-[#2d3348] via-[#3b4663] to-[#56637f] px-3 py-3 text-left text-sm font-semibold text-white disabled:opacity-60"
+    >
+      {startSellingBusy ? "Switching..." : "Producer Mode"}
+    </button>
+  );
   const isBrowseActive = normalizedPath === "/activity";
   const isHomeActive =
     normalizedPath === "/" || normalizedPath === "/dashboard/listening" || normalizedPath === "/dashboard/selling";
@@ -371,14 +755,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         } as CSSProperties
       }
     >
-      <header ref={headerRef} className="theme-header fixed inset-x-0 top-0 z-[110] isolate border-b shadow-[0_14px_34px_rgba(0,0,0,0.32)]" style={{ borderColor: "var(--line)" }}>
-        <div className="absolute inset-0 -z-10 bg-[#0b0b0f]" aria-hidden="true" />
-        <div className="relative z-10 flex w-full items-center gap-3 bg-[#0b0b0f] px-3 py-3 md:grid md:grid-cols-[auto_minmax(0,1fr)_auto] md:gap-4 md:px-4 lg:px-5">
+      <header ref={headerRef} className="theme-header theme-header-shell fixed inset-x-0 top-0 z-[110] isolate border-b" style={{ borderColor: "var(--line)" }}>
+        <div className="theme-app-shell-backdrop absolute inset-0 -z-10" aria-hidden="true" />
+        <div className="theme-app-shell-row relative z-10 flex w-full items-center gap-3 px-3 py-3 md:px-4 lg:px-5">
           <Link href="/" className="hidden shrink-0 text-3xl font-black tracking-[-0.07em] md:block" style={{ color: "var(--brand)" }}>
             B
           </Link>
 
-          <div className="hidden min-w-0 items-center justify-center md:flex">
+          <div className="pointer-events-none absolute inset-0 hidden items-center justify-center md:flex md:pl-24 lg:pl-28 xl:pl-32">
             <div className="flex min-w-0 items-center justify-center gap-2">
               <button
                 type="button"
@@ -387,10 +771,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   setHoverMenuOpen(null);
                   router.push("/");
                 }}
-                className={`pointer-events-auto inline-flex h-10 w-10 items-center justify-center rounded-full border transition ${
+                className={`pointer-events-auto inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full transition ${
                   isHomeActive
-                    ? "border-white/18 bg-[#241e2b] text-white"
-                    : "border-white/10 bg-[#1c1722] text-white/72 hover:bg-[#26202e]"
+                    ? "theme-nav-button-active"
+                    : "theme-nav-button"
                 }`}
                 aria-label="Go home"
                 title="Home"
@@ -399,7 +783,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
 
               <form
-                className="pointer-events-auto flex h-11 min-w-0 w-full max-w-[420px] items-center rounded-full border border-white/10 bg-[#1c1722] px-3 shadow-[0_12px_34px_rgba(0,0,0,0.2)] lg:max-w-[500px] lg:px-3.5 xl:w-[460px]"
+                className="theme-search-shell pointer-events-auto flex h-11 min-w-0 w-full max-w-[420px] items-center rounded-full px-3 lg:max-w-[500px] lg:px-3.5 xl:w-[460px]"
                 onSubmit={(event) => {
                   event.preventDefault();
                   runSearch();
@@ -407,7 +791,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               >
                 <button
                   type="submit"
-                  className="mr-2 inline-flex h-7 w-7 items-center justify-center rounded-full text-white/58 transition hover:bg-[#2a2432] hover:text-white"
+                  className="theme-search-action mr-2 inline-flex h-7 w-7 items-center justify-center rounded-full transition"
                   aria-label="Search"
                 >
                   <Search className="h-[1.1rem] w-[1.1rem]" strokeWidth={2} aria-hidden="true" />
@@ -419,10 +803,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     setPinnedMenuOpen("Browse");
                     setHoverMenuOpen("Browse");
                   }}
-                  className="min-w-0 flex-1 bg-transparent text-[0.92rem] text-white outline-none placeholder:text-white/40"
+                  className="theme-search-input min-w-0 flex-1 bg-transparent text-[0.92rem] outline-none"
                   placeholder="What do you want to play?"
                 />
-                <div className="mx-2.5 h-6 w-px bg-white/10" />
+                <div className="theme-search-divider mx-2.5 h-6 w-px" />
                 <button
                   type="button"
                   onClick={() => {
@@ -430,7 +814,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     setHoverMenuOpen("Browse");
                     router.push("/activity");
                   }}
-                  className="inline-flex h-7 w-7 items-center justify-center rounded-full text-white/58 transition hover:bg-[#2a2432] hover:text-white"
+                  className="theme-search-action inline-flex h-7 w-7 items-center justify-center rounded-full transition"
                   aria-label="Open browse"
                   title="Browse"
                 >
@@ -444,78 +828,67 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             B
           </Link>
 
-          <div className="ml-auto flex items-center gap-1.5 md:ml-0 md:justify-self-end sm:gap-2">
-            <button
-              type="button"
-              onClick={() => setNotificationsOpen((s) => !s)}
-              className="relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] px-0 text-xs text-white/72 transition hover:bg-[#26202e] hover:text-white"
-              aria-label="Notifications"
+          <div className="ml-auto flex items-center gap-1.5 sm:gap-2">
+            <div
+              ref={notificationsRef}
+              className="relative"
             >
-              <span className="sr-only">Notifications</span>
-              <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-                <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
-                <path d="M10 21a2 2 0 0 0 4 0" />
-              </svg>
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setNotificationsOpen((current) => {
+                    const next = !current;
+                    if (next) {
+                      setActiveOverlay("notifications");
+                    }
+                    return next;
+                  });
+                }}
+                className="theme-nav-button relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full px-0 text-xs transition"
+                aria-label="Notifications"
+                aria-expanded={notificationsOpen}
+              >
+                <span className="sr-only">Notifications</span>
+                <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+                  <path d="M15 17h5l-1.4-1.4A2 2 0 0 1 18 14.2V11a6 6 0 1 0-12 0v3.2a2 2 0 0 1-.6 1.4L4 17h5" />
+                  <path d="M10 21a2 2 0 0 0 4 0" />
+                </svg>
+                {unreadNotificationsCount > 0 ? (
+                  <span className="absolute -right-1 -top-1 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-[#ff4d6d] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                    {unreadNotificationsCount > 99 ? "99+" : unreadNotificationsCount}
+                  </span>
+                ) : null}
+              </button>
+            </div>
 
             <Link
               href="/orders"
-              className="relative hidden h-10 w-10 items-center justify-center rounded-full border border-white/10 bg-[#1c1722] text-xs text-white/72 transition hover:bg-[#26202e] hover:text-white lg:inline-flex"
+              className="theme-nav-button relative hidden h-10 w-10 items-center justify-center rounded-full text-xs transition lg:inline-flex"
               aria-label="Cart"
               title="Cart"
             >
               <ShoppingCart className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
             </Link>
 
-
-            {!user?.is_producer ? (
               <button
                 type="button"
-                onClick={async () => {
-                  setStartSellingBusy(true);
-                  setStartSellingError(null);
-                  try {
-                    await startSelling();
-                    router.push("/producer/profile");
-                  } catch (err) {
-                    setStartSellingError(err instanceof Error ? err.message : "Unable to start selling");
-                  } finally {
-                    setStartSellingBusy(false);
-                  }
-                }}
-                disabled={startSellingBusy}
-                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-60 sm:px-4 sm:text-xs"
-              >
-                {startSellingBusy ? "Starting..." : "Start Selling"}
-              </button>
-            ) : user.active_role === "producer" ? (
-              <button
-                type="button"
-                onClick={() => setUploadPickerOpen(true)}
-                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-3 py-2 text-[11px] font-semibold text-white sm:px-4 sm:text-xs"
-              >
-                Upload
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={async () => {
-                  setStartSellingBusy(true);
-                  setStartSellingError(null);
-                  try {
-                    await switchRoleInPlace("producer");
-                  } catch (err) {
-                    setStartSellingError(err instanceof Error ? err.message : "Unable to switch to producer mode");
-                  } finally {
-                    setStartSellingBusy(false);
-                  }
-                }}
-                disabled={startSellingBusy}
-                className="rounded-full bg-gradient-to-r from-[#2d3348] via-[#3b4663] to-[#56637f] px-3 py-2 text-[11px] font-semibold text-white disabled:opacity-60 sm:px-4 sm:text-xs"
-              >
-                {startSellingBusy ? "Switching..." : "Producer Mode"}
-              </button>
-            )}
+                onClick={handleMessagePanelToggle}
+              className={`relative inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full px-0 text-xs transition ${
+                messagesOpen
+                  ? "theme-nav-button-active text-[#178a62]"
+                  : "theme-nav-button"
+              }`}
+              aria-label="Messages"
+              title="Messages"
+              aria-expanded={messagesOpen}
+            >
+              <MessageSquareMore className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+              {unreadMessagesCount > 0 ? (
+                <span className="absolute -right-1 -top-1 inline-flex min-w-[1.15rem] items-center justify-center rounded-full bg-[#ff4d6d] px-1.5 py-0.5 text-[10px] font-semibold leading-none text-white">
+                  {unreadMessagesCount > 99 ? "99+" : unreadMessagesCount}
+                </span>
+              ) : null}
+            </button>
 
             <div
               className="relative"
@@ -525,10 +898,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => {
                   cancelUserMenuClose();
-                  setUserMenuOpen((current) => !current);
+                  setUserMenuOpen((current) => {
+                    const next = !current;
+                    if (next) {
+                      setActiveOverlay("userMenu");
+                    }
+                    return next;
+                  });
                 }}
                 onFocus={cancelUserMenuClose}
-                className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-[#1c1722] text-xs font-semibold text-white"
+                className="theme-nav-button flex h-10 w-10 items-center justify-center overflow-hidden rounded-full text-xs font-semibold"
                 aria-label="Open user menu"
                 aria-expanded={userMenuOpen}
               >
@@ -544,7 +923,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </button>
 
               <div
-                className={`theme-menu absolute right-0 top-[46px] z-50 w-[min(360px,calc(100vw-1.25rem))] max-h-[min(78vh,640px)] overflow-y-auto rounded-[26px] p-3 backdrop-blur-xl transition-all duration-220 ease-out ${userMenuOpen ? "pointer-events-auto translate-y-0 scale-100 opacity-100" : "pointer-events-none -translate-y-2 scale-[0.98] opacity-0"}`}
+                className={`theme-menu absolute right-0 top-[46px] ${userMenuPanelZClass} w-[min(360px,calc(100vw-1.25rem))] max-h-[min(78vh,640px)] overflow-y-auto rounded-[26px] p-3 backdrop-blur-xl transition-all duration-220 ease-out ${userMenuOpen ? "pointer-events-auto translate-y-0 scale-100 opacity-100" : "pointer-events-none -translate-y-2 scale-[0.98] opacity-0"}`}
                 onMouseEnter={cancelUserMenuClose}
                 onMouseLeave={closeUserMenuSoon}
               >
@@ -599,6 +978,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ) : null}
 
                 <div className="mt-3 grid gap-2">
+                  {menuPrimaryAction}
+
                   {user?.active_role === "producer" && profileHref ? (
                     <Link href={profileHref} className="theme-soft flex items-center justify-between rounded-xl px-3 py-3 text-sm theme-text-soft">
                       <span>My profile</span>
@@ -687,32 +1068,30 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
-        <div className="relative z-10 w-full bg-[#0b0b0f] px-3 pb-3 md:px-4 lg:px-5">
+        <div className="theme-app-shell-subrow relative z-10 w-full px-3 pb-3 md:px-4 lg:px-5">
           <nav ref={navRef} className="relative flex items-center justify-center gap-6 text-sm theme-text-muted">
             <div className="flex w-full items-center gap-2 md:hidden">
               <button
                 type="button"
                 onClick={() => router.push("/")}
                 className={`inline-flex h-11 w-11 items-center justify-center rounded-full border transition ${
-                  isHomeActive
-                    ? "border-white/18 bg-[#241e2b] text-white"
-                    : "border-white/10 bg-[#1c1722] text-white/72"
+                  isHomeActive ? "theme-nav-button-active" : "theme-nav-button"
                 }`}
               >
                 <Home className="h-5 w-5" strokeWidth={2} aria-hidden="true" />
               </button>
               <form
-                className="flex h-11 flex-1 items-center rounded-full border border-white/10 bg-[#1c1722] px-3"
+                className="theme-search-shell flex h-11 flex-1 items-center rounded-full px-3"
                 onSubmit={(event) => {
                   event.preventDefault();
                   runSearch();
                 }}
               >
-                <Search className="h-4 w-4 text-white/52" strokeWidth={2} aria-hidden="true" />
+                <Search className="theme-search-action h-4 w-4" strokeWidth={2} aria-hidden="true" />
                 <input
                   value={searchQuery}
                   onChange={(event) => setSearchQuery(event.target.value)}
-                  className="ml-2 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-white/40"
+                  className="theme-search-input ml-2 min-w-0 flex-1 bg-transparent text-sm outline-none"
                   placeholder="Search beats"
                 />
               </form>
@@ -724,9 +1103,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   router.push("/activity");
                 }}
                 className={`inline-flex h-11 items-center gap-2 rounded-full border px-3 text-sm transition ${
-                  isBrowseActive || openMenuKey === "Browse"
-                    ? "border-[#1ed760]/35 bg-[#243226] text-white"
-                    : "border-white/10 bg-[#1c1722] text-white/72"
+                  isBrowseActive || openMenuKey === "Browse" ? "theme-nav-button-active" : "theme-nav-button"
                 }`}
               >
                 <Compass className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
@@ -737,27 +1114,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {startSellingError ? <p className="ml-auto text-xs text-[#ff8f7d]">{startSellingError}</p> : null}
 
             {notificationsOpen ? (
-              <div className="theme-menu absolute right-0 top-[46px] z-50 w-[min(340px,calc(100vw-1.5rem))] rounded-2xl p-4 backdrop-blur-xl">
+              <div ref={notificationsPanelRef} onMouseLeave={() => setNotificationsOpen(false)} className={`theme-menu absolute right-0 top-[46px] ${notificationsPanelZClass} w-[min(340px,calc(100vw-1.5rem))] rounded-2xl p-4 backdrop-blur-xl`}>
                 <p className="text-sm font-semibold theme-text-main">Notifications</p>
                 {notificationsLoading ? <p className="mt-3 text-xs theme-text-muted">Loading notifications...</p> : null}
-                {!notificationsLoading && notifications.length === 0 ? <p className="mt-3 text-xs theme-text-muted">No new notifications.</p> : null}
+                {!notificationsLoading && notifications.length === 0 ? <p className="mt-3 text-xs theme-text-muted">No notifications yet.</p> : null}
                 {!notificationsLoading ? (
                   <div className="mt-3 space-y-2">
                     {notifications.map((item) => (
                       <button
                         key={item.id}
                         type="button"
-                        onClick={() => {
-                          setNotificationsOpen(false);
-                          if (item.beat_id) {
-                            router.push(`/beats/${item.beat_id}`);
-                            return;
-                          }
-                          if (item.notification_type === "producer_followed") {
-                            router.push(`/producers/${item.actor_id}`);
-                          }
-                        }}
-                        className="theme-soft block w-full rounded-xl px-3 py-3 text-left"
+                        onClick={() => void handleNotificationSelect(item)}
+                        className={`theme-soft block w-full rounded-xl px-3 py-3 text-left ${item.is_read ? "opacity-75" : "ring-1 ring-[#ff4d6d]/40"}`}
                       >
                         <p className="text-sm theme-text-soft">{item.message}</p>
                         <p className="mt-1 text-[11px] theme-text-faint">
@@ -772,6 +1140,232 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </nav>
         </div>
       </header>
+
+      {messagesOpen ? (
+        <>
+          <div
+            className={`theme-overlay fixed inset-x-0 bottom-0 ${messagesOverlayZClass}`}
+            style={{ top: `calc(var(--app-header-height) + 0.25rem)` }}
+            aria-hidden="true"
+          />
+          <section
+            className={`messages-drawer theme-floating fixed left-3 right-3 ${messagesPanelZClass} flex flex-col overflow-hidden rounded-[28px] border border-white/10 shadow-[0_24px_70px_rgba(0,0,0,0.46)] md:left-4 md:right-4 lg:left-5 lg:right-5`}
+            style={{ top: `calc(var(--app-header-height) + 0.5rem)`, height: "min(78vh, 760px)" }}
+          >
+          <div className="messages-drawer-header flex items-center justify-between gap-4 border-b border-white/10 px-4 py-4 sm:px-5">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.22em] theme-text-faint">Messages</p>
+            </div>
+            <span className="rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs theme-text-soft">{conversations.length} chats</span>
+          </div>
+
+          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[360px_minmax(0,1fr)]">
+            <aside className="messages-drawer-sidebar flex min-h-0 flex-col border-b border-white/10 bg-[#0d1015]/92 lg:border-b-0 lg:border-r lg:border-white/10">
+              <div className="messages-drawer-sidebar-head border-b border-white/10 px-4 py-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-xs uppercase tracking-[0.2em] theme-text-faint">Inbox</p>
+                    <p className="mt-1 text-sm theme-text-muted">Open a collaboration to continue the chat.</p>
+                  </div>
+                  {unreadMessagesCount > 0 ? (
+                    <span className="rounded-full bg-[#ff4d6d] px-2.5 py-1 text-[11px] font-medium text-white">{unreadMessagesCount > 99 ? "99+" : unreadMessagesCount}</span>
+                  ) : (
+                    <span className="rounded-full bg-[#1ed760]/12 px-2.5 py-1 text-[11px] font-medium text-[#9ef0b5]">{sortedConversations.length}</span>
+                  )}
+                </div>
+                <div className="messages-drawer-search mt-4 flex h-11 items-center rounded-full border border-white/10 bg-white/[0.04] px-4 text-sm theme-text-muted">
+                  <Search className="messages-drawer-search-icon h-4 w-4 text-white/45" strokeWidth={1.8} aria-hidden="true" />
+                  <span className="ml-3">Search accepted chats</span>
+                </div>
+              </div>
+
+              <div className="min-h-0 flex-1 overflow-y-auto">
+                {messagesLoading ? <p className="px-4 py-4 text-sm theme-text-muted">Loading conversations...</p> : null}
+                {!messagesLoading && conversations.length === 0 ? (
+                  <div className="mx-4 my-4 rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] px-4 py-5 text-sm leading-6 theme-text-muted">
+                    Accepted offers will show up here and then this list will behave like a real chat inbox.
+                  </div>
+                ) : null}
+                {!messagesLoading && sortedConversations.map((conversation) => {
+                  const otherParticipant = conversation.participant_details.find((participant) => participant.id !== user?.id);
+                  const latest = getLatestMessage(conversation);
+                  const isActive = conversation.id === selectedConversationId;
+                  const title = otherParticipant?.username || "Conversation";
+                  const initials = title.slice(0, 1).toUpperCase();
+                  const unread = isConversationUnread(conversation, user?.id, seenMessageMap);
+                  return (
+                    <button
+                      key={conversation.id}
+                      type="button"
+                      onClick={() => setSelectedConversationId(conversation.id)}
+                      className={`messages-drawer-row flex w-full items-start gap-3 border-b border-white/6 px-4 py-4 text-left transition ${
+                        isActive ? "messages-drawer-row-active bg-[#182329]" : "bg-transparent hover:bg-white/[0.03]"
+                      }`}
+                    >
+                      <div className="relative">
+                        <div className={`messages-drawer-avatar flex h-12 w-12 shrink-0 items-center justify-center rounded-full text-sm font-semibold ${
+                          isActive ? "messages-drawer-avatar-active bg-[#1ed760] text-[#07140b]" : "bg-white/[0.07] text-white"
+                        }`}>
+                          {initials}
+                        </div>
+                        {unread ? <span className="absolute -right-1 -top-1 h-3.5 w-3.5 rounded-full border-2 border-[#0d1015] bg-[#ff4d6d]" /> : null}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <div className="flex items-center gap-2">
+                              <p className="truncate text-sm font-semibold text-white">{title}</p>
+                              {unread ? <span className="inline-flex min-w-[1.2rem] items-center justify-center rounded-full bg-[#ff4d6d] px-1.5 py-0.5 text-[10px] font-semibold text-white">1</span> : null}
+                            </div>
+                            <p className="mt-0.5 truncate text-[11px] theme-text-faint">{conversation.project_title || "Direct collaboration chat"}</p>
+                          </div>
+                          <p className={`shrink-0 text-[11px] ${isActive ? "text-[#9ef0b5]" : unread ? "text-[#ff9daf]" : "theme-text-faint"}`}>
+                            {latest
+                              ? new Date(latest.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                              : new Date(conversation.created_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <p className={`mt-2 truncate text-sm ${isActive ? "text-white/88" : unread ? "text-white" : "theme-text-muted"}`}>
+                          {latest?.content || (latest?.attachments.length ? `${latest.attachments.length} attachment${latest.attachments.length > 1 ? "s" : ""}` : "No messages yet.")}
+                        </p>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </aside>
+
+            <div className="messages-drawer-thread flex min-h-0 flex-col bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.04),transparent_30%),linear-gradient(180deg,#11161d_0%,#0d1117_100%)]">
+              {selectedConversation ? (
+                <>
+                  <div className="messages-drawer-thread-head flex items-center gap-3 border-b border-white/10 px-4 py-4 sm:px-5">
+                    <div className="messages-drawer-thread-avatar flex h-11 w-11 items-center justify-center rounded-full bg-[#20323a] text-sm font-semibold text-white">
+                      {(selectedConversationPartner?.username || "C").slice(0, 1).toUpperCase()}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <h3 className="truncate text-lg font-semibold theme-text-main">{selectedConversationPartner?.username || "Collaboration"}</h3>
+                      <p className="truncate text-xs theme-text-muted">{selectedConversation.project_title || "Shared project conversation"}</p>
+                    </div>
+                  </div>
+
+                  <div className="min-h-0 flex-1 overflow-y-auto px-4 py-5 sm:px-5">
+                    <div className="mx-auto flex max-w-4xl flex-col gap-3">
+                      {selectedConversation.messages.length > 0 ? selectedConversation.messages.map((item) => {
+                        const mine = item.sender === user?.id;
+                        return (
+                          <div key={item.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                            <div
+                              className={`messages-drawer-bubble max-w-[85%] rounded-[22px] px-4 py-3 shadow-[0_10px_25px_rgba(0,0,0,0.18)] ${
+                                mine ? "messages-drawer-bubble-own rounded-br-md bg-[#005c4b] text-white" : "messages-drawer-bubble-other rounded-bl-md bg-[#202c33] text-white"
+                              }`}
+                            >
+                              <p className={`text-[10px] font-medium uppercase tracking-[0.18em] ${mine ? "text-white/55" : "text-white/42"}`}>
+                                {item.sender_username || "User"}
+                              </p>
+                              {item.content ? <p className="mt-1.5 whitespace-pre-wrap text-sm leading-6">{item.content}</p> : null}
+                              {item.attachments.length > 0 ? (
+                                <div className="mt-2 flex flex-col gap-2">
+                                  {item.attachments.map((attachment) => {
+                                    const Icon = getMessageAttachmentIcon(attachment);
+                                    return (
+                                      <a
+                                        key={attachment.id}
+                                        href={resolveMediaUrl(attachment.url)}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className={`messages-drawer-attachment flex items-center gap-3 rounded-2xl border px-3 py-2 text-xs transition ${mine ? "border-white/15 bg-white/10 hover:bg-white/15" : "border-white/10 bg-white/5 hover:bg-white/10"}`}
+                                      >
+                                        <Icon className="h-4 w-4 shrink-0" strokeWidth={1.8} aria-hidden="true" />
+                                        <span className="min-w-0 flex-1 truncate">{attachment.original_name}</span>
+                                        <span className="shrink-0 text-white/55">{formatAttachmentSize(attachment.size)}</span>
+                                      </a>
+                                    );
+                                  })}
+                                </div>
+                              ) : null}
+                              <p className={`mt-2 text-[11px] ${mine ? "text-white/60" : "text-white/45"}`}>
+                                {new Date(item.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                              </p>
+                            </div>
+                          </div>
+                        );
+                      }) : (
+                        <div className="rounded-[22px] border border-dashed border-white/10 bg-white/[0.03] px-4 py-6 text-sm theme-text-muted">
+                          This chat is unlocked. Send the first message.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <form onSubmit={handleSendMessage} className="messages-drawer-compose border-t border-white/10 bg-[#10151b] px-4 py-4 sm:px-5">
+                    {pendingMessageFiles.length > 0 ? (
+                      <div className="mb-3 flex flex-wrap gap-2">
+                        {pendingMessageFiles.map((file) => {
+                          const Icon = getMessageAttachmentIcon(file);
+                          return (
+                            <div key={`${file.name}-${file.size}-${file.lastModified}`} className="messages-drawer-file-chip flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-2 text-xs text-white/85">
+                              <Icon className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden="true" />
+                              <span className="max-w-[12rem] truncate">{file.name}</span>
+                              <span className="text-white/45">{formatAttachmentSize(file.size)}</span>
+                              <button type="button" onClick={() => removePendingMessageFile(file)} className="text-white/55 transition hover:text-white" aria-label={`Remove ${file.name}`}>
+                                <X className="h-3.5 w-3.5" strokeWidth={1.9} aria-hidden="true" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                    <div className="messages-drawer-compose-box flex items-end gap-3 rounded-[26px] border border-white/10 bg-white/[0.04] p-2 pl-3">
+                      <button
+                        type="button"
+                        onClick={() => messageAttachmentInputRef.current?.click()}
+                        className="messages-drawer-attach-button inline-flex h-11 w-11 shrink-0 items-center justify-center rounded-full border border-white/10 bg-white/[0.05] text-white/75 transition hover:bg-white/[0.09] hover:text-white"
+                        aria-label="Attach file"
+                        title="Attach file"
+                      >
+                        <Paperclip className="h-4 w-4" strokeWidth={1.9} aria-hidden="true" />
+                      </button>
+                      <input
+                        ref={messageAttachmentInputRef}
+                        type="file"
+                        multiple
+                        accept="image/*,audio/*,.pdf,.doc,.docx,.txt,.zip,.rar,.7z,.ppt,.pptx,.xls,.xlsx"
+                        className="hidden"
+                        onChange={handleMessageAttachmentChange}
+                      />
+                      <textarea
+                        value={messageDraft}
+                        onChange={(event) => setMessageDraft(event.target.value)}
+                        onKeyDown={handleMessageComposerKeyDown}
+                        placeholder="Type a message"
+                        className="messages-drawer-textarea min-h-[56px] flex-1 resize-none bg-transparent py-3 text-sm text-white outline-none placeholder:text-white/40"
+                      />
+                      <button
+                        type="submit"
+                        disabled={sendingMessage || (!messageDraft.trim() && pendingMessageFiles.length === 0)}
+                        className="messages-drawer-send inline-flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-[#1ed760] text-[#07140b] transition disabled:opacity-60"
+                        aria-label={sendingMessage ? "Sending message" : "Send message"}
+                      >
+                        <Send className="h-4 w-4" strokeWidth={2} aria-hidden="true" />
+                      </button>
+                    </div>
+                    <p className="mt-2 text-[11px] theme-text-faint">Enter sends the message, Shift+Enter adds a new line, and the paperclip supports images, audio, and documents.</p>
+                  </form>
+                </>
+              ) : (
+                <div className="flex h-full flex-col items-center justify-center px-6 text-center">
+                  <p className="text-xs uppercase tracking-[0.2em] theme-text-faint">No chat selected</p>
+                  <h3 className="mt-3 text-2xl font-semibold theme-text-main">Choose a conversation from the left</h3>
+                  <p className="mt-3 max-w-md text-sm leading-6 theme-text-muted">This panel now behaves more like WhatsApp: list on the left, active chat on the right, and it opens as a wide overlay below the header.</p>
+                </div>
+              )}
+
+              {messagesError ? <p className="px-4 pb-4 text-sm text-[#ffb4a9] sm:px-5">{messagesError}</p> : null}
+            </div>
+          </div>
+          </section>
+        </>
+      ) : null}
 
       {artistEditorOpen ? (
         <div className="theme-overlay fixed inset-0 z-[125] flex items-start justify-center overflow-y-auto px-4 py-8 backdrop-blur-sm" onClick={() => setArtistEditorOpen(false)}>

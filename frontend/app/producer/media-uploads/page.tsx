@@ -1,8 +1,8 @@
 "use client";
 
 import { Music4, Package, Pencil, Trash2 } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
 import { apiRequest } from "@/lib/api";
@@ -39,14 +39,35 @@ function formatDate(raw?: string) {
 
 export default function MediaUploadsPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { token } = useAuth();
-  const [tab, setTab] = useState<"beats" | "kits">("beats");
   const [beatDrafts, setBeatDrafts] = useState<BeatDraft[]>([]);
   const [kitDrafts, setKitDrafts] = useState<SoundKitDraft[]>([]);
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const tab = searchParams.get("tab") === "kits" ? "kits" : "beats";
+
+  const buildMediaUploadsUrl = useCallback((nextTab: "beats" | "kits") => {
+    const params = new URLSearchParams(searchParams.toString());
+    params.set("tab", nextTab);
+    const queryString = params.toString();
+    return queryString ? `${pathname}?${queryString}` : pathname;
+  }, [pathname, searchParams]);
+
+  useEffect(() => {
+    const currentUrl = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+    const canonicalUrl = buildMediaUploadsUrl(tab);
+    if (canonicalUrl !== currentUrl) {
+      router.replace(canonicalUrl, { scroll: false });
+    }
+  }, [buildMediaUploadsUrl, pathname, router, searchParams, tab]);
+
+  const navigateMediaUploadsTab = (nextTab: "beats" | "kits") => {
+    router.replace(buildMediaUploadsUrl(nextTab), { scroll: false });
+  };
 
   useEffect(() => {
     const run = async () => {
@@ -112,8 +133,8 @@ export default function MediaUploadsPage() {
 
         <div className="mt-6 flex flex-wrap items-center gap-3">
           <div className="inline-flex rounded-xl border border-white/10 bg-[#141720] p-1">
-            <button type="button" onClick={() => setTab("beats")} className={`rounded-lg px-4 py-2 text-sm ${tab === "beats" ? "bg-white/10 text-white" : "text-white/65"}`}>My Beats</button>
-            <button type="button" onClick={() => setTab("kits")} className={`rounded-lg px-4 py-2 text-sm ${tab === "kits" ? "bg-white/10 text-white" : "text-white/65"}`}>My Sound Kits</button>
+            <button type="button" onClick={() => navigateMediaUploadsTab("beats")} className={`rounded-lg px-4 py-2 text-sm ${tab === "beats" ? "bg-white/10 text-white" : "text-white/65"}`}>My Beats</button>
+            <button type="button" onClick={() => navigateMediaUploadsTab("kits")} className={`rounded-lg px-4 py-2 text-sm ${tab === "kits" ? "bg-white/10 text-white" : "text-white/65"}`}>My Sound Kits</button>
           </div>
           <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={tab === "beats" ? "Search beat draft" : "Search sound-kit draft"} className="h-11 min-w-[280px] flex-1 rounded-xl border border-white/10 bg-[#141720] px-4 text-sm text-white/82 outline-none placeholder:text-white/35" />
         </div>

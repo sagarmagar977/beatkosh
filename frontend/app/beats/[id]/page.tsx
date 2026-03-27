@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowLeft, BadgeCheck, Heart, Pause, Play, ShoppingCart, Share2, Shield, SlidersHorizontal, Sparkles } from "lucide-react";
+import { ArrowLeft, BadgeCheck, Heart, Pause, Play, ShoppingCart, Share2, Shield, SlidersHorizontal, Sparkles, X } from "lucide-react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
@@ -17,6 +17,14 @@ type License = {
   is_exclusive?: boolean;
   includes_wav?: boolean;
   description?: string;
+};
+
+type LicenseOption = {
+  id: number;
+  label: string;
+  price: string;
+  nature: string;
+  format: string;
 };
 
 type Beat = {
@@ -45,6 +53,20 @@ type Beat = {
   storefront_flags?: { free_download?: boolean; stems_available?: boolean; exclusive_available?: boolean; wav_available?: boolean };
   protection_status?: string;
   fingerprint_status?: string;
+  non_exclusive_wav_enabled?: boolean;
+  non_exclusive_wav_fee?: string;
+  non_exclusive_stems_enabled?: boolean;
+  non_exclusive_stems_fee?: string;
+  exclusive_enabled?: boolean;
+  exclusive_license_fee?: string;
+  non_exclusive_publishing_rights?: string;
+  non_exclusive_master_recordings?: string;
+  non_exclusive_license_period?: string;
+  exclusive_publishing_rights?: string;
+};
+
+type CartSummary = {
+  items: Array<{ product_type: string; product_id: number }>;
 };
 
 type TrustSummary = {
@@ -61,6 +83,16 @@ function formatDate(raw?: string) {
     : parsed.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
 }
 
+function resolveLicensePrice(targetBeat: Beat, license: License) {
+  if (license.is_exclusive) {
+    return targetBeat.exclusive_license_fee || targetBeat.base_price;
+  }
+  if (license.includes_stems) {
+    return targetBeat.non_exclusive_stems_fee || targetBeat.base_price;
+  }
+  return targetBeat.non_exclusive_wav_fee || targetBeat.base_price;
+}
+
 export default function BeatDetailPage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
@@ -70,7 +102,11 @@ export default function BeatDetailPage() {
   const [beat, setBeat] = useState<Beat | null>(null);
   const [related, setRelated] = useState<Beat[]>([]);
   const [trust, setTrust] = useState<TrustSummary | null>(null);
+  const [licenseCatalog, setLicenseCatalog] = useState<License[]>([]);
   const [selectedLicenseId, setSelectedLicenseId] = useState<number | null>(null);
+  const [licenseModalBeat, setLicenseModalBeat] = useState<Beat | null>(null);
+  const [modalSelectedLicenseId, setModalSelectedLicenseId] = useState<number | null>(null);
+  const [cartBeatIds, setCartBeatIds] = useState<number[]>([]);
   const [liked, setLiked] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -79,8 +115,12 @@ export default function BeatDetailPage() {
     const run = async () => {
       try {
         const beatId = Number(params.id);
-        const detail = await apiRequest<Beat>(`/beats/${beatId}/`);
+        const [detail, licenseData] = await Promise.all([
+          apiRequest<Beat>(`/beats/${beatId}/`),
+          apiRequest<License[]>("/beats/licenses/"),
+        ]);
         setBeat(detail);
+        setLicenseCatalog(licenseData);
         setSelectedLicenseId(detail.licenses?.[0]?.id ?? null);
         const [relatedData, trustData] = await Promise.all([
           apiRequest<Beat[]>(`/analytics/similar/beats/${beatId}/`),
@@ -95,11 +135,71 @@ export default function BeatDetailPage() {
     void run();
   }, [params.id]);
 
+  useEffect(() => {
+    const loadCart = async () => {
+      if (!token) {
+        setCartBeatIds([]);
+        return;
+      }
+      try {
+        const cart = await apiRequest<CartSummary>("/orders/cart/me/", { token });
+        setCartBeatIds(cart.items.filter((item) => item.product_type === "beat").map((item) => item.product_id));
+      } catch {
+        // ignore cart badge sync failures here
+      }
+    };
+    void loadCart();
+  }, [token]);
+
   const coverUrl = useMemo(() => resolveMediaUrl(beat?.cover_art_obj), [beat]);
   const selectedLicense = useMemo(
     () => beat?.licenses?.find((license) => license.id === selectedLicenseId) ?? beat?.licenses?.[0] ?? null,
     [beat, selectedLicenseId],
   );
+
+  const licenseOptions = useMemo(() => {
+    if (!licenseModalBeat) {
+      return [] as LicenseOption[];
+    }
+
+    const buildOption = (license: License): LicenseOption => ({
+      id: license.id,
+      label: license.name.toUpperCase(),
+      price: resolveLicensePrice(licenseModalBeat, license),
+      nature: license.is_exclusive ? "Exclusive" : "Non-Exclusive",
+      format: license.includes_stems ? "WAV & STEMS File" : "WAV File",
+    });
+
+    if (licenseModalBeat.licenses && licenseModalBeat.licenses.length > 0) {
+      return licenseModalBeat.licenses.map(buildOption);
+    }
+
+    const fallback: LicenseOption[] = [];
+    const findCatalogLicense = (matcher: (license: License) => boolean) => licenseCatalog.find(matcher);
+
+    if (licenseModalBeat.non_exclusive_wav_enabled !== false) {
+      const wav = findCatalogLicense((license) => !license.is_exclusive && !license.includes_stems && license.includes_wav !== false);
+      if (wav) fallback.push(buildOption(wav));
+    }
+    if (licenseModalBeat.non_exclusive_stems_enabled) {
+      const stems = findCatalogLicense((license) => !license.is_exclusive && Boolean(license.includes_stems));
+      if (stems) fallback.push(buildOption(stems));
+    }
+    if (licenseModalBeat.exclusive_enabled) {
+      const exclusive = findCatalogLicense((license) => Boolean(license.is_exclusive));
+      if (exclusive) fallback.push(buildOption(exclusive));
+    }
+
+    return fallback;
+  }, [licenseCatalog, licenseModalBeat]);
+
+  useEffect(() => {
+    if (licenseOptions.length > 0 && !licenseOptions.some((item) => item.id === modalSelectedLicenseId)) {
+      setModalSelectedLicenseId(licenseOptions[0].id);
+    }
+  }, [licenseOptions, modalSelectedLicenseId]);
+
+  const selectedLicenseInfo = licenseOptions.find((item) => item.id === modalSelectedLicenseId) ?? licenseOptions[0] ?? null;
 
   const notify = (text: string) => {
     setMessage(text);
@@ -166,29 +266,36 @@ export default function BeatDetailPage() {
     notify("Added to likes.");
   };
 
-  const handleAddToCart = async (targetBeat: Beat, licenseId?: number | null) => {
+  const openLicenseModal = (targetBeat: Beat, preferredLicenseId?: number | null) => {
+    setLicenseModalBeat(targetBeat);
+    setModalSelectedLicenseId(preferredLicenseId ?? targetBeat.licenses?.[0]?.id ?? null);
+  };
+
+  const handleModalAddToCart = async () => {
     if (!token) {
       router.push("/auth/login");
       return;
     }
-    const resolvedLicenseId = licenseId ?? targetBeat.licenses?.[0]?.id;
-    if (!resolvedLicenseId) {
-      notify("No license configured for this beat.");
+    if (!licenseModalBeat || !modalSelectedLicenseId) {
+      notify("Choose a license first.");
       return;
     }
     await apiRequest("/orders/cart/items/", {
       method: "POST",
       token,
-      body: { product_type: "beat", product_id: targetBeat.id, license_id: resolvedLicenseId },
+      body: { product_type: "beat", product_id: licenseModalBeat.id, license_id: modalSelectedLicenseId },
     });
+    setCartBeatIds((current) => (current.includes(licenseModalBeat.id) ? current : [...current, licenseModalBeat.id]));
     await refreshCart();
-    notify("Beat added to cart successfully.");
+    notify("Added to cart.");
+    setLicenseModalBeat(null);
   };
 
   const isCurrentBeat = currentTrack?.id === beat?.id;
+  const currentBeatInCart = beat ? cartBeatIds.includes(beat.id) : false;
 
   return (
-    <div className="space-y-5 pb-32">
+    <div className="beat-detail-page space-y-5 pb-32">
       <div className="grid gap-5 xl:grid-cols-[360px_1fr]">
         <aside className="rounded-[28px] border border-[#7f1717] bg-[linear-gradient(180deg,#4b0f10_0%,#250307_58%,#1b0205_100%)] p-5 text-white shadow-[0_32px_90px_rgba(0,0,0,0.35)]">
           <Link href="/beats" className="inline-flex items-center gap-2 text-xs text-white/70 hover:underline">
@@ -239,20 +346,20 @@ export default function BeatDetailPage() {
             <button
               type="button"
               disabled={!beat}
-              onClick={() => beat && void handleAddToCart(beat, selectedLicenseId)}
+              onClick={() => beat && openLicenseModal(beat, selectedLicenseId)}
               className="inline-flex flex-col items-center rounded-2xl border border-white/10 bg-white/5 px-2 py-3 disabled:opacity-50"
             >
               <ShoppingCart className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
-              <span className="mt-1">Cart</span>
+              <span className="mt-1">{currentBeatInCart ? "Added" : "Cart"}</span>
             </button>
           </div>
           <button
             type="button"
             disabled={!beat}
-            onClick={() => beat && void handleAddToCart(beat, selectedLicenseId)}
+            onClick={() => beat && openLicenseModal(beat, selectedLicenseId)}
             className="brand-btn mt-5 w-full px-4 py-3 text-lg font-semibold disabled:opacity-50"
           >
-            Rs {selectedLicense ? beat?.base_price : beat?.base_price ?? "--"}
+            {currentBeatInCart ? "Added to cart" : `Rs ${selectedLicense ? resolveLicensePrice(beat, selectedLicense) : beat?.base_price ?? "--"}`}
           </button>
 
           <div className="mt-6 grid gap-3 text-sm text-white/82">
@@ -295,9 +402,9 @@ export default function BeatDetailPage() {
                     <SlidersHorizontal className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                     View Terms
                   </button>
-                  <button type="button" onClick={() => beat && void handleAddToCart(beat, license.id)} className="brand-btn inline-flex items-center gap-2 px-4 py-2 text-sm">
+                  <button type="button" onClick={() => beat && openLicenseModal(beat, license.id)} className="brand-btn inline-flex items-center gap-2 px-4 py-2 text-sm">
                     <ShoppingCart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-                    Rs {beat?.base_price ?? "--"}
+                    {cartBeatIds.includes(beat?.id ?? -1) ? "Added to cart" : `Rs ${beat ? resolveLicensePrice(beat, license) : "--"}`}
                   </button>
                 </div>
               </article>
@@ -363,6 +470,7 @@ export default function BeatDetailPage() {
               {related.map((item) => {
                 const itemCover = resolveMediaUrl(item.cover_art_obj);
                 const itemIsCurrent = currentTrack?.id === item.id;
+                const itemInCart = cartBeatIds.includes(item.id);
                 return (
                   <article key={item.id} className="grid items-center gap-4 rounded-[20px] border border-white/10 bg-[#15171d] px-4 py-3 xl:grid-cols-[auto_1.5fr_1fr_auto]">
                     <button type="button" onClick={() => void handlePlay(item, "related-tracks")} className={`inline-flex h-12 w-12 items-center justify-center rounded-full border text-sm ${itemIsCurrent && isPlaying ? "border-[#8b28ff] bg-[#8b28ff] text-white" : "border-white/20 bg-white/5 text-white/85"}`}>
@@ -391,9 +499,9 @@ export default function BeatDetailPage() {
                       ))}
                     </div>
                     <div className="flex items-center gap-2 justify-self-end">
-                      <button type="button" onClick={() => void handleAddToCart(item, item.licenses?.[0]?.id ?? null)} className="brand-btn inline-flex items-center gap-2 px-5 py-2 text-lg font-semibold">
+                      <button type="button" onClick={() => openLicenseModal(item, item.licenses?.[0]?.id ?? null)} className="brand-btn inline-flex items-center gap-2 px-5 py-2 text-lg font-semibold">
                         <ShoppingCart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-                        Rs {item.base_price}
+                        {itemInCart ? "Added to cart" : `Rs ${item.base_price}`}
                       </button>
                       <button type="button" onClick={() => router.push(`/beats/${item.id}`)} className="rounded-full border border-white/12 px-3 py-2 text-xs text-white/78 hover:bg-white/5">
                         View
@@ -407,12 +515,52 @@ export default function BeatDetailPage() {
           </section>
         </section>
       </div>
+
+      {licenseModalBeat ? (
+        <div className="theme-overlay fixed inset-0 z-[130] flex items-start justify-center px-4 pt-24 backdrop-blur-sm" onClick={() => setLicenseModalBeat(null)}>
+          <section className="theme-floating w-full max-w-[980px] rounded-2xl p-5" onClick={(event) => event.stopPropagation()}>
+            <div className="grid gap-5 lg:grid-cols-[320px_1fr]">
+              <div>
+                <div className="mb-4 flex items-start justify-between"><div><h3 className="theme-text-main text-4xl font-semibold">Select License Type</h3><p className="theme-text-muted">Choose how you want to license this beat.</p></div></div>
+                <div className="overflow-hidden rounded-xl border" style={{ borderColor: "var(--line)" }}>
+                  {licenseOptions.map((item) => (
+                    <button key={item.id} type="button" onClick={() => setModalSelectedLicenseId(item.id)} className={`block w-full border-b px-4 py-3 text-left text-2xl ${modalSelectedLicenseId === item.id ? "bg-[#8b28ff] text-white" : "theme-text-soft bg-transparent"}`} style={{ borderColor: "var(--line)" }}>
+                      {item.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <button type="button" onClick={() => setLicenseModalBeat(null)} className="theme-text-soft float-right inline-flex items-center justify-center"><X className="h-6 w-6" strokeWidth={1.8} aria-hidden="true" /></button>
+                <div className="mb-4 flex items-center gap-3">
+                  <div className="theme-avatar flex h-20 w-20 items-center justify-center rounded-md text-sm font-bold">{licenseModalBeat.title.slice(0, 2).toUpperCase()}</div>
+                  <div><p className="theme-text-main text-4xl font-semibold">{licenseModalBeat.title}</p><p className="theme-text-muted text-xl">{licenseModalBeat.producer_username}</p></div>
+                </div>
+                <div className="theme-surface-muted rounded-xl p-4 text-lg">
+                  <div className="grid grid-cols-2 gap-3">
+                    <p className="theme-text-muted">License Usage</p><p className="theme-text-main text-right">Unlimited Streaming</p>
+                    <p className="theme-text-muted">Format & Files</p><p className="theme-text-main text-right">{selectedLicenseInfo?.format || "WAV File"}</p>
+                    <p className="theme-text-muted">Nature</p><p className="theme-text-main text-right">{selectedLicenseInfo?.nature || "Non-Exclusive"}</p>
+                    <p className="theme-text-muted">Distribution</p><p className="theme-text-main text-right">{licenseModalBeat.non_exclusive_master_recordings || "Unlimited Copies"}</p>
+                    <p className="theme-text-muted">Publishing Rights</p><p className="theme-text-main text-right">{selectedLicenseInfo?.nature === "Exclusive" ? (licenseModalBeat.exclusive_publishing_rights || "0%") : (licenseModalBeat.non_exclusive_publishing_rights || "0%")}</p>
+                    <p className="theme-text-muted">License Period</p><p className="theme-text-main text-right">{licenseModalBeat.non_exclusive_license_period || "Unlimited"}</p>
+                  </div>
+                </div>
+                <div className="mt-4 flex justify-end">
+                  <button type="button" onClick={() => void handleModalAddToCart()} className="brand-btn inline-flex items-center gap-2 px-8 py-3 text-3xl font-semibold">
+                    <ShoppingCart className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+                    Rs {selectedLicenseInfo?.price || licenseModalBeat.base_price}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </section>
+        </div>
+      ) : null}
+
       {message ? <p className="text-sm text-[#d2b0ff]">{message}</p> : null}
       {error ? <p className="text-sm text-rose-300">{error}</p> : null}
     </div>
   );
 }
-
-
-
 

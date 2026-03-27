@@ -1,15 +1,57 @@
-from rest_framework import serializers
+﻿from rest_framework import serializers
 
+from messaging.models import Conversation
 from projects.models import Deliverable, Milestone, Project, ProjectRequest, Proposal
+
+
+def ensure_project_conversation(project: Project | None):
+    if not project:
+        return None
+    conversation = Conversation.objects.filter(project=project).order_by("id").first()
+    if conversation:
+        participants = {project.artist_id, project.producer_id}
+        current_participants = set(conversation.participants.values_list("id", flat=True))
+        if participants != current_participants:
+            conversation.participants.set([project.artist, project.producer])
+        return conversation
+
+    conversation = Conversation.objects.create(project=project)
+    conversation.participants.set([project.artist, project.producer])
+    return conversation
 
 
 class ProposalSerializer(serializers.ModelSerializer):
     producer_username = serializers.CharField(source="producer.username", read_only=True)
+    project_id = serializers.SerializerMethodField()
+    conversation_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Proposal
-        fields = ("id", "project_request", "producer", "producer_username", "amount", "message", "created_at")
+        fields = ("id", "project_request", "producer", "producer_username", "amount", "message", "project_id", "conversation_id", "created_at")
         read_only_fields = ("producer", "created_at")
+
+    def _get_project(self, obj):
+        brief = obj.project_request
+        if brief.status != ProjectRequest.STATUS_ACCEPTED or brief.producer_id != obj.producer_id:
+            return None
+        return (
+            Project.objects.filter(
+                artist=brief.artist,
+                producer=obj.producer,
+                title=brief.title,
+            )
+            .order_by("-created_at")
+            .first()
+        )
+
+    def get_project_id(self, obj):
+        project = self._get_project(obj)
+        return project.id if project else None
+
+    def get_conversation_id(self, obj):
+        project = self._get_project(obj)
+        conversation = ensure_project_conversation(project)
+        return conversation.id if conversation else None
 
 
 class ProducerProposalSerializer(serializers.ModelSerializer):
@@ -22,6 +64,8 @@ class ProducerProposalSerializer(serializers.ModelSerializer):
     brief_status = serializers.CharField(source="project_request.status", read_only=True)
     brief_created_at = serializers.DateTimeField(source="project_request.created_at", read_only=True)
     application_status = serializers.SerializerMethodField()
+    project_id = serializers.SerializerMethodField()
+    conversation_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Proposal
@@ -40,9 +84,25 @@ class ProducerProposalSerializer(serializers.ModelSerializer):
             "amount",
             "message",
             "application_status",
+            "project_id",
+            "conversation_id",
             "created_at",
         )
         read_only_fields = fields
+
+    def _get_project(self, obj):
+        brief = obj.project_request
+        if brief.status != ProjectRequest.STATUS_ACCEPTED or brief.producer_id != obj.producer_id:
+            return None
+        return (
+            Project.objects.filter(
+                artist=brief.artist,
+                producer=obj.producer,
+                title=brief.title,
+            )
+            .order_by("-created_at")
+            .first()
+        )
 
     def get_artist_avatar_obj(self, obj):
         profile = getattr(obj.project_request.artist, "artist_profile", None)
@@ -57,6 +117,15 @@ class ProducerProposalSerializer(serializers.ModelSerializer):
         if brief.status == ProjectRequest.STATUS_REJECTED:
             return "rejected"
         return "pending"
+
+    def get_project_id(self, obj):
+        project = self._get_project(obj)
+        return project.id if project else None
+
+    def get_conversation_id(self, obj):
+        project = self._get_project(obj)
+        conversation = ensure_project_conversation(project)
+        return conversation.id if conversation else None
 
 
 class ProjectRequestSerializer(serializers.ModelSerializer):
@@ -180,6 +249,7 @@ class ProjectSerializer(serializers.ModelSerializer):
     producer_username = serializers.CharField(source="producer.username", read_only=True)
     milestones = MilestoneSerializer(many=True, read_only=True)
     workflow_summary = serializers.SerializerMethodField()
+    conversation_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Project
@@ -202,6 +272,7 @@ class ProjectSerializer(serializers.ModelSerializer):
             "delivery_timeline_days",
             "revision_allowance",
             "linked_conversation_hint",
+            "conversation_id",
             "budget",
             "offer_price",
             "status",
@@ -227,3 +298,9 @@ class ProjectSerializer(serializers.ModelSerializer):
             "approved_milestones": sum(1 for item in milestones if item.status == Milestone.STATUS_APPROVED),
             "stage_label": obj.get_workflow_stage_display(),
         }
+
+    def get_conversation_id(self, obj):
+        conversation = ensure_project_conversation(obj)
+        return conversation.id if conversation else None
+
+

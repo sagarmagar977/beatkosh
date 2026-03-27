@@ -7,6 +7,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/app/auth-context";
 import { apiRequest } from "@/lib/api";
 
+const ESEWA_PENDING_PAYMENT_KEY = "beatkosh_esewa_pending_payment";
+
 type EsewaCompleteResponse = {
   payment_id: number;
   status: string;
@@ -17,15 +19,49 @@ type EsewaCompleteResponse = {
 
 type Phase = "loading" | "success" | "pending" | "failed";
 
+type PendingEsewaPayment = {
+  paymentId?: number;
+  orderId?: number;
+  buyerId?: number | null;
+  buyerUsername?: string | null;
+  createdAt?: string;
+};
+
+function readPendingEsewaPayment(): PendingEsewaPayment | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.sessionStorage.getItem(ESEWA_PENDING_PAYMENT_KEY);
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as PendingEsewaPayment;
+  } catch {
+    return null;
+  }
+}
+
 export default function EsewaReturnPage() {
   const params = useParams<{ paymentId: string }>();
   const searchParams = useSearchParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const [phase, setPhase] = useState<Phase>("loading");
   const [message, setMessage] = useState("Verifying your eSewa payment with the server...");
 
   const paymentId = params.paymentId;
   const data = searchParams.get("data");
+  const pendingPayment = useMemo(() => readPendingEsewaPayment(), []);
+  const hasAccountMismatch = Boolean(
+    pendingPayment?.paymentId &&
+      paymentId &&
+      String(pendingPayment.paymentId) === String(paymentId) &&
+      pendingPayment.buyerId &&
+      user?.id &&
+      pendingPayment.buyerId !== user.id,
+  );
 
   const blockingMessage = useMemo(() => {
     if (!paymentId) {
@@ -34,11 +70,17 @@ export default function EsewaReturnPage() {
     if (!token) {
       return "Login is required to verify the payment and unlock your purchase.";
     }
+    if (hasAccountMismatch) {
+      const expectedUser = pendingPayment?.buyerUsername
+        ? ` as ${pendingPayment.buyerUsername}`
+        : " with the account that started checkout";
+      return `This payment was started by a different BeatKosh account. Please sign out and sign back in${expectedUser}, then open this return link again.`;
+    }
     if (!data) {
       return "eSewa did not return the signed payment payload.";
     }
     return null;
-  }, [data, paymentId, token]);
+  }, [data, hasAccountMismatch, paymentId, pendingPayment?.buyerUsername, token]);
 
   useEffect(() => {
     if (blockingMessage || !paymentId || !data || !token) {
@@ -54,6 +96,9 @@ export default function EsewaReturnPage() {
         });
 
         if (result.status === "success") {
+          if (typeof window !== "undefined") {
+            window.sessionStorage.removeItem(ESEWA_PENDING_PAYMENT_KEY);
+          }
           setPhase("success");
           setMessage("Payment verified. Your order is now marked paid, downloads are unlocked, and producer settlement has been recorded.");
           return;

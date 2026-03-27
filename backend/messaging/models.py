@@ -13,11 +13,20 @@ class Conversation(models.Model):
 class Message(models.Model):
     conversation = models.ForeignKey(Conversation, on_delete=models.CASCADE, related_name="messages")
     sender = models.ForeignKey(User, on_delete=models.CASCADE, related_name="messages_sent")
-    content = models.TextField()
-    attachments = models.JSONField(default=list, blank=True)
+    content = models.TextField(blank=True, default="")
     timestamp = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ("timestamp",)
 
-# Create your models here.
+
+class MessageAttachment(models.Model):
+    message = models.ForeignKey(Message, on_delete=models.CASCADE, related_name="attachments")
+    file = models.FileField(upload_to="messages/attachments/%Y/%m/%d/")
+    original_name = models.CharField(max_length=255)
+    content_type = models.CharField(max_length=120, blank=True)
+    size = models.PositiveBigIntegerField(default=0)
+    uploaded_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("uploaded_at", "id")

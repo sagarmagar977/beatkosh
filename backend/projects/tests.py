@@ -3,6 +3,7 @@ from rest_framework import status
 from rest_framework.test import APITestCase
 
 from accounts.models import User
+from messaging.models import Conversation
 from projects.models import Project, ProjectRequest
 
 
@@ -204,6 +205,12 @@ class ProjectsApiTests(APITestCase):
         self.assertEqual(project.instrument_types, ["Piano", "Synthesizer"])
         self.assertEqual(project.mood_types, ["Dark", "Energetic"])
         self.assertEqual(str(project.offer_price), "450.00")
+        conversation = Conversation.objects.get(project=project)
+        self.assertEqual(conversation.participants.count(), 2)
+        self.assertTrue(conversation.participants.filter(id=self.artist.id).exists())
+        self.assertTrue(conversation.participants.filter(id=self.producer.id).exists())
+        self.assertEqual(accept_response.data["project"]["conversation_id"], conversation.id)
+        self.assertEqual(accept_response.data["proposal"]["conversation_id"], conversation.id)
 
         projects_response = self.client.get(reverse("project-list"))
         self.assertEqual(projects_response.status_code, status.HTTP_200_OK)
@@ -254,5 +261,3 @@ class ProjectsApiTests(APITestCase):
         self.assertEqual(len(response.data), 1)
         self.assertEqual(response.data[0]["id"], own_response.data["id"])
         self.assertEqual(response.data[0]["status"], ProjectRequest.STATUS_PENDING)
-
-

@@ -145,6 +145,64 @@ class AnalyticsApiTests(APITestCase):
         similar_producers = self.client.get(reverse("similar-producers", kwargs={"producer_id": producer_a.id}))
         self.assertEqual(similar_producers.status_code, status.HTTP_200_OK)
 
+    def test_recommendations_fill_limit_and_today_feed_uses_recent_history(self):
+        seed_producer = User.objects.create_user(
+            username="seedproducer",
+            email="seedproducer@example.com",
+            password="strong-pass-123",
+            is_artist=False,
+            is_producer=True,
+            active_role="producer",
+        )
+        pool_producer = User.objects.create_user(
+            username="poolproducer",
+            email="poolproducer@example.com",
+            password="strong-pass-123",
+            is_artist=False,
+            is_producer=True,
+            active_role="producer",
+        )
+        artist = User.objects.create_user(
+            username="recommendfan",
+            email="recommendfan@example.com",
+            password="strong-pass-123",
+            is_artist=True,
+            is_producer=False,
+            active_role="artist",
+        )
+        seed_beat = Beat.objects.create(
+            producer=seed_producer,
+            title="Seed Beat",
+            genre="Trap",
+            mood="Dark",
+            bpm=120,
+            base_price="10.00",
+        )
+        for index in range(12):
+            Beat.objects.create(
+                producer=pool_producer,
+                title=f"Candidate {index}",
+                genre="Trap" if index < 6 else "LoFi",
+                mood="Dark" if index < 6 else "Calm",
+                bpm=120 + index,
+                base_price="12.00",
+            )
+
+        login = self.client.post(reverse("login"), {"username": "recommendfan", "password": "strong-pass-123"}, format="json")
+        self.client.credentials(HTTP_AUTHORIZATION=f"Bearer {login.data['access']}")
+        self.client.post(reverse("listening-play"), {"beat_id": seed_beat.id}, format="json")
+
+        recommended = self.client.get(reverse("recommended-beats"))
+        self.assertEqual(recommended.status_code, status.HTTP_200_OK)
+        self.assertEqual(len(recommended.data["beats"]), 8)
+        self.assertEqual(recommended.data["based_on"], "your top listening history, completions, and likes")
+
+        home_response = self.client.get(reverse("listening-home"))
+        self.assertEqual(home_response.status_code, status.HTTP_200_OK)
+        shelves = {entry["key"]: entry for entry in home_response.data["shelves"]}
+        self.assertEqual(len(shelves["top-picks-today"]["beats"]), 8)
+        self.assertEqual(shelves["top-picks-today"]["subtitle"], "top 10 from your last 24 hours")
+
 
     def test_listening_history_isolated_per_user(self):
         producer = User.objects.create_user(

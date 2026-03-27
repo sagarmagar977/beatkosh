@@ -4,6 +4,10 @@ const allowedDevOrigins = (process.env.NEXT_ALLOWED_DEV_ORIGINS ?? "")
   .split(",")
   .map((origin) => origin.trim())
   .filter(Boolean);
+const proxyClientMaxBodySize = Number.parseInt(
+  process.env.NEXT_PROXY_CLIENT_MAX_BODY_SIZE_BYTES ?? `${1024 * 1024 * 1024}`,
+  10,
+);
 
 type RemotePattern = Exclude<NonNullable<NextConfig["images"]>["remotePatterns"], undefined>[number];
 
@@ -34,6 +38,11 @@ function resolveRemoteImagePatterns(): RemotePattern[] {
 const nextConfig: NextConfig = {
   trailingSlash: true,
   ...(allowedDevOrigins.length ? { allowedDevOrigins } : {}),
+  experimental: {
+    proxyClientMaxBodySize: Number.isFinite(proxyClientMaxBodySize) && proxyClientMaxBodySize > 0
+      ? proxyClientMaxBodySize
+      : 1024 * 1024 * 1024,
+  },
   images: {
     remotePatterns: resolveRemoteImagePatterns(),
   },

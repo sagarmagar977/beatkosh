@@ -21,6 +21,12 @@ function applyTheme(theme: Theme) {
 }
 
 function getInitialTheme(): Theme {
+  if (typeof window !== "undefined") {
+    const storedTheme = window.localStorage.getItem(STORAGE_KEY);
+    if (storedTheme === "dark" || storedTheme === "light") {
+      return storedTheme;
+    }
+  }
   return "dark";
 }
 

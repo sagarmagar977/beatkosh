@@ -1,10 +1,11 @@
 "use client";
 
-import { ArrowUpRight, BadgeCheck, Camera, Heart, PencilLine, Play, ShieldAlert, Users, WalletCards, X } from "lucide-react";
-import { useRouter } from "next/navigation";
-import { ChangeEvent, useEffect, useMemo, useRef, useState } from "react";
+import { ArrowUpRight, BadgeCheck, Camera, Heart, Music4, Package, Pencil, PencilLine, Play, ShieldAlert, Trash2, Users, WalletCards, X } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { ChangeEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { useTheme } from "@/app/providers";
 import { BeatListRow } from "@/components/beat-list-row";
 import { usePlayer } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
@@ -89,9 +90,45 @@ type ListeningHistoryItem = {
   last_played_at: string;
 };
 
+type BeatDraft = {
+  id: number;
+  title: string;
+  base_price: string;
+  commercial_mode: string;
+  status: "draft" | "published";
+  current_step: number;
+  updated_at?: string;
+  created_at?: string;
+};
 
-type PrivateTab = "beats" | "playlists" | "history" | "analytics";
+type SoundKitDraft = {
+  id: number;
+  title: string;
+  base_price: string;
+  kit_type: string;
+  status: "draft" | "published";
+  current_step: number;
+  updated_at?: string;
+  created_at?: string;
+};
+
+type PrivateTab = "beats" | "playlists" | "history" | "analytics" | "drafts";
 type TrackView = "recent" | "mostPlayed" | "topLiked";
+const PRIVATE_TABS: PrivateTab[] = ["beats", "playlists", "history", "analytics", "drafts"];
+const TRACK_VIEWS: TrackView[] = ["recent", "mostPlayed", "topLiked"];
+const RANGE_KEYS: RangeKey[] = ["7d", "30d", "90d"];
+
+function isPrivateTab(value: string | null): value is PrivateTab {
+  return Boolean(value && PRIVATE_TABS.includes(value as PrivateTab));
+}
+
+function isTrackView(value: string | null): value is TrackView {
+  return Boolean(value && TRACK_VIEWS.includes(value as TrackView));
+}
+
+function isRangeKey(value: string | null): value is RangeKey {
+  return Boolean(value && RANGE_KEYS.includes(value as RangeKey));
+}
 
 function SectionHeader({ title, action, onAction }: { title: string; action?: string; onAction?: () => void }) {
   return (
@@ -144,9 +181,20 @@ function formatReleaseYear(raw?: string) {
   return parsed.getFullYear().toString();
 }
 
+function formatDate(raw?: string) {
+  if (!raw) return "-";
+  const value = new Date(raw);
+  return Number.isNaN(value.getTime())
+    ? raw
+    : value.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+}
+
 export default function ProducerPrivateProfilePage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { token, user } = useAuth();
+  const { theme } = useTheme();
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
   const library = useBeatLibrary(user?.id, token);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -155,9 +203,8 @@ export default function ProducerPrivateProfilePage() {
   const [trust, setTrust] = useState<TrustSummary | null>(null);
   const [dashboard, setDashboard] = useState<DashboardSummary | null>(null);
   const [history, setHistory] = useState<ListeningHistoryItem[]>([]);
-  const [selectedRange, setSelectedRange] = useState<RangeKey>("30d");
-  const [tab, setTab] = useState<PrivateTab>("beats");
-  const [trackView, setTrackView] = useState<TrackView>("recent");
+  const [beatDrafts, setBeatDrafts] = useState<BeatDraft[]>([]);
+  const [kitDrafts, setKitDrafts] = useState<SoundKitDraft[]>([]);
   const [profileName, setProfileName] = useState("");
   const [profileBio, setProfileBio] = useState("");
   const [genreOptions, setGenreOptions] = useState<string[]>([]);
@@ -166,8 +213,53 @@ export default function ProducerPrivateProfilePage() {
   const [avatarPreview, setAvatarPreview] = useState("");
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [draftBusyId, setDraftBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const tab = isPrivateTab(searchParams.get("tab")) ? searchParams.get("tab") : "beats";
+  const selectedRange = isRangeKey(searchParams.get("range")) ? searchParams.get("range") : "30d";
+  const trackView = isTrackView(searchParams.get("view")) ? searchParams.get("view") : "recent";
+
+  const buildProfileUrl = useCallback((updates: Partial<{ tab: PrivateTab; range: RangeKey | null; view: TrackView | null }>) => {
+    const params = new URLSearchParams(searchParams.toString());
+    const nextTab = updates.tab ?? tab;
+    const nextRange = updates.range === undefined ? selectedRange : updates.range;
+    const nextView = updates.view === undefined ? trackView : updates.view;
+
+    params.set("tab", nextTab);
+
+    if (nextTab === "analytics" && nextRange) {
+      params.set("range", nextRange);
+    } else {
+      params.delete("range");
+    }
+
+    if (nextTab === "beats" && nextView) {
+      params.set("view", nextView);
+    } else {
+      params.delete("view");
+    }
+
+    const query = params.toString();
+    return query ? `${pathname}?${query}` : pathname;
+  }, [pathname, searchParams, selectedRange, tab, trackView]);
+
+  useEffect(() => {
+    const currentUrl = `${pathname}${searchParams.toString() ? `?${searchParams.toString()}` : ""}`;
+    const canonicalUrl = buildProfileUrl({});
+    if (canonicalUrl !== currentUrl) {
+      router.replace(canonicalUrl, { scroll: false });
+    }
+  }, [buildProfileUrl, pathname, router, searchParams]);
+
+  const navigateProfileState = (updates: Partial<{ tab: PrivateTab; range: RangeKey | null; view: TrackView | null }>, historyMode: "push" | "replace" = "push") => {
+    const href = buildProfileUrl(updates);
+    if (historyMode === "replace") {
+      router.replace(href, { scroll: false });
+      return;
+    }
+    router.push(href, { scroll: false });
+  };
 
   useEffect(() => {
     if (!token || !user?.is_producer) {
@@ -176,13 +268,15 @@ export default function ProducerPrivateProfilePage() {
 
     const run = async () => {
       try {
-        const [profileResult, beatsResult, trustResult, dashboardResult, historyResult, metadataOptions] = await Promise.all([
+        const [profileResult, beatsResult, trustResult, dashboardResult, historyResult, metadataOptions, beatDraftResults, kitDraftResults] = await Promise.all([
           apiRequest<ProducerProfile>("/account/producer-profile/", { token }),
           apiRequest<Beat[]>(`/beats/?producer=${user.id}`),
           apiRequest<TrustSummary>(`/account/producer-trust/${user.id}/`),
           apiRequest<DashboardSummary>(`/analytics/producer/${user.id}/dashboard-summary/?range=${selectedRange}`, { token }),
           apiRequest<ListeningHistoryItem[]>("/analytics/listening/recent/", { token }),
           apiRequest<BeatMetadataOptions>("/beats/metadata-options/"),
+          apiRequest<BeatDraft[]>("/beats/upload-drafts/", { token }),
+          apiRequest<SoundKitDraft[]>("/soundkits/upload-drafts/", { token }),
         ]);
         setProfile(profileResult);
         setProfileName(profileResult.producer_name || "");
@@ -199,6 +293,8 @@ export default function ProducerPrivateProfilePage() {
         setDashboard(dashboardResult);
         setHistory(historyResult);
         setGenreOptions(metadataOptions.genres);
+        setBeatDrafts(beatDraftResults.filter((item) => item.status === "draft"));
+        setKitDrafts(kitDraftResults.filter((item) => item.status === "draft"));
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load your producer profile");
@@ -357,6 +453,35 @@ export default function ProducerPrivateProfilePage() {
   const bestPerformer = useMemo(() => {
     return [...beats].sort((a, b) => (b.play_count ?? 0) - (a.play_count ?? 0))[0] ?? null;
   }, [beats]);
+  const totalDrafts = beatDrafts.length + kitDrafts.length;
+
+  const handleDeleteBeatDraft = async (draftId: number) => {
+    if (!token || !window.confirm("Delete this beat draft?")) return;
+    setDraftBusyId(`beat-${draftId}`);
+    try {
+      await apiRequest(`/beats/upload-drafts/${draftId}/`, { method: "DELETE", token });
+      setBeatDrafts((current) => current.filter((item) => item.id !== draftId));
+      notify("Beat draft deleted.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete beat draft");
+    } finally {
+      setDraftBusyId(null);
+    }
+  };
+
+  const handleDeleteKitDraft = async (draftId: number) => {
+    if (!token || !window.confirm("Delete this sound-kit draft?")) return;
+    setDraftBusyId(`kit-${draftId}`);
+    try {
+      await apiRequest(`/soundkits/upload-drafts/${draftId}/`, { method: "DELETE", token });
+      setKitDrafts((current) => current.filter((item) => item.id !== draftId));
+      notify("Sound-kit draft deleted.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Failed to delete sound-kit draft");
+    } finally {
+      setDraftBusyId(null);
+    }
+  };
 
   const renderBeatTab = () => {
     const heroBeat = sortedBeats[0] || beats[0] || null;
@@ -364,19 +489,29 @@ export default function ProducerPrivateProfilePage() {
     return (
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_280px]">
         <div className="space-y-6">
-          <section className="overflow-hidden rounded-[34px] border border-white/10 bg-[#121314]">
+          <section className="producer-space-hero overflow-hidden rounded-[34px]">
             <div
               className="relative p-6 sm:p-8"
-              style={{
-                background: heroBeat?.cover_art_obj
-                  ? `linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(18,19,20,0.9) 72%), url(${resolveMediaUrl(heroBeat.cover_art_obj)}) center/cover`
-                  : "linear-gradient(135deg, #ef3f23 0%, #7c1016 45%, #121314 100%)",
-              }}
             >
-              <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/55">Your producer space</p>
-              <h2 className="spotify-display mt-4 max-w-[720px] text-[3rem] leading-[0.9] text-white sm:text-[4.2rem]">{profileDisplayName}</h2>
-              <p className="mt-3 max-w-[640px] text-sm leading-6 text-white/72">{profile?.headline || "Manage your top beats, recent drops, playlists, and listening worlds from one profile hub."}</p>
-              <div className="mt-6 flex flex-wrap items-center gap-3">
+              {heroBeat?.cover_art_obj ? (
+                <div
+                  className="producer-space-hero-media"
+                  style={{ backgroundImage: `url(${resolveMediaUrl(heroBeat.cover_art_obj)})` }}
+                  aria-hidden="true"
+                />
+              ) : (
+                <div
+                  className="producer-space-hero-media"
+                  style={{ backgroundImage: "linear-gradient(135deg, #ef3f23 0%, #7c1016 45%, #121314 100%)" }}
+                  aria-hidden="true"
+                />
+              )}
+              <div className="producer-space-hero-overlay" aria-hidden="true" />
+              <div className="relative z-[1]">
+                <p className="producer-space-hero-kicker text-xs font-semibold uppercase tracking-[0.24em]">Your producer space</p>
+                <h2 className="producer-space-hero-title spotify-display mt-4 max-w-[720px] text-[3rem] leading-[0.9] sm:text-[4.2rem]">{profileDisplayName}</h2>
+                <p className="producer-space-hero-copy mt-3 max-w-[640px] text-sm leading-6">{profile?.headline || "Manage your top beats, recent drops, playlists, and listening worlds from one profile hub."}</p>
+                <div className="mt-6 flex flex-wrap items-center gap-3">
                 {heroBeat ? (
                   <button
                     type="button"
@@ -387,9 +522,10 @@ export default function ProducerPrivateProfilePage() {
                     Play top beat
                   </button>
                 ) : null}
-                <button type="button" onClick={() => router.push("/producer/upload-wizard")} className="inline-flex items-center gap-2 rounded-full border border-white/20 px-4 py-3 text-sm text-white/85">
+                <button type="button" onClick={() => router.push("/producer/upload-wizard")} className="producer-space-hero-secondary inline-flex items-center gap-2 rounded-full px-4 py-3 text-sm">
                   Upload new beat
                 </button>
+                </div>
               </div>
             </div>
           </section>
@@ -406,8 +542,8 @@ export default function ProducerPrivateProfilePage() {
                   <button
                     key={option.key}
                     type="button"
-                    onClick={() => setTrackView(option.key as TrackView)}
-                    className={`rounded-full px-4 py-2 text-sm transition ${trackView === option.key ? "bg-white text-black" : "bg-white/[0.04] text-white/70 hover:bg-white/[0.08]"}`}
+                    onClick={() => navigateProfileState({ tab: "beats", view: option.key as TrackView }, "replace")}
+                    className={`rounded-full px-4 py-2 text-sm transition ${trackView === option.key ? "bg-white text-black" : "producer-soft-card text-white/70 hover:bg-white/[0.08]"}`}
                   >
                     {option.label}
                   </button>
@@ -422,7 +558,7 @@ export default function ProducerPrivateProfilePage() {
                     key={beat.id}
                     type="button"
                     onClick={() => void handlePlay(beat, "producer-private-profile")}
-                    className="flex w-full items-center gap-4 rounded-[22px] px-3 py-3 text-left transition hover:bg-white/[0.04]"
+                    className="producer-soft-card flex w-full items-center gap-4 rounded-[22px] px-3 py-3 text-left transition hover:bg-white/[0.04]"
                   >
                     <span className="w-6 text-sm text-white/40">{index + 1}</span>
                     <div className="h-11 w-11 overflow-hidden rounded-xl bg-white/[0.05]">
@@ -445,7 +581,7 @@ export default function ProducerPrivateProfilePage() {
             <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
               {beats.slice(0, 10).map((beat) => (
                 <button key={beat.id} type="button" onClick={() => router.push(`/beats/${beat.id}`)} className="group w-[180px] flex-none text-left">
-                  <div className="overflow-hidden rounded-[22px] bg-white/[0.04]">
+                  <div className="producer-soft-card overflow-hidden rounded-[22px]">
                     {beat.cover_art_obj ? <img src={resolveMediaUrl(beat.cover_art_obj)} alt={beat.title} className="aspect-square w-full object-cover transition duration-300 group-hover:scale-[1.04]" /> : <div className="aspect-square w-full bg-[radial-gradient(circle_at_top,_rgba(255,95,31,0.42),_rgba(19,20,23,0.95)_62%)]" />}
                   </div>
                   <p className="mt-3 line-clamp-1 text-sm font-semibold text-white">{beat.title}</p>
@@ -460,7 +596,7 @@ export default function ProducerPrivateProfilePage() {
               <SectionHeader title="Featuring Other Producers" />
               <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
                 {featuredProducers.map((producer) => (
-                  <button key={producer.producer_id} type="button" onClick={() => router.push(`/producers/${producer.producer_id}`)} className="w-[210px] flex-none rounded-[26px] bg-white/[0.04] p-4 text-left transition hover:bg-white/[0.07]">
+                  <button key={producer.producer_id} type="button" onClick={() => router.push(`/producers/${producer.producer_id}`)} className="producer-soft-card w-[210px] flex-none rounded-[26px] p-4 text-left transition hover:bg-white/[0.07]">
                     {producer.avatar_obj ? <img src={resolveMediaUrl(producer.avatar_obj)} alt={producer.producer_name} className="h-20 w-20 rounded-full object-cover" /> : <div className="flex h-20 w-20 items-center justify-center rounded-full bg-[linear-gradient(135deg,#24423a,#0d1115)] text-2xl font-black text-white/85">{producer.producer_name.slice(0, 1).toUpperCase()}</div>}
                     <p className="mt-4 line-clamp-1 text-base font-semibold text-white">{producer.producer_name}</p>
                     <p className="mt-1 line-clamp-2 text-sm text-white/58">{producer.headline || `@${producer.username}`}</p>
@@ -476,7 +612,7 @@ export default function ProducerPrivateProfilePage() {
               <div className="mt-5 flex gap-4 overflow-x-auto pb-2">
                 {entry.beats.map((beat) => (
                   <button key={beat.id} type="button" onClick={() => router.push(`/beats/${beat.id}`)} className="group w-[180px] flex-none text-left">
-                    <div className="overflow-hidden rounded-[22px] bg-white/[0.04]">
+                    <div className="producer-soft-card overflow-hidden rounded-[22px]">
                       {beat.cover_art_obj ? <img src={resolveMediaUrl(beat.cover_art_obj)} alt={beat.title} className="aspect-square w-full object-cover transition duration-300 group-hover:scale-[1.04]" /> : <div className="aspect-square w-full bg-[radial-gradient(circle_at_top,_rgba(255,95,31,0.42),_rgba(19,20,23,0.95)_62%)]" />}
                     </div>
                     <p className="mt-3 line-clamp-1 text-sm font-semibold text-white">{beat.title}</p>
@@ -496,7 +632,7 @@ export default function ProducerPrivateProfilePage() {
               {sortedBeats.slice(0, 5).map((beat) => {
                 const isCurrent = currentTrack?.id === beat.id;
                 return (
-                  <button key={beat.id} type="button" onClick={() => void handlePlay(beat, "producer-private-sidebar")} className="flex w-full items-center gap-3 rounded-2xl bg-white/[0.04] px-3 py-3 text-left transition hover:bg-white/[0.08]">
+                  <button key={beat.id} type="button" onClick={() => void handlePlay(beat, "producer-private-sidebar")} className="producer-soft-card flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition hover:bg-white/[0.08]">
                     <div className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-black">
                       <Play className="h-4 w-4 fill-current" strokeWidth={1.8} aria-hidden="true" />
                     </div>
@@ -517,11 +653,12 @@ export default function ProducerPrivateProfilePage() {
                 { key: "beats", label: "Beats" },
                 { key: "playlists", label: "Playlists" },
                 { key: "history", label: "History" },
+                { key: "drafts", label: "Drafts" },
               ].map((option) => (
                 <button
                   key={option.key}
                   type="button"
-                  onClick={() => setTab(option.key as PrivateTab)}
+                  onClick={() => navigateProfileState({ tab: option.key as PrivateTab })}
                   className={`rounded-full border px-4 py-2 text-sm font-medium transition ${tab === option.key ? "border-[#8b4dff] bg-[#8b4dff] text-white" : "theme-soft theme-text-muted"}`}
                 >
                   {option.label}
@@ -536,7 +673,7 @@ export default function ProducerPrivateProfilePage() {
 
   const renderPlaylistsTab = () => (
     <section className="grid gap-4 xl:grid-cols-2">
-      <div className="rounded-[26px] border border-white/10 bg-[#171a22] p-5">
+      <div className="producer-dark-panel rounded-[26px] p-5">
         <div className="flex items-center justify-between gap-3">
           <div>
             <p className="text-xs uppercase tracking-[0.18em] text-white/42">System playlist</p>
@@ -573,7 +710,7 @@ export default function ProducerPrivateProfilePage() {
 
       <div className="space-y-4">
         {library.playlists.map((playlist) => (
-          <section key={playlist.id} className="rounded-[26px] border border-white/10 bg-[#171a22] p-5">
+          <section key={playlist.id} className="producer-dark-panel rounded-[26px] p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs uppercase tracking-[0.18em] text-white/42">Custom playlist</p>
@@ -608,7 +745,7 @@ export default function ProducerPrivateProfilePage() {
             </div>
           </section>
         ))}
-        {library.playlists.length === 0 ? <p className="rounded-[26px] border border-white/10 bg-[#171a22] p-5 text-sm text-white/55">No custom playlists yet. Use the three-dot menu on any beat to create one.</p> : null}
+        {library.playlists.length === 0 ? <p className="producer-dark-panel rounded-[26px] p-5 text-sm text-white/55">No custom playlists yet. Use the three-dot menu on any beat to create one.</p> : null}
       </div>
     </section>
   );
@@ -639,12 +776,12 @@ export default function ProducerPrivateProfilePage() {
   );
 
   const renderAnalyticsTab = () => (
-    <section className="mt-4 overflow-hidden rounded-[28px] border border-white/10 bg-[radial-gradient(circle_at_top_left,rgba(140,77,255,0.22),transparent_28%),linear-gradient(180deg,#17111f_0%,#0f0b17_100%)] p-5 sm:p-6">
+    <section className="producer-analytics-hero mt-4 overflow-hidden rounded-[28px] p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="text-xs uppercase tracking-[0.24em] text-white/45">Producer analytics</p>
-          <h2 className="spotify-display mt-3 text-[2rem] leading-none text-white sm:text-[2.8rem]">Overview</h2>
-          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
+          <p className="theme-text-faint text-xs uppercase tracking-[0.24em]">Producer analytics</p>
+          <h2 className="spotify-display theme-text-main mt-3 text-[2rem] leading-none sm:text-[2.8rem]">Overview</h2>
+          <p className="theme-text-muted mt-3 max-w-2xl text-sm leading-6">
             Plays, sales, audience growth, and conversion for your producer profile.
           </p>
         </div>
@@ -657,11 +794,11 @@ export default function ProducerPrivateProfilePage() {
             <button
               key={option.key}
               type="button"
-              onClick={() => setSelectedRange(option.key)}
+              onClick={() => navigateProfileState({ tab: "analytics", range: option.key }, "replace")}
               className={`rounded-full px-4 py-2 text-sm transition ${
                 selectedRange === option.key
-                  ? "bg-white text-black"
-                  : "border border-white/10 bg-white/[0.04] text-white/72 hover:bg-white/[0.08]"
+                  ? "producer-analytics-filter producer-analytics-filter-active"
+                  : "producer-analytics-filter"
               }`}
             >
               {option.label}
@@ -670,51 +807,51 @@ export default function ProducerPrivateProfilePage() {
         </div>
       </div>
 
-      <div className="mt-3 text-xs uppercase tracking-[0.18em] text-white/35">{currentRangeLabel}</div>
+      <div className="theme-text-quiet mt-3 text-xs uppercase tracking-[0.18em]">{currentRangeLabel}</div>
 
       <div className="mt-5 grid gap-3 lg:grid-cols-4">
-        <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+        <div className="producer-analytics-card rounded-[22px] p-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Revenue</p>
+            <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Revenue</p>
             <WalletCards className="h-4 w-4 text-[#b79cff]" strokeWidth={1.8} aria-hidden="true" />
           </div>
-          <p className="mt-3 text-2xl font-semibold text-white">Rs {formatCurrency(revenueTotal)}</p>
-          <p className="mt-1 text-sm text-white/58">{dashboard?.purchases ?? 0} paid beat orders</p>
+          <p className="theme-text-main mt-3 text-2xl font-semibold">Rs {formatCurrency(revenueTotal)}</p>
+          <p className="theme-text-muted mt-1 text-sm">{dashboard?.purchases ?? 0} paid beat orders</p>
         </div>
-        <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+        <div className="producer-analytics-card rounded-[22px] p-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Followers</p>
+            <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Followers</p>
             <Users className="h-4 w-4 text-[#9ee8dc]" strokeWidth={1.8} aria-hidden="true" />
           </div>
-          <p className="mt-3 text-2xl font-semibold text-white">{formatCompact(dashboard?.follower_count ?? 0)}</p>
-          <p className="mt-1 text-sm text-white/58">Audience following this producer profile</p>
+          <p className="theme-text-main mt-3 text-2xl font-semibold">{formatCompact(dashboard?.follower_count ?? 0)}</p>
+          <p className="theme-text-muted mt-1 text-sm">Audience following this producer profile</p>
         </div>
-        <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+        <div className="producer-analytics-card rounded-[22px] p-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Conversion</p>
+            <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Conversion</p>
             <ArrowUpRight className="h-4 w-4 text-[#ffb06d]" strokeWidth={1.8} aria-hidden="true" />
           </div>
-          <p className="mt-3 text-2xl font-semibold text-white">{dashboard?.conversion_rate?.toFixed(1) ?? "0.0"}%</p>
-          <p className="mt-1 text-sm text-white/58">{dashboard?.skip_events ?? 0} skip events in this range</p>
+          <p className="theme-text-main mt-3 text-2xl font-semibold">{dashboard?.conversion_rate?.toFixed(1) ?? "0.0"}%</p>
+          <p className="theme-text-muted mt-1 text-sm">{dashboard?.skip_events ?? 0} skip events in this range</p>
         </div>
-        <div className="rounded-[22px] border border-white/10 bg-white/[0.04] p-4">
+        <div className="producer-analytics-card rounded-[22px] p-4">
           <div className="flex items-center justify-between gap-3">
-            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Hiring</p>
+            <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Hiring</p>
             <BadgeCheck className="h-4 w-4 text-[#ff9fc4]" strokeWidth={1.8} aria-hidden="true" />
           </div>
-          <p className="mt-3 text-2xl font-semibold text-white">{dashboard?.hiring_inquiry_count ?? 0}</p>
-          <p className="mt-1 text-sm text-white/58">{dashboard?.activity_drop_count ?? 0} activity drops logged</p>
+          <p className="theme-text-main mt-3 text-2xl font-semibold">{dashboard?.hiring_inquiry_count ?? 0}</p>
+          <p className="theme-text-muted mt-1 text-sm">{dashboard?.activity_drop_count ?? 0} activity drops logged</p>
         </div>
       </div>
 
       <div className="mt-5 grid gap-4 xl:grid-cols-[minmax(0,1.4fr)_280px]">
-        <section className="rounded-[24px] border border-white/10 bg-black/20 p-4">
+        <section className="producer-analytics-panel rounded-[24px] p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <p className="text-lg font-semibold text-white">Plays and sales trend</p>
-              <p className="mt-1 text-sm text-white/58">Daily activity across the selected range.</p>
+              <p className="theme-text-main text-lg font-semibold">Plays and sales trend</p>
+              <p className="theme-text-muted mt-1 text-sm">Daily activity across the selected range.</p>
             </div>
-            <div className="flex flex-wrap gap-3 text-xs uppercase tracking-[0.16em] text-white/54">
+            <div className="theme-text-muted flex flex-wrap gap-3 text-xs uppercase tracking-[0.16em]">
               <span className="inline-flex items-center gap-2">
                 <span className="h-2.5 w-2.5 rounded-full bg-[#b89dff]" />
                 <span>Plays</span>
@@ -727,7 +864,7 @@ export default function ProducerPrivateProfilePage() {
           </div>
           <svg viewBox="0 0 100 60" className="mt-5 h-[220px] w-full">
             {[12, 28, 44].map((line) => (
-              <line key={line} x1="0" y1={line} x2="100" y2={line} stroke="rgba(255,255,255,0.08)" strokeWidth="0.35" />
+              <line key={line} x1="0" y1={line} x2="100" y2={line} stroke={theme === "light" ? "rgba(98,73,160,0.18)" : "rgba(255,255,255,0.08)"} strokeWidth="0.35" />
             ))}
             <polyline
               fill="none"
@@ -750,19 +887,19 @@ export default function ProducerPrivateProfilePage() {
               points={salesLine || "0,55 20,52 40,50 60,46 80,43 100,38"}
             />
             {salesDots.map((point) => (
-              <circle key={`sale-${point.index}`} cx={point.x} cy={point.y} r="1.35" fill="#0f0b17" stroke="#ff9fc4" strokeWidth="0.7" />
+              <circle key={`sale-${point.index}`} cx={point.x} cy={point.y} r="1.35" fill={theme === "light" ? "#ffffff" : "#0f0b17"} stroke="#ff9fc4" strokeWidth="0.7" />
             ))}
           </svg>
-          <div className={`mt-2 grid gap-2 text-[11px] uppercase tracking-[0.16em] text-white/36 ${analyticsLabels.length > 8 ? "grid-cols-4 sm:grid-cols-8" : "grid-cols-3 sm:grid-cols-6"}`}>
+          <div className={`theme-text-muted mt-2 grid gap-2 text-[11px] uppercase tracking-[0.16em] ${analyticsLabels.length > 8 ? "grid-cols-4 sm:grid-cols-8" : "grid-cols-3 sm:grid-cols-6"}`}>
             {(analyticsLabels.length ? analyticsLabels : ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]).map((label) => (
               <span key={label}>{label}</span>
             ))}
           </div>
         </section>
 
-        <aside className="rounded-[24px] border border-white/10 bg-black/20 p-4">
-          <p className="text-lg font-semibold text-white">Best sold beats</p>
-          <p className="mt-1 text-sm text-white/55">Your strongest sellers for this range, plus a quick health snapshot.</p>
+        <aside className="producer-analytics-panel rounded-[24px] p-4">
+          <p className="theme-text-main text-lg font-semibold">Best sold beats</p>
+          <p className="theme-text-muted mt-1 text-sm">Your strongest sellers for this range, plus a quick health snapshot.</p>
           <div className="mt-4 space-y-3">
             {topSellingBeats.length ? (
               topSellingBeats.map((entry, index) => (
@@ -770,9 +907,9 @@ export default function ProducerPrivateProfilePage() {
                   key={`${entry.beat.id}-${index}`}
                   type="button"
                   onClick={() => router.push(`/beats/${entry.beat.id}`)}
-                  className="flex w-full items-center gap-3 rounded-[18px] border border-white/8 bg-white/[0.03] p-3 text-left transition hover:bg-white/[0.06]"
+                  className="producer-analytics-item flex w-full items-center gap-3 rounded-[18px] p-3 text-left transition hover:bg-white/[0.06]"
                 >
-                  <span className="w-5 text-xs font-semibold text-white/42">{index + 1}</span>
+                  <span className="theme-text-faint w-5 text-xs font-semibold">{index + 1}</span>
                   <div className="h-12 w-12 overflow-hidden rounded-xl bg-white/[0.05]">
                     {entry.beat.cover_art_obj ? (
                       <img src={resolveMediaUrl(entry.beat.cover_art_obj)} alt={entry.beat.title} className="h-full w-full object-cover" />
@@ -781,35 +918,177 @@ export default function ProducerPrivateProfilePage() {
                     )}
                   </div>
                   <div className="min-w-0 flex-1">
-                    <p className="line-clamp-1 text-sm font-semibold text-white">{entry.beat.title}</p>
-                    <p className="mt-1 text-xs text-white/48">{entry.sales_count} sales | Rs {formatCurrency(Number(entry.revenue ?? 0))}</p>
+                    <p className="theme-text-main line-clamp-1 text-sm font-semibold">{entry.beat.title}</p>
+                    <p className="theme-text-muted mt-1 text-xs">{entry.sales_count} sales | Rs {formatCurrency(Number(entry.revenue ?? 0))}</p>
                   </div>
                 </button>
               ))
             ) : (
-              <div className="rounded-[18px] border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+              <div className="producer-analytics-item rounded-[18px] border-dashed p-4 text-sm theme-text-muted">
                 No sales have been recorded in this range yet.
               </div>
             )}
           </div>
           <div className="mt-5 space-y-3">
-            <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-white/38">Top performer</p>
-              <p className="mt-2 text-base font-semibold text-white">{bestPerformer?.title ?? "No beat data yet"}</p>
-              <p className="mt-1 text-sm text-white/58">{formatCompact(bestPerformer?.play_count ?? 0)} plays</p>
+            <div className="producer-analytics-item rounded-[18px] p-4">
+              <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Top performer</p>
+              <p className="theme-text-main mt-2 text-base font-semibold">{bestPerformer?.title ?? "No beat data yet"}</p>
+              <p className="theme-text-muted mt-1 text-sm">{formatCompact(bestPerformer?.play_count ?? 0)} plays</p>
             </div>
-            <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-white/38">Trust</p>
-              <p className="mt-2 text-base font-semibold text-white">{trust?.trust_score ?? 0}/100</p>
-              <p className="mt-1 text-sm text-white/58">{trust?.profile_completion ?? 0}% profile completion</p>
+            <div className="producer-analytics-item rounded-[18px] p-4">
+              <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Trust</p>
+              <p className="theme-text-main mt-2 text-base font-semibold">{trust?.trust_score ?? 0}/100</p>
+              <p className="theme-text-muted mt-1 text-sm">{trust?.profile_completion ?? 0}% profile completion</p>
             </div>
-            <div className="rounded-[18px] border border-white/8 bg-white/[0.03] p-4">
-              <p className="text-xs uppercase tracking-[0.18em] text-white/38">Purchase intent</p>
-              <p className="mt-2 text-base font-semibold text-white">{dashboard?.purchases ?? 0} purchases</p>
-              <p className="mt-1 text-sm text-white/58">{dashboard?.plays ?? 0} plays tracked in the selected window</p>
+            <div className="producer-analytics-item rounded-[18px] p-4">
+              <p className="theme-text-faint text-xs uppercase tracking-[0.18em]">Purchase intent</p>
+              <p className="theme-text-main mt-2 text-base font-semibold">{dashboard?.purchases ?? 0} purchases</p>
+              <p className="theme-text-muted mt-1 text-sm">{dashboard?.plays ?? 0} plays tracked in the selected window</p>
             </div>
           </div>
         </aside>
+      </div>
+    </section>
+  );
+
+  const renderDraftsTab = () => (
+    <section className="producer-drafts-hero mt-4 overflow-hidden rounded-[28px] p-5 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <p className="text-xs uppercase tracking-[0.24em] text-white/45">Upload drafts</p>
+          <h2 className="spotify-display mt-3 text-[2rem] leading-none text-white sm:text-[2.8rem]">Saved Uploads</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-6 text-white/65">
+            Continue unfinished beat and sound-kit uploads right from your profile workspace.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => router.push("/producer/upload-wizard?flow=beat&fresh=1")}
+          className="rounded-full border border-white/12 bg-white/[0.04] px-4 py-2.5 text-sm font-medium text-white/84 transition hover:bg-white/[0.08]"
+        >
+          New upload
+        </button>
+      </div>
+
+      <div className="mt-5 grid gap-3 lg:grid-cols-4">
+        <div className="producer-soft-card rounded-[22px] p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-white/42">Total drafts</p>
+          <p className="mt-3 text-2xl font-semibold text-white">{totalDrafts}</p>
+          <p className="mt-1 text-sm text-white/58">Uploads waiting to be finished</p>
+        </div>
+        <div className="producer-soft-card rounded-[22px] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Beat drafts</p>
+            <Music4 className="h-4 w-4 text-[#b89dff]" strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <p className="mt-3 text-2xl font-semibold text-white">{beatDrafts.length}</p>
+          <p className="mt-1 text-sm text-white/58">Metadata, media, and licensing in progress</p>
+        </div>
+        <div className="producer-soft-card rounded-[22px] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs uppercase tracking-[0.18em] text-white/42">Sound-kit drafts</p>
+            <Package className="h-4 w-4 text-[#9ee8dc]" strokeWidth={1.8} aria-hidden="true" />
+          </div>
+          <p className="mt-3 text-2xl font-semibold text-white">{kitDrafts.length}</p>
+          <p className="mt-1 text-sm text-white/58">Archive, preview, and pricing still in progress</p>
+        </div>
+        <div className="producer-soft-card rounded-[22px] p-4">
+          <p className="text-xs uppercase tracking-[0.18em] text-white/42">Next step</p>
+          <p className="mt-3 text-lg font-semibold text-white">{beatDrafts[0] || kitDrafts[0] ? "Resume a draft" : "Start a new upload"}</p>
+          <p className="mt-1 text-sm text-white/58">{beatDrafts[0] || kitDrafts[0] ? "Open any saved card below and continue where you left off." : "No saved drafts found yet."}</p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 xl:grid-cols-2">
+        <section className="producer-subpanel rounded-[24px] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-lg font-semibold text-white">Beat drafts</p>
+              <p className="mt-1 text-sm text-white/55">Resume unfinished beat uploads from the same card area as analytics.</p>
+            </div>
+            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/55">{beatDrafts.length}</span>
+          </div>
+          <div className="mt-4 space-y-3">
+            {beatDrafts.length ? beatDrafts.map((item) => (
+              <article key={item.id} className="flex flex-wrap items-center gap-3 rounded-[18px] border border-white/8 bg-white/[0.03] p-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.05] text-white/70">
+                  <Music4 className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-1 text-sm font-semibold text-white">{item.title || `Untitled beat #${item.id}`}</p>
+                  <p className="mt-1 text-xs text-white/48">Step {Math.max(item.current_step, 1)} | Rs {item.base_price || "0.00"} | {item.commercial_mode || "Presets"}</p>
+                  <p className="mt-1 text-xs text-white/38">Updated {formatDate(item.updated_at || item.created_at)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/producer/upload-wizard?flow=beat&draft=${item.id}`)}
+                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-white/80 transition hover:bg-white/[0.08]"
+                  title="Edit draft"
+                >
+                  <Pencil className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  disabled={draftBusyId === `beat-${item.id}`}
+                  onClick={() => void handleDeleteBeatDraft(item.id)}
+                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-white/80 transition hover:bg-white/[0.08] disabled:opacity-60"
+                  title="Delete draft"
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              </article>
+            )) : (
+              <div className="rounded-[18px] border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+                No beat drafts saved yet.
+              </div>
+            )}
+          </div>
+        </section>
+
+        <section className="producer-subpanel rounded-[24px] p-4">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-lg font-semibold text-white">Sound-kit drafts</p>
+              <p className="mt-1 text-sm text-white/55">Keep kits beside your producer metrics in the same workspace.</p>
+            </div>
+            <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-white/55">{kitDrafts.length}</span>
+          </div>
+          <div className="mt-4 space-y-3">
+            {kitDrafts.length ? kitDrafts.map((item) => (
+              <article key={item.id} className="flex flex-wrap items-center gap-3 rounded-[18px] border border-white/8 bg-white/[0.03] p-3">
+                <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-white/[0.05] text-white/70">
+                  <Package className="h-5 w-5" strokeWidth={1.8} aria-hidden="true" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <p className="line-clamp-1 text-sm font-semibold text-white">{item.title || `Untitled sound kit #${item.id}`}</p>
+                  <p className="mt-1 text-xs text-white/48">Step {Math.max(item.current_step, 1)} | Rs {item.base_price || "0.00"} | {item.kit_type || "Draft"}</p>
+                  <p className="mt-1 text-xs text-white/38">Updated {formatDate(item.updated_at || item.created_at)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => router.push(`/producer/upload-wizard?flow=kit&draft=${item.id}`)}
+                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-white/80 transition hover:bg-white/[0.08]"
+                  title="Edit draft"
+                >
+                  <Pencil className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                </button>
+                <button
+                  type="button"
+                  disabled={draftBusyId === `kit-${item.id}`}
+                  onClick={() => void handleDeleteKitDraft(item.id)}
+                  className="rounded-xl border border-white/10 bg-white/[0.04] p-3 text-white/80 transition hover:bg-white/[0.08] disabled:opacity-60"
+                  title="Delete draft"
+                >
+                  <Trash2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
+                </button>
+              </article>
+            )) : (
+              <div className="rounded-[18px] border border-dashed border-white/10 bg-white/[0.03] p-4 text-sm text-white/55">
+                No sound-kit drafts saved yet.
+              </div>
+            )}
+          </div>
+        </section>
       </div>
     </section>
   );
@@ -923,7 +1202,7 @@ export default function ProducerPrivateProfilePage() {
         </div>
       ) : null}
 
-      <div className="grid gap-6 pb-20 xl:grid-cols-[340px_minmax(0,1fr)] xl:items-start">
+      <div className="producer-profile-scope grid gap-6 pb-20 xl:grid-cols-[340px_minmax(0,1fr)] xl:items-start">
         <aside className="xl:sticky xl:top-[calc(var(--app-header-height,112px)+1.5rem)]">
           <section className="theme-surface rounded-[30px] px-5 py-4">
             <div className="flex justify-center">
@@ -1017,12 +1296,13 @@ export default function ProducerPrivateProfilePage() {
                 { key: "beats", label: "Beats" },
                 { key: "playlists", label: "Playlists" },
                 { key: "history", label: "History" },
+                { key: "drafts", label: "Drafts" },
                 { key: "analytics", label: "Analytics" },
               ].map((option) => (
                 <button
                   key={option.key}
                   type="button"
-                  onClick={() => setTab(option.key as PrivateTab)}
+                  onClick={() => navigateProfileState({ tab: option.key as PrivateTab })}
                   className={`rounded-full border px-4 py-2 text-sm font-medium transition ${tab === option.key ? "border-[#8b4dff] bg-[#8b4dff] text-white" : "theme-soft theme-text-muted"}`}
                 >
                   {option.label}
@@ -1034,6 +1314,7 @@ export default function ProducerPrivateProfilePage() {
               {tab === "beats" ? renderBeatTab() : null}
               {tab === "playlists" ? renderPlaylistsTab() : null}
               {tab === "history" ? renderHistoryTab() : null}
+              {tab === "drafts" ? renderDraftsTab() : null}
               {tab === "analytics" ? renderAnalyticsTab() : null}
             </div>
           </section>

@@ -6,6 +6,7 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { useTheme } from "@/app/providers";
 import { usePlayer, type PlayerTrack } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
 
@@ -154,6 +155,7 @@ export default function ProducerProfilePage() {
   const params = useParams<{ id: string }>();
   const router = useRouter();
   const { token, user } = useAuth();
+  const { theme } = useTheme();
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
   const userId = Number(params.id);
   const [profile, setProfile] = useState<ProducerProfile | null>(null);
@@ -210,6 +212,13 @@ export default function ProducerProfilePage() {
   const activeTopList = rankedBeats[trackView];
   const displayedTopList = showAllTop ? activeTopList : activeTopList.slice(0, 5);
   const heroBeat = rankedBeats.popular[0] || rankedBeats.recent[0] || beats[0] || null;
+  const heroBackground = heroBeat?.cover_art_obj
+    ? theme === "light"
+      ? `linear-gradient(135deg, rgba(233,255,246,0.94) 0%, rgba(215,248,235,0.84) 34%, rgba(255,255,255,0.72) 62%), url(${resolveMediaUrl(heroBeat.cover_art_obj)}) center/cover`
+      : `linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(18,19,20,0.9) 72%), url(${resolveMediaUrl(heroBeat.cover_art_obj)}) center/cover`
+    : theme === "light"
+      ? "linear-gradient(135deg, #ecfff7 0%, #d9f8eb 44%, #f8fffb 100%)"
+      : "linear-gradient(135deg, #ef3f23 0%, #7c1016 45%, #121314 100%)";
 
   const featuringProducers = useMemo(() => {
     const seen = new Set<number>();
@@ -309,7 +318,7 @@ export default function ProducerProfilePage() {
   };
 
   return (
-    <div className="pb-28">
+    <div className="producer-profile-scope pb-28">
       <div className="grid gap-6 lg:grid-cols-[minmax(240px,280px)_minmax(0,1fr)] 2xl:grid-cols-[320px_minmax(0,1fr)_290px]">
         <aside className="space-y-4 lg:app-sidebar-sticky 2xl:top-[calc(var(--app-header-height,112px)+1rem)]">
           <section className="theme-surface rounded-[32px] p-5 sm:p-6">
@@ -366,11 +375,7 @@ export default function ProducerProfilePage() {
           <section className="overflow-hidden rounded-[34px] border border-white/10 bg-[#121314]">
             <div
               className="relative p-5 sm:p-6 xl:p-8"
-              style={{
-                background: heroBeat?.cover_art_obj
-                  ? `linear-gradient(180deg, rgba(0,0,0,0.08) 0%, rgba(18,19,20,0.9) 72%), url(${resolveMediaUrl(heroBeat.cover_art_obj)}) center/cover`
-                  : "linear-gradient(135deg, #ef3f23 0%, #7c1016 45%, #121314 100%)",
-              }}
+              style={{ background: heroBackground }}
             >
               <p className="text-xs font-semibold uppercase tracking-[0.24em] text-white/55">Producer profile</p>
               <h2 className="spotify-display mt-4 max-w-[720px] text-[2.35rem] leading-[0.92] text-white sm:text-[3.4rem] xl:text-[4.5rem]">{producerName}</h2>
