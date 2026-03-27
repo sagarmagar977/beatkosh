@@ -1889,6 +1889,93 @@ body {
   text-shadow: none;
 }
 
+.blog-detail-scope {
+  color: white;
+}
+
+.blog-detail-prose {
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.blog-detail-prose p {
+  margin: 0;
+  line-height: 1.9;
+}
+
+:root[data-theme="light"] .blog-detail-scope {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .blog-detail-hero,
+:root[data-theme="light"] .blog-detail-body {
+  border-color: rgba(46, 116, 92, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(241, 250, 245, 0.98) 100%);
+  box-shadow: 0 20px 42px rgba(56, 112, 90, 0.08);
+}
+
+:root[data-theme="light"] .blog-detail-back {
+  color: var(--muted) !important;
+}
+
+:root[data-theme="light"] .blog-detail-back:hover {
+  color: var(--text) !important;
+}
+
+:root[data-theme="light"] .blog-detail-title {
+  color: var(--text) !important;
+}
+
+:root[data-theme="light"] .blog-detail-summary {
+  color: var(--text-soft) !important;
+}
+
+:root[data-theme="light"] .blog-detail-prose {
+  color: var(--text-soft) !important;
+}
+
+:root[data-theme="light"] .blog-detail-prose p,
+:root[data-theme="light"] .blog-detail-prose li,
+:root[data-theme="light"] .blog-detail-prose span,
+:root[data-theme="light"] .blog-detail-prose strong {
+  color: inherit !important;
+}
+
+.resources-page-scope {
+  color: white;
+}
+
+:root[data-theme="light"] .resources-page-scope {
+  color: var(--text);
+}
+
+:root[data-theme="light"] .resources-page-hero,
+:root[data-theme="light"] .resources-page-panel {
+  border-color: rgba(46, 116, 92, 0.18);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(241, 250, 245, 0.98) 100%);
+  box-shadow: 0 18px 38px rgba(56, 112, 90, 0.08);
+}
+
+:root[data-theme="light"] .resources-page-card,
+:root[data-theme="light"] .resources-faq-card {
+  border-color: rgba(46, 116, 92, 0.14) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 10px 22px rgba(56, 112, 90, 0.05);
+}
+
+:root[data-theme="light"] .resources-page-copy {
+  color: var(--text-soft) !important;
+}
+
+:root[data-theme="light"] .resources-page-link {
+  color: var(--brand) !important;
+}
+
+:root[data-theme="light"] .resources-page-link:hover {
+  color: var(--text) !important;
+}
+
 
 @keyframes skeleton-shimmer {
   0% {

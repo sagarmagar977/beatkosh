@@ -34,15 +34,15 @@ export default function ResourceDetailPage() {
   }, [slug]);
 
   return (
-    <div className="space-y-6">
-      <section className="surface-panel rounded-[34px] p-6 md:p-8">
-        <Link href="/resources" className="text-sm text-white/70 hover:text-white">Back to resources</Link>
+    <div className="blog-detail-scope space-y-6">
+      <section className="blog-detail-hero surface-panel rounded-[34px] p-6 md:p-8">
+        <Link href="/resources" className="blog-detail-back text-sm text-white/70 hover:text-white">Back to resources</Link>
         <p className="mt-4 eyebrow">{article?.category ?? "Article"}</p>
-        <h1 className="mt-2 text-4xl font-semibold tracking-tight">{article?.title ?? "Loading..."}</h1>
-        {article?.summary ? <p className="mt-3 max-w-3xl text-white/68">{article.summary}</p> : null}
+        <h1 className="blog-detail-title mt-2 text-4xl font-semibold tracking-tight">{article?.title ?? "Loading..."}</h1>
+        {article?.summary ? <p className="blog-detail-summary mt-3 max-w-3xl text-white/68">{article.summary}</p> : null}
       </section>
-      <section className="surface-panel rounded-[30px] p-6">
-        <div className="prose prose-invert max-w-none text-white/85">
+      <section className="blog-detail-body surface-panel rounded-[30px] p-6">
+        <div className="blog-detail-prose prose max-w-none">
           <p className="whitespace-pre-wrap">{article?.content ?? "No content available."}</p>
         </div>
       </section>

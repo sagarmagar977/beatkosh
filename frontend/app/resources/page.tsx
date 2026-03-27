@@ -54,10 +54,10 @@ export default function ResourcesPage() {
   }, [selectedCategory]);
 
   return (
-    <div className="space-y-6">
-      <section className="surface-panel rounded-xl p-4">
+    <div className="resources-page-scope space-y-6">
+      <section className="resources-page-hero surface-panel rounded-xl p-4">
         <h1 className="text-2xl font-semibold">Resources</h1>
-        <p className="mt-1 text-sm text-white/60">Live resources feed from backend CMS endpoints.</p>
+        <p className="resources-page-copy mt-1 text-sm text-white/60">Live resources feed from backend CMS endpoints.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           {categories.map((item) => (
             <button key={item} type="button" onClick={() => setCategory(item)} className={`chip ${item === selectedCategory ? "active" : ""}`}>
@@ -68,32 +68,32 @@ export default function ResourcesPage() {
       </section>
 
       <section className="grid gap-5 lg:grid-cols-[1.1fr_0.9fr]">
-        <div className="surface-panel rounded-xl p-4">
+        <div className="resources-page-panel surface-panel rounded-xl p-4">
           <h2 className="text-lg font-semibold capitalize">{selectedCategory} Articles</h2>
           <div className="mt-3 space-y-3">
             {articles.map((article) => (
-              <article key={article.id} className="app-card p-3">
+              <article key={article.id} className="resources-page-card app-card p-3">
                 <h3 className="font-semibold">{article.title}</h3>
-                <p className="mt-1 text-sm text-white/60">{article.summary || "No summary available."}</p>
-                <Link href={`/resources/${article.slug}`} className="mt-3 inline-block text-xs text-[#b78cff] hover:underline">
+                <p className="resources-page-copy mt-1 text-sm text-white/60">{article.summary || "No summary available."}</p>
+                <Link href={`/resources/${article.slug}`} className="resources-page-link mt-3 inline-block text-xs text-[#b78cff] hover:underline">
                   Read article
                 </Link>
               </article>
             ))}
-            {articles.length === 0 ? <p className="text-sm text-white/60">No articles in this category yet.</p> : null}
+            {articles.length === 0 ? <p className="resources-page-copy text-sm text-white/60">No articles in this category yet.</p> : null}
           </div>
         </div>
 
-        <aside className="surface-panel rounded-xl p-4">
+        <aside className="resources-page-panel surface-panel rounded-xl p-4">
           <h2 className="text-lg font-semibold">FAQ</h2>
           <div className="mt-3 space-y-2">
             {faq.map((item) => (
-              <div key={item.id} className="app-card p-3">
+              <div key={item.id} className="resources-faq-card app-card p-3">
                 <p className="font-medium">{item.question}</p>
-                <p className="mt-1 text-sm text-white/60">{item.answer}</p>
+                <p className="resources-page-copy mt-1 text-sm text-white/60">{item.answer}</p>
               </div>
             ))}
-            {faq.length === 0 ? <p className="text-sm text-white/60">No FAQ items yet.</p> : null}
+            {faq.length === 0 ? <p className="resources-page-copy text-sm text-white/60">No FAQ items yet.</p> : null}
           </div>
         </aside>
       </section>
