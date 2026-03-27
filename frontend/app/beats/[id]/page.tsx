@@ -6,9 +6,11 @@ import { useParams, useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
+import { BeatListRow } from "@/components/beat-list-row";
 import { useCart } from "@/context/cart-context";
 import { usePlayer } from "@/context/player-context";
 import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import type { SavedBeatEntry } from "@/lib/beat-library";
 
 type License = {
   id: number;
@@ -468,46 +470,22 @@ export default function BeatDetailPage() {
             </div>
             <div className="mt-4 space-y-3">
               {related.map((item) => {
-                const itemCover = resolveMediaUrl(item.cover_art_obj);
                 const itemIsCurrent = currentTrack?.id === item.id;
                 const itemInCart = cartBeatIds.includes(item.id);
                 return (
-                  <article key={item.id} className="grid items-center gap-4 rounded-[20px] border border-white/10 bg-[#15171d] px-4 py-3 xl:grid-cols-[auto_1.5fr_1fr_auto]">
-                    <button type="button" onClick={() => void handlePlay(item, "related-tracks")} className={`inline-flex h-12 w-12 items-center justify-center rounded-full border text-sm ${itemIsCurrent && isPlaying ? "border-[#8b28ff] bg-[#8b28ff] text-white" : "border-white/20 bg-white/5 text-white/85"}`}>
-                      {itemIsCurrent && isPlaying ? <Pause className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" /> : <Play className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />}
-                    </button>
-                    <div className="flex items-center gap-3">
-                      {itemCover ? (
-                        // eslint-disable-next-line @next/next/no-img-element
-                        <img src={itemCover} alt={item.title} className="h-14 w-14 rounded-md object-cover" />
-                      ) : (
-                        <div className="flex h-14 w-14 items-center justify-center rounded-md border border-white/10 bg-gradient-to-br from-[#2a3546] to-[#11151d] text-sm font-bold text-white/80">
-                          {item.title.slice(0, 2).toUpperCase()}
-                        </div>
-                      )}
-                      <div>
-                        <Link href={`/beats/${item.id}`} className="text-2xl font-semibold hover:underline">{item.title}</Link>
-                        <p className="text-lg text-white/70">{item.producer_username}</p>
-                        <p className="text-sm text-white/55">{item.bpm} BPM | {item.key || "N/A"} | {item.genre}</p>
-                      </div>
-                    </div>
-                    <div className="flex flex-wrap gap-2 text-xs text-white/60">
-                      <span className="rounded-full border border-white/10 px-3 py-1">{item.genre}</span>
-                      {item.mood ? <span className="rounded-full border border-white/10 px-3 py-1">{item.mood}</span> : null}
-                      {(item.tag_names ?? []).slice(0, 3).map((tag) => (
-                        <span key={tag} className="rounded-full border border-white/10 px-3 py-1">{tag}</span>
-                      ))}
-                    </div>
-                    <div className="flex items-center gap-2 justify-self-end">
-                      <button type="button" onClick={() => openLicenseModal(item, item.licenses?.[0]?.id ?? null)} className="brand-btn inline-flex items-center gap-2 px-5 py-2 text-lg font-semibold">
-                        <ShoppingCart className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
-                        {itemInCart ? "Added to cart" : `Rs ${item.base_price}`}
-                      </button>
-                      <button type="button" onClick={() => router.push(`/beats/${item.id}`)} className="rounded-full border border-white/12 px-3 py-2 text-xs text-white/78 hover:bg-white/5">
-                        View
-                      </button>
-                    </div>
-                  </article>
+                  <BeatListRow
+                    key={item.id}
+                    beat={item as SavedBeatEntry}
+                    artistHref={`/producers/${item.producer}`}
+                    detailHref={`/beats/${item.id}`}
+                    isCurrent={itemIsCurrent}
+                    isPlaying={itemIsCurrent && isPlaying}
+                    onPlay={() => void handlePlay(item, "related-tracks")}
+                    actionLabel={itemInCart ? "Added to cart" : `Rs ${item.base_price}`}
+                    actionState={itemInCart ? "success" : "default"}
+                    onAction={() => openLicenseModal(item, item.licenses?.[0]?.id ?? null)}
+                    message={notify}
+                  />
                 );
               })}
               {related.length === 0 ? <p className="text-sm text-white/60">No related tracks yet.</p> : null}

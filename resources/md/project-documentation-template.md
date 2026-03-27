@@ -13,15 +13,7 @@ Pages: 48
 <br>
 <br>
 <p><strong>Kantipur City College</strong></p>
-<p>Putalisadak, Kathmandu</p>
-<p>Nepal</p>
-
-</div>
-
-## Page 2
-j
-```text
-Guidelines for Project Documentation Layout and Formatting 
+<p>Putalisadak, Kathmandu</project Documentation Layout and Formatting 
 1. Preliminary Pages (Title Page, Table of Contents, List of Tables, List of Tables, 
 Abbreviation etc.) should be numbered in Roman Letter (i.e.  i, ii, ….). A page 
 number should not be shown on the title page even though it is counted as i. 

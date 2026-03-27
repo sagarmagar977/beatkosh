@@ -1287,6 +1287,108 @@ body {
   color: var(--text-soft) !important;
 }
 
+:root[data-theme="light"] .activity-workspace .activity-offer-card {
+  border-color: rgba(46, 116, 92, 0.14) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  box-shadow: 0 10px 22px rgba(56, 112, 90, 0.05);
+}
+
+:root[data-theme="light"] .activity-workspace .activity-offer-secondary {
+  border-color: rgba(46, 116, 92, 0.14) !important;
+  background: rgba(246, 253, 249, 0.98) !important;
+  color: var(--text-soft) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-offer-secondary:hover {
+  background: rgba(236, 249, 242, 0.98) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-offer-primary,
+:root[data-theme="light"] .activity-workspace .activity-proposal-submit {
+  background: linear-gradient(135deg, #9c7ff1 0%, #8c6ff0 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 0 12px 24px rgba(140, 111, 240, 0.18);
+}
+
+:root[data-theme="light"] .activity-workspace .activity-offer-primary:hover,
+:root[data-theme="light"] .activity-workspace .activity-proposal-submit:hover {
+  background: linear-gradient(135deg, #9274eb 0%, #8163e7 100%) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-offer-message {
+  border-color: rgba(46, 116, 92, 0.18) !important;
+  background: rgba(225, 247, 236, 0.95) !important;
+  color: #1d7254 !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-offer-message:hover {
+  background: rgba(214, 242, 228, 0.98) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-form {
+  border-color: rgba(140, 111, 240, 0.18) !important;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99) 0%, rgba(243, 250, 246, 0.98) 100%) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-close {
+  border-color: rgba(46, 116, 92, 0.14) !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+  color: var(--text-soft) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-close:hover {
+  background: rgba(242, 253, 248, 0.98) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-textarea {
+  border-color: rgba(46, 116, 92, 0.16) !important;
+  background: rgba(255, 255, 255, 0.97) !important;
+  color: var(--text) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.96) inset,
+    0 10px 22px rgba(56, 112, 90, 0.05);
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-textarea::placeholder {
+  color: var(--muted-2) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-offer {
+  border-color: rgba(46, 116, 92, 0.14) !important;
+  background: rgba(252, 255, 253, 0.98) !important;
+  box-shadow: 0 10px 22px rgba(56, 112, 90, 0.05);
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-stepper {
+  border-color: rgba(46, 116, 92, 0.14) !important;
+  background: rgba(246, 253, 249, 0.98) !important;
+  color: var(--text-soft) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-stepper:hover {
+  background: rgba(236, 249, 242, 0.98) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-stepper-primary {
+  border-color: rgba(140, 111, 240, 0.18) !important;
+  background: linear-gradient(135deg, #9c7ff1 0%, #8c6ff0 100%) !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-amount {
+  border-color: rgba(46, 116, 92, 0.16) !important;
+  background: rgba(255, 255, 255, 0.97) !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme="light"] .activity-workspace .activity-proposal-helper {
+  color: var(--muted) !important;
+}
+
 :root[data-theme="light"] .activity-workspace [class*="bg-gradient-to-br"] [class*="drop-shadow"],
 :root[data-theme="light"] .activity-workspace .theme-home-hero h2,
 :root[data-theme="light"] .activity-workspace .theme-home-hero h3 {
@@ -1976,6 +2078,64 @@ body {
   color: var(--text) !important;
 }
 
+:root[data-theme="light"] .orders-summary {
+  border-color: rgba(46, 116, 92, 0.18) !important;
+  background:
+    radial-gradient(circle at top, rgba(35, 178, 127, 0.08), transparent 34%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.99), rgba(241, 250, 245, 0.98)) !important;
+  box-shadow: 0 22px 48px rgba(56, 112, 90, 0.1);
+}
+
+:root[data-theme="light"] .orders-summary-kicker {
+  color: rgba(35, 178, 127, 0.74) !important;
+}
+
+:root[data-theme="light"] .orders-summary-panel {
+  border-color: rgba(46, 116, 92, 0.16) !important;
+  background: rgba(243, 247, 244, 0.98) !important;
+}
+
+:root[data-theme="light"] .orders-summary-total-row {
+  align-items: center;
+  gap: 0.75rem;
+}
+
+:root[data-theme="light"] .orders-summary-total-label {
+  white-space: nowrap;
+  font-size: 1.05rem !important;
+  line-height: 1.2 !important;
+  color: var(--text) !important;
+}
+
+:root[data-theme="light"] .orders-summary-total-amount {
+  white-space: nowrap;
+  font-size: 1.8rem !important;
+  line-height: 1 !important;
+  color: #1fbf84 !important;
+  letter-spacing: -0.04em;
+}
+
+:root[data-theme="light"] .beat-row-action-success {
+  border-color: rgba(35, 178, 127, 0.18) !important;
+  background: linear-gradient(180deg, rgba(223, 247, 235, 0.98) 0%, rgba(208, 240, 223, 0.98) 100%) !important;
+  color: #278766 !important;
+  box-shadow: 0 8px 18px rgba(56, 112, 90, 0.08);
+}
+
+:root[data-theme="light"] .beat-row-menu-button {
+  border: 1px solid rgba(46, 116, 92, 0.14);
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: var(--text-soft) !important;
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 8px 16px rgba(56, 112, 90, 0.05);
+}
+
+:root[data-theme="light"] .beat-row-menu-button:hover {
+  background: rgba(242, 253, 248, 0.98) !important;
+  color: var(--text) !important;
+}
+
 
 @keyframes skeleton-shimmer {
   0% {
@@ -1992,6 +2152,13 @@ body {
   background: color-mix(in srgb, var(--panel-soft-strong) 72%, transparent);
 }
 
+:root[data-theme="light"] .skeleton {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(246, 251, 248, 0.98) 100%);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.95) inset,
+    0 8px 18px rgba(56, 112, 90, 0.04);
+}
+
 .skeleton::after {
   content: "";
   position: absolute;
@@ -2006,6 +2173,17 @@ body {
     transparent 100%
   );
   animation: skeleton-shimmer 1.35s ease-in-out infinite;
+}
+
+:root[data-theme="light"] .skeleton::after {
+  background: linear-gradient(
+    90deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.42) 44%,
+    rgba(255, 255, 255, 0.86) 50%,
+    rgba(255, 255, 255, 0.42) 56%,
+    transparent 100%
+  );
 }
 
 .no-scrollbar {

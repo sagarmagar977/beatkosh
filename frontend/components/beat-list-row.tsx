@@ -207,7 +207,7 @@ export function BeatListRow({
                 className={`rounded-full px-4 py-2 text-sm font-semibold ${
                   actionTone === "brand"
                     ? actionState === "success"
-                      ? "border border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
+                      ? "beat-row-action-success border border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
                       : "bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#5b48ff] text-white"
                     : "theme-soft theme-text-soft"
                 }`}
@@ -218,7 +218,7 @@ export function BeatListRow({
                 <button
                   type="button"
                   onClick={() => setMenuOpen((current) => !current)}
-                  className="theme-soft theme-text-soft inline-flex h-10 w-10 items-center justify-center rounded-full"
+                  className="beat-row-menu-button theme-soft theme-text-soft inline-flex h-10 w-10 items-center justify-center rounded-full"
                 >
                   <EllipsisVertical className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                 </button>

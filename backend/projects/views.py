@@ -1,4 +1,4 @@
-from django.db.models import Q
+from django.db.models import Prefetch, Q
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
@@ -16,6 +16,46 @@ from projects.serializers import (
     ProjectSerializer,
     ProposalSerializer,
 )
+
+
+def _build_project_lookup(briefs):
+    keys = {
+        (brief.artist_id, brief.producer_id, brief.title)
+        for brief in briefs
+        if brief.status == ProjectRequest.STATUS_ACCEPTED and brief.producer_id
+    }
+    if not keys:
+        return {}
+
+    projects = (
+        Project.objects.filter(
+            artist_id__in={key[0] for key in keys},
+            producer_id__in={key[1] for key in keys},
+            title__in={key[2] for key in keys},
+        )
+        .select_related("artist", "artist__artist_profile", "producer")
+        .prefetch_related("conversations")
+        .order_by("-created_at")
+    )
+    project_lookup = {}
+    for project in projects:
+        key = (project.artist_id, project.producer_id, project.title)
+        project_lookup.setdefault(key, project)
+    return project_lookup
+
+
+def _build_conversation_lookup(projects):
+    lookup = {}
+    for project in projects:
+        prefetched = getattr(project, "_prefetched_objects_cache", {}).get("conversations")
+        if prefetched is None:
+            conversation = Conversation.objects.filter(project=project).order_by("id").first()
+            if conversation:
+                lookup[project.id] = conversation.id
+            continue
+        if prefetched:
+            lookup[project.id] = prefetched[0].id
+    return lookup
 
 
 class ProjectMetadataOptionsView(APIView):
@@ -142,9 +182,34 @@ class ProducerProposalListView(generics.ListAPIView):
             raise PermissionDenied("Only producers can view submitted applications.")
         return (
             Proposal.objects.filter(producer=user)
-            .select_related("producer", "project_request", "project_request__artist", "project_request__producer")
+            .select_related(
+                "producer",
+                "project_request",
+                "project_request__artist",
+                "project_request__artist__artist_profile",
+                "project_request__producer",
+            )
             .order_by("-created_at")
         )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        proposals = list(page if page is not None else queryset)
+        project_lookup = _build_project_lookup([proposal.project_request for proposal in proposals])
+        conversation_lookup = _build_conversation_lookup(project_lookup.values())
+        serializer = self.get_serializer(
+            proposals,
+            many=True,
+            context={
+                **self.get_serializer_context(),
+                "project_lookup": project_lookup,
+                "conversation_lookup": conversation_lookup,
+            },
+        )
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
 
 class ProjectRequestListView(generics.ListAPIView):
@@ -164,7 +229,32 @@ class ProjectRequestListView(generics.ListAPIView):
         if project_type:
             queryset = queryset.filter(project_type=project_type)
 
-        return queryset.select_related("artist", "artist__producer_profile", "producer", "producer__producer_profile").prefetch_related("proposals").order_by("-created_at")
+        return queryset.select_related("artist", "artist__artist_profile", "producer", "producer__producer_profile").prefetch_related(
+            Prefetch(
+                "proposals",
+                queryset=Proposal.objects.select_related("producer", "project_request").order_by("-created_at"),
+            )
+        ).order_by("-created_at")
+
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        briefs = list(page if page is not None else queryset)
+        project_lookup = _build_project_lookup(briefs)
+        conversation_lookup = _build_conversation_lookup(project_lookup.values())
+        serializer = self.get_serializer(
+            briefs,
+            many=True,
+            context={
+                **self.get_serializer_context(),
+                "project_lookup": project_lookup,
+                "conversation_lookup": conversation_lookup,
+            },
+        )
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
 
 class ProjectProposalAcceptView(APIView):
@@ -238,10 +328,26 @@ class ProjectListView(generics.ListAPIView):
         user = self.request.user
         return (
             Project.objects.filter(Q(artist=user) | Q(producer=user))
-            .select_related("artist", "producer")
+            .select_related("artist", "artist__artist_profile", "producer")
             .prefetch_related("milestones", "milestones__deliverables", "conversations")
             .order_by("-created_at")
         )
+
+    def list(self, request, *args, **kwargs):
+        queryset = self.filter_queryset(self.get_queryset())
+        page = self.paginate_queryset(queryset)
+        projects = list(page if page is not None else queryset)
+        serializer = self.get_serializer(
+            projects,
+            many=True,
+            context={
+                **self.get_serializer_context(),
+                "conversation_lookup": _build_conversation_lookup(projects),
+            },
+        )
+        if page is not None:
+            return self.get_paginated_response(serializer.data)
+        return Response(serializer.data)
 
 
 class MilestoneCreateView(generics.CreateAPIView):

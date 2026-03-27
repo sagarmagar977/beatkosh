@@ -1,19 +1,30 @@
-﻿from rest_framework import serializers
+from rest_framework import serializers
 
 from messaging.models import Conversation
 from projects.models import Deliverable, Milestone, Project, ProjectRequest, Proposal
 
 
-def ensure_project_conversation(project: Project | None):
+def ensure_project_conversation(project: Project | None, *, create_missing: bool = False):
     if not project:
         return None
-    conversation = Conversation.objects.filter(project=project).order_by("id").first()
+    prefetched_conversations = getattr(project, "_prefetched_objects_cache", {}).get("conversations")
+    if prefetched_conversations is not None:
+        conversation = prefetched_conversations[0] if prefetched_conversations else None
+    else:
+        conversation = Conversation.objects.filter(project=project).order_by("id").first()
     if conversation:
         participants = {project.artist_id, project.producer_id}
-        current_participants = set(conversation.participants.values_list("id", flat=True))
+        prefetched_participants = getattr(conversation, "_prefetched_objects_cache", {}).get("participants")
+        if prefetched_participants is not None:
+            current_participants = {participant.id for participant in prefetched_participants}
+        else:
+            current_participants = set(conversation.participants.values_list("id", flat=True))
         if participants != current_participants:
             conversation.participants.set([project.artist, project.producer])
         return conversation
+
+    if not create_missing:
+        return None
 
     conversation = Conversation.objects.create(project=project)
     conversation.participants.set([project.artist, project.producer])
@@ -30,11 +41,28 @@ class ProposalSerializer(serializers.ModelSerializer):
         fields = ("id", "project_request", "producer", "producer_username", "amount", "message", "project_id", "conversation_id", "created_at")
         read_only_fields = ("producer", "created_at")
 
+    def _project_key(self, obj):
+        brief = obj.project_request
+        return (brief.artist_id, obj.producer_id, brief.title)
+
     def _get_project(self, obj):
         brief = obj.project_request
         if brief.status != ProjectRequest.STATUS_ACCEPTED or brief.producer_id != obj.producer_id:
             return None
-        return (
+
+        key = self._project_key(obj)
+        project_lookup = self.context.get("project_lookup", {})
+        if key in project_lookup:
+            return project_lookup[key]
+
+        project_cache = getattr(self, "_project_cache", None)
+        if project_cache is None:
+            project_cache = {}
+            self._project_cache = project_cache
+        if key in project_cache:
+            return project_cache[key]
+
+        project = (
             Project.objects.filter(
                 artist=brief.artist,
                 producer=obj.producer,
@@ -43,6 +71,8 @@ class ProposalSerializer(serializers.ModelSerializer):
             .order_by("-created_at")
             .first()
         )
+        project_cache[key] = project
+        return project
 
     def get_project_id(self, obj):
         project = self._get_project(obj)
@@ -50,7 +80,10 @@ class ProposalSerializer(serializers.ModelSerializer):
 
     def get_conversation_id(self, obj):
         project = self._get_project(obj)
-        conversation = ensure_project_conversation(project)
+        conversation_lookup = self.context.get("conversation_lookup", {})
+        if project and project.id in conversation_lookup:
+            return conversation_lookup[project.id]
+        conversation = ensure_project_conversation(project, create_missing=False)
         return conversation.id if conversation else None
 
 
@@ -90,11 +123,28 @@ class ProducerProposalSerializer(serializers.ModelSerializer):
         )
         read_only_fields = fields
 
+    def _project_key(self, obj):
+        brief = obj.project_request
+        return (brief.artist_id, obj.producer_id, brief.title)
+
     def _get_project(self, obj):
         brief = obj.project_request
         if brief.status != ProjectRequest.STATUS_ACCEPTED or brief.producer_id != obj.producer_id:
             return None
-        return (
+
+        key = self._project_key(obj)
+        project_lookup = self.context.get("project_lookup", {})
+        if key in project_lookup:
+            return project_lookup[key]
+
+        project_cache = getattr(self, "_project_cache", None)
+        if project_cache is None:
+            project_cache = {}
+            self._project_cache = project_cache
+        if key in project_cache:
+            return project_cache[key]
+
+        project = (
             Project.objects.filter(
                 artist=brief.artist,
                 producer=obj.producer,
@@ -103,6 +153,8 @@ class ProducerProposalSerializer(serializers.ModelSerializer):
             .order_by("-created_at")
             .first()
         )
+        project_cache[key] = project
+        return project
 
     def get_artist_avatar_obj(self, obj):
         profile = getattr(obj.project_request.artist, "artist_profile", None)
@@ -124,7 +176,10 @@ class ProducerProposalSerializer(serializers.ModelSerializer):
 
     def get_conversation_id(self, obj):
         project = self._get_project(obj)
-        conversation = ensure_project_conversation(project)
+        conversation_lookup = self.context.get("conversation_lookup", {})
+        if project and project.id in conversation_lookup:
+            return conversation_lookup[project.id]
+        conversation = ensure_project_conversation(project, create_missing=False)
         return conversation.id if conversation else None
 
 
@@ -209,11 +264,18 @@ class ProjectRequestSerializer(serializers.ModelSerializer):
         return None
 
     def get_proposal_count(self, obj):
+        proposals = getattr(obj, "_prefetched_objects_cache", {}).get("proposals")
+        if proposals is not None:
+            return len(proposals)
         return obj.proposals.count()
 
     def get_proposals(self, obj):
-        proposals = obj.proposals.all().order_by("-created_at")
-        return ProposalSerializer(proposals, many=True).data
+        proposals = getattr(obj, "_prefetched_objects_cache", {}).get("proposals")
+        if proposals is None:
+            proposals = obj.proposals.all().order_by("-created_at")
+        else:
+            proposals = sorted(proposals, key=lambda proposal: proposal.created_at, reverse=True)
+        return ProposalSerializer(proposals, many=True, context=self.context).data
 
 
 class DeliverableSerializer(serializers.ModelSerializer):
@@ -290,7 +352,13 @@ class ProjectSerializer(serializers.ModelSerializer):
 
     def get_workflow_summary(self, obj):
         milestones = list(obj.milestones.all())
-        deliverable_count = sum(m.deliverables.count() for m in milestones)
+        deliverable_count = 0
+        for milestone in milestones:
+            prefetched_deliverables = getattr(milestone, "_prefetched_objects_cache", {}).get("deliverables")
+            if prefetched_deliverables is not None:
+                deliverable_count += len(prefetched_deliverables)
+            else:
+                deliverable_count += milestone.deliverables.count()
         return {
             "milestone_count": len(milestones),
             "deliverable_count": deliverable_count,
@@ -300,7 +368,10 @@ class ProjectSerializer(serializers.ModelSerializer):
         }
 
     def get_conversation_id(self, obj):
-        conversation = ensure_project_conversation(obj)
+        conversation_lookup = self.context.get("conversation_lookup", {})
+        if obj.id in conversation_lookup:
+            return conversation_lookup[obj.id]
+        conversation = ensure_project_conversation(obj, create_missing=False)
         return conversation.id if conversation else None
 
 

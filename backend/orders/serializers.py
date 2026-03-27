@@ -1,7 +1,10 @@
+from collections import defaultdict
+
 from rest_framework import serializers
 
-from beats.models import LicenseType
+from beats.models import Beat, LicenseType
 from beats.serializers import BeatSerializer
+from catalog.models import BeatTape, Bundle, SoundKit
 from orders.models import Cart, CartItem, DownloadAccess, Order, OrderItem
 from orders.services import cart_totals, resolve_product
 
@@ -10,6 +13,27 @@ def format_currency_amount(value):
     if value is None:
         return "0.00"
     return f"{value:,.2f}"
+
+
+def build_cart_product_map(items):
+    grouped_ids = defaultdict(set)
+    for item in items:
+        grouped_ids[item.product_type].add(item.product_id)
+
+    product_map = {}
+    if grouped_ids[CartItem.PRODUCT_BEAT]:
+        for product in Beat.objects.filter(id__in=grouped_ids[CartItem.PRODUCT_BEAT], is_active=True).select_related("producer"):
+            product_map[(CartItem.PRODUCT_BEAT, product.id)] = product
+    if grouped_ids[CartItem.PRODUCT_SOUNDKIT]:
+        for product in SoundKit.objects.filter(id__in=grouped_ids[CartItem.PRODUCT_SOUNDKIT], is_active=True).select_related("producer"):
+            product_map[(CartItem.PRODUCT_SOUNDKIT, product.id)] = product
+    if grouped_ids[CartItem.PRODUCT_BUNDLE]:
+        for product in Bundle.objects.filter(id__in=grouped_ids[CartItem.PRODUCT_BUNDLE]).select_related("producer"):
+            product_map[(CartItem.PRODUCT_BUNDLE, product.id)] = product
+    if grouped_ids[CartItem.PRODUCT_TAPE]:
+        for product in BeatTape.objects.filter(id__in=grouped_ids[CartItem.PRODUCT_TAPE]).select_related("producer"):
+            product_map[(CartItem.PRODUCT_TAPE, product.id)] = product
+    return product_map
 
 
 class OrderItemInputSerializer(serializers.Serializer):
@@ -48,9 +72,11 @@ class OrderCreateSerializer(serializers.Serializer):
 
     def create(self, validated_data):
         items = validated_data["items"]
+        license_ids = [item.get("license_id") for item in items if item.get("license_id")]
+        license_map = LicenseType.objects.in_bulk(license_ids)
         for item in items:
             license_id = item.pop("license_id", None)
-            item["license_type"] = LicenseType.objects.get(id=license_id) if license_id else None
+            item["license_type"] = license_map.get(license_id) if license_id else None
         return self.context["create_order"](self.context["request"].user, items)
 
 
@@ -88,7 +114,10 @@ class CartItemSerializer(serializers.ModelSerializer):
         return format_currency_amount(obj.price)
 
     def get_product(self, obj):
-        product = resolve_product(obj.product_type, obj.product_id)
+        product_map = self.context.get("product_map", {})
+        product = product_map.get((obj.product_type, obj.product_id))
+        if product is None:
+            product = resolve_product(obj.product_type, obj.product_id)
         if obj.product_type == CartItem.PRODUCT_BEAT:
             return {
                 "id": product.id,
@@ -157,11 +186,17 @@ class CartSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_items(self, obj):
-        items = obj.items.order_by("created_at", "id")
-        return CartItemSerializer(items, many=True).data
+        items = list(obj.items.select_related("license_type").order_by("created_at", "id"))
+        return CartItemSerializer(items, many=True, context={**self.context, "product_map": build_cart_product_map(items)}).data
 
     def _totals(self, obj):
-        return cart_totals(obj)
+        totals_cache = getattr(self, "_totals_cache", None)
+        if totals_cache is None:
+            totals_cache = {}
+            self._totals_cache = totals_cache
+        if obj.pk not in totals_cache:
+            totals_cache[obj.pk] = cart_totals(obj)
+        return totals_cache[obj.pk]
 
     def get_beat_total(self, obj):
         return self._totals(obj)["beat_total"]

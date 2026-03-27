@@ -1,3 +1,5 @@
+from django.db.models import Sum
+from django.db.models.functions import Coalesce
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -68,7 +70,7 @@ def _resolve_default_license_types(draft: BeatUploadDraft):
 class BeatListCreateView(generics.ListCreateAPIView):
     queryset = Beat.objects.select_related("producer", "producer__producer_profile", "featured_cover_photo").prefetch_related(
         "tags", "available_licenses", "likes"
-    )
+    ).annotate(_play_count=Coalesce(Sum("listening_events__play_count"), 0))
     serializer_class = BeatSerializer
     permission_classes = [IsProducerOrReadOnly]
 
@@ -101,7 +103,7 @@ class BeatListCreateView(generics.ListCreateAPIView):
 class BeatDetailView(generics.RetrieveAPIView):
     queryset = Beat.objects.select_related("producer", "producer__producer_profile", "featured_cover_photo").prefetch_related(
         "tags", "available_licenses", "likes"
-    )
+    ).annotate(_play_count=Coalesce(Sum("listening_events__play_count"), 0))
     serializer_class = BeatSerializer
 
 

@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { ArrowUpRight, BookOpen, Clock3, Compass, Disc3, Download, FileText, Heart, Info, LayoutPanelLeft, MessageSquareMore, Minus, Package2, Pencil, Plus, ShoppingCart, Trash2, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { type FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
@@ -156,6 +156,11 @@ type SidebarMode =
 type ArtistHiringTab = "my_ads" | "drafts" | "offers_received";
 type ProducerHiringTab = "marketplace" | "my_applications";
 
+const SIDEBAR_MODES: SidebarMode[] = ["browse", "kits", "resources", "hiring", "liked", "history", "playlists", "audioAssets"];
+const ARTIST_HIRING_TABS: ArtistHiringTab[] = ["my_ads", "drafts", "offers_received"];
+const PRODUCER_HIRING_TABS: ProducerHiringTab[] = ["marketplace", "my_applications"];
+const PRODUCER_APPLICATION_STATUSES = ["all", "pending", "accepted", "rejected"] as const;
+
 const accentClasses = [
   "from-[#ff2d95] via-[#d1166d] to-[#821948]",
   "from-[#0fb58d] via-[#07786c] to-[#053d42]",
@@ -173,6 +178,8 @@ const accentClasses = [
 
 export default function ActivityPage() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { token, user } = useAuth();
   const { refreshCart } = useCart();
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
@@ -189,10 +196,6 @@ export default function ActivityPage() {
   const [hiringBriefs, setHiringBriefs] = useState<HiringBrief[]>([]);
   const [producerApplications, setProducerApplications] = useState<ProducerApplication[]>([]);
   const [hiringMetadata, setHiringMetadata] = useState<HiringMetadata | null>(null);
-  const [hiringTypeFilter, setHiringTypeFilter] = useState("all");
-  const [artistHiringTab, setArtistHiringTab] = useState<ArtistHiringTab>("my_ads");
-  const [producerHiringTab, setProducerHiringTab] = useState<ProducerHiringTab>("marketplace");
-  const [producerApplicationStatusFilter, setProducerApplicationStatusFilter] = useState("all");
   const [expandedHiringBriefId, setExpandedHiringBriefId] = useState<number | null>(null);
   const [activeProposalBriefId, setActiveProposalBriefId] = useState<number | null>(null);
   const [proposalDrafts, setProposalDrafts] = useState<Record<number, string>>({});
@@ -202,15 +205,43 @@ export default function ActivityPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query] = useState("");
-  const [selectedGenre, setSelectedGenre] = useState<string | null>(null);
   const [expandedSection, setExpandedSection] = useState<ShelfSectionKey | null>(null);
-  const [sidebarMode, setSidebarMode] = useState<SidebarMode>("browse");
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [activityNow] = useState(() => Date.now());
   const selectedGenreSectionRef = useRef<HTMLElement | null>(null);
   const library = useBeatLibrary(user?.id, token);
   const activeRole = user?.active_role;
   const isProducerMode = activeRole === "producer";
+
+  const updateActivitySearch = useCallback((updates: Record<string, string | null>, scroll = false) => {
+    const nextParams = new URLSearchParams(searchParams.toString());
+
+    Object.entries(updates).forEach(([key, value]) => {
+      if (!value) {
+        nextParams.delete(key);
+        return;
+      }
+      nextParams.set(key, value);
+    });
+
+    const queryString = nextParams.toString();
+    router.replace(queryString ? `${pathname}?${queryString}` : pathname, { scroll });
+  }, [pathname, router, searchParams]);
+
+  const sidebarModeParam = searchParams.get("section");
+  const sidebarMode: SidebarMode = sidebarModeParam && SIDEBAR_MODES.includes(sidebarModeParam as SidebarMode)
+    ? sidebarModeParam as SidebarMode
+    : "browse";
+
+  const artistHiringTabParam = searchParams.get("tab");
+  const artistHiringTab: ArtistHiringTab = artistHiringTabParam && ARTIST_HIRING_TABS.includes(artistHiringTabParam as ArtistHiringTab)
+    ? artistHiringTabParam as ArtistHiringTab
+    : "my_ads";
+
+  const producerHiringTabParam = searchParams.get("tab");
+  const producerHiringTab: ProducerHiringTab = producerHiringTabParam && PRODUCER_HIRING_TABS.includes(producerHiringTabParam as ProducerHiringTab)
+    ? producerHiringTabParam as ProducerHiringTab
+    : "marketplace";
 
   const load = useCallback(async () => {
     if (!token) return;
@@ -276,6 +307,9 @@ export default function ActivityPage() {
   const availableGenres = useMemo(() => {
     return Array.from(new Set(beats.map((beat) => beat.genre?.trim()).filter(Boolean) as string[])).sort((a, b) => a.localeCompare(b));
   }, [beats]);
+
+  const selectedGenreParam = searchParams.get("genre");
+  const selectedGenre = selectedGenreParam && availableGenres.includes(selectedGenreParam) ? selectedGenreParam : null;
 
   const searchableBeats = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -450,8 +484,8 @@ export default function ActivityPage() {
   };
 
   const handleGenreSelect = (genre: string | null) => {
-    setSelectedGenre(genre);
     setExpandedSection(null);
+    updateActivitySearch({ genre, section: "browse" });
 
     if (!genre) {
       return;
@@ -587,6 +621,10 @@ export default function ActivityPage() {
     return [...base, ...dynamic];
   }, [hiringMetadata?.project_types, isProducerMode]);
 
+  const hiringTypeFilterParam = searchParams.get("type");
+  const validHiringTypeValues = useMemo(() => new Set(hiringTypeOptions.map((option) => option.value)), [hiringTypeOptions]);
+  const hiringTypeFilter = hiringTypeFilterParam && validHiringTypeValues.has(hiringTypeFilterParam) ? hiringTypeFilterParam : "all";
+
   const visibleHiringBriefs = useMemo(() => {
     return hiringBriefs.filter((brief) => brief.status !== "draft" && (hiringTypeFilter === "all" || brief.project_type === hiringTypeFilter));
   }, [hiringBriefs, hiringTypeFilter]);
@@ -598,6 +636,11 @@ export default function ActivityPage() {
   const artistActiveBriefs = useMemo(() => hiringBriefs.filter((brief) => brief.status !== "draft"), [hiringBriefs]);
 
   const artistOfferBriefs = useMemo(() => artistActiveBriefs.filter((brief) => brief.proposal_count > 0), [artistActiveBriefs]);
+
+  const producerApplicationStatusFilterParam = searchParams.get("status");
+  const producerApplicationStatusFilter = producerApplicationStatusFilterParam && PRODUCER_APPLICATION_STATUSES.includes(producerApplicationStatusFilterParam as typeof PRODUCER_APPLICATION_STATUSES[number])
+    ? producerApplicationStatusFilterParam
+    : "all";
 
   const filteredProducerApplications = useMemo(() => {
     return producerApplications.filter((application) => producerApplicationStatusFilter === "all" || application.application_status === producerApplicationStatusFilter);
@@ -758,7 +801,7 @@ export default function ActivityPage() {
                     key={action.key}
                     type="button"
                     onClick={() => {
-                      setSidebarMode(action.key);
+                      updateActivitySearch({ section: action.key });
                     }}
                     className={`group flex w-full items-center rounded-[16px] border border-transparent bg-transparent text-left shadow-none transition ${sidebarCollapsed ? "max-w-[50px] justify-center px-0 py-2.5" : "gap-2.5 px-2.5 py-2"} hover:bg-white/[0.05]`}
                     aria-label={action.label}
@@ -801,7 +844,6 @@ export default function ActivityPage() {
                   type="button"
                   onClick={() => {
                     handleGenreSelect(chip);
-                    setSidebarMode("browse");
                   }}
                   className={`activity-filter-chip rounded-full px-4 py-2 text-sm transition ${selectedGenre === chip ? "activity-filter-chip-active" : ""}`}
                 >
@@ -1242,9 +1284,9 @@ export default function ActivityPage() {
                             type="button"
                             onClick={() => {
                               if (isProducerMode) {
-                                setProducerHiringTab(option.value as ProducerHiringTab);
+                                updateActivitySearch({ tab: option.value, status: null });
                               } else {
-                                setArtistHiringTab(option.value as ArtistHiringTab);
+                                updateActivitySearch({ tab: option.value });
                               }
                             }}
                             className={`activity-hiring-tab rounded-[18px] px-5 py-3 text-sm font-semibold transition ${active ? "activity-hiring-tab-active" : ""}`}
@@ -1263,7 +1305,7 @@ export default function ActivityPage() {
                             <button
                               key={`market-${option.value}`}
                               type="button"
-                              onClick={() => setHiringTypeFilter(option.value)}
+                              onClick={() => updateActivitySearch({ type: option.value })}
                               className={`activity-hiring-filter rounded-[16px] px-4 py-2.5 text-sm font-medium transition ${active ? "activity-hiring-filter-active" : ""}`}
                             >
                               {option.label}
@@ -1286,7 +1328,7 @@ export default function ActivityPage() {
                             <button
                               key={`application-${option.value}`}
                               type="button"
-                              onClick={() => setProducerApplicationStatusFilter(option.value)}
+                              onClick={() => updateActivitySearch({ status: option.value })}
                               className={`activity-hiring-filter rounded-[16px] px-4 py-2.5 text-sm font-medium transition ${active ? "activity-hiring-filter-active" : ""}`}
                             >
                               {option.label}
@@ -1576,7 +1618,7 @@ export default function ActivityPage() {
                                         </div>
                                         <div className="mt-4 space-y-3">
                                           {brief.proposals.length > 0 ? brief.proposals.map((proposal) => (
-                                            <div key={`proposal-${proposal.id}`} className="activity-soft-card rounded-[18px] p-4">
+                                            <div key={`proposal-${proposal.id}`} className="activity-offer-card activity-soft-card rounded-[18px] p-4">
                                               <div className="flex flex-wrap items-start justify-between gap-3">
                                                 <div>
                                                   <p className="text-base font-semibold text-white">{proposal.producer_username || "Producer"}</p>
@@ -1589,18 +1631,18 @@ export default function ActivityPage() {
                                               </div>
                                               <p className="mt-3 text-sm leading-6 text-white/72">{proposal.message || "No message added with this offer yet."}</p>
                                               <div className="mt-4 flex flex-wrap gap-2">
-                                                <Link href={`/producers/${proposal.producer}`} className="inline-flex items-center gap-2 rounded-[14px] border border-white/10 px-4 py-2 text-sm text-white/82 transition hover:bg-white/[0.05]">
+                                                <Link href={`/producers/${proposal.producer}`} className="activity-offer-secondary inline-flex items-center gap-2 rounded-[14px] border border-white/10 px-4 py-2 text-sm text-white/82 transition hover:bg-white/[0.05]">
                                                   View Profile
                                                   <ArrowUpRight className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                                                 </Link>
-                                                <button type="button" onClick={() => void handleAcceptProposal(brief.id, proposal.id)} disabled={acceptingProposalId === proposal.id || brief.status !== "pending"} className="inline-flex items-center gap-2 rounded-[14px] bg-[#a887ff] px-4 py-2 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff] disabled:opacity-60">
+                                                <button type="button" onClick={() => void handleAcceptProposal(brief.id, proposal.id)} disabled={acceptingProposalId === proposal.id || brief.status !== "pending"} className="activity-offer-primary inline-flex items-center gap-2 rounded-[14px] bg-[#a887ff] px-4 py-2 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff] disabled:opacity-60">
                                                   {acceptingProposalId === proposal.id ? "Accepting..." : "Accept Offer"}
                                                 </button>
                                                 {brief.status === "accepted" && proposal.conversation_id ? (
                                                   <button
                                                     type="button"
                                                     onClick={() => openConversationPanel(proposal.conversation_id!)}
-                                                    className="inline-flex items-center gap-2 rounded-[14px] border border-[#9ee8dc]/30 bg-[#9ee8dc]/10 px-4 py-2 text-sm font-semibold text-[#9ee8dc] transition hover:bg-[#9ee8dc]/18"
+                                                    className="activity-offer-message inline-flex items-center gap-2 rounded-[14px] border border-[#9ee8dc]/30 bg-[#9ee8dc]/10 px-4 py-2 text-sm font-semibold text-[#9ee8dc] transition hover:bg-[#9ee8dc]/18"
                                                   >
                                                     <MessageSquareMore className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                                                     Message Creator
@@ -1616,32 +1658,32 @@ export default function ActivityPage() {
                                 </div>
 
                                 {isProducerMode && isApplying ? (
-                                  <form onSubmit={(event) => void handleSubmitProposal(event, brief)} className="activity-panel mt-6 rounded-[22px] border border-[#a887ff]/18 p-5">
+                                  <form onSubmit={(event) => void handleSubmitProposal(event, brief)} className="activity-proposal-form activity-panel mt-6 rounded-[22px] border border-[#a887ff]/18 p-5">
                                     <div className="flex flex-wrap items-center justify-between gap-3">
                                       <div>
                                         <p className="text-[11px] uppercase tracking-[0.18em] text-white/45">Send Offer</p>
                                         <p className="mt-2 text-lg font-semibold text-white">Negotiate your price and message</p>
                                       </div>
-                                      <button type="button" onClick={() => setActiveProposalBriefId(null)} className="rounded-[14px] border border-white/10 px-3 py-2 text-sm text-white/70 transition hover:bg-white/[0.05]">Close</button>
+                                      <button type="button" onClick={() => setActiveProposalBriefId(null)} className="activity-proposal-close rounded-[14px] border border-white/10 px-3 py-2 text-sm text-white/70 transition hover:bg-white/[0.05]">Close</button>
                                     </div>
                                     <div className="mt-5 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(280px,360px)]">
-                                      <label className="space-y-3">
+                                      <label className="activity-proposal-message space-y-3">
                                         <span className="text-xs uppercase tracking-[0.22em] text-white/52">Why are you a fit?</span>
-                                        <textarea value={proposalMessages[brief.id] ?? ""} onChange={(event) => handleProposalMessageChange(brief.id, event.target.value)} placeholder="Share your sound, turnaround, and what you would deliver for this project..." className="min-h-[150px] w-full rounded-[18px] border border-white/10 bg-[#1c1f27] px-4 py-4 text-sm text-white outline-none placeholder:text-white/28 focus:border-[#a887ff]" />
+                                        <textarea value={proposalMessages[brief.id] ?? ""} onChange={(event) => handleProposalMessageChange(brief.id, event.target.value)} placeholder="Share your sound, turnaround, and what you would deliver for this project..." className="activity-proposal-textarea min-h-[150px] w-full rounded-[18px] border border-white/10 bg-[#1c1f27] px-4 py-4 text-sm text-white outline-none placeholder:text-white/28 focus:border-[#a887ff]" />
                                       </label>
-                                      <div className="activity-panel rounded-[20px] p-4">
+                                      <div className="activity-proposal-offer activity-panel rounded-[20px] p-4">
                                         <p className="text-xs uppercase tracking-[0.22em] text-white/52">Your Offer</p>
                                         <div className="mt-4 grid grid-cols-[48px_minmax(0,1fr)_48px] items-center gap-3">
-                                          <button type="button" onClick={() => adjustProposalAmount(brief, "down")} className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/10 bg-white/[0.04] text-white/78 transition hover:bg-white/[0.08]">
+                                          <button type="button" onClick={() => adjustProposalAmount(brief, "down")} className="activity-proposal-stepper flex h-12 w-12 items-center justify-center rounded-[14px] border border-white/10 bg-white/[0.04] text-white/78 transition hover:bg-white/[0.08]">
                                             <Minus className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                                           </button>
-                                          <input value={activeProposalAmount} onChange={(event) => handleProposalAmountChange(brief.id, event.target.value)} className="h-12 w-full rounded-[14px] border border-white/10 bg-[#0e1016] px-4 text-center text-base text-white outline-none focus:border-[#a887ff]" />
-                                          <button type="button" onClick={() => adjustProposalAmount(brief, "up")} className="flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#a887ff]/30 bg-[#a887ff] text-[#120d1d] transition hover:bg-[#b497ff]">
+                                          <input value={activeProposalAmount} onChange={(event) => handleProposalAmountChange(brief.id, event.target.value)} className="activity-proposal-amount h-12 w-full rounded-[14px] border border-white/10 bg-[#0e1016] px-4 text-center text-base text-white outline-none focus:border-[#a887ff]" />
+                                          <button type="button" onClick={() => adjustProposalAmount(brief, "up")} className="activity-proposal-stepper-primary flex h-12 w-12 items-center justify-center rounded-[14px] border border-[#a887ff]/30 bg-[#a887ff] text-[#120d1d] transition hover:bg-[#b497ff]">
                                             <Plus className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                                           </button>
                                         </div>
-                                        <p className={`mt-3 text-xs ${proposalOutOfRange ? "text-[#ffb4a9]" : "text-white/48"}`}>Keep the offer between Rs {formatHiringCurrency(String(minimum))} and Rs {formatHiringCurrency(String(maximum))}.</p>
-                                        <button type="submit" disabled={submittingProposalId === brief.id || proposalOutOfRange} className="mt-5 inline-flex w-full items-center justify-center rounded-[16px] bg-[#a887ff] px-4 py-3 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff] disabled:opacity-60">
+                                        <p className={`activity-proposal-helper mt-3 text-xs ${proposalOutOfRange ? "text-[#ffb4a9]" : "text-white/48"}`}>Keep the offer between Rs {formatHiringCurrency(String(minimum))} and Rs {formatHiringCurrency(String(maximum))}.</p>
+                                        <button type="submit" disabled={submittingProposalId === brief.id || proposalOutOfRange} className="activity-proposal-submit mt-5 inline-flex w-full items-center justify-center rounded-[16px] bg-[#a887ff] px-4 py-3 text-sm font-semibold text-[#120d1d] transition hover:bg-[#b497ff] disabled:opacity-60">
                                           {submittingProposalId === brief.id ? "Sending Offer..." : "Send Offer"}
                                         </button>
                                       </div>

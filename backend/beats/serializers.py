@@ -2,6 +2,7 @@ import json
 
 from django.contrib.auth import get_user_model
 from django.db.models import Sum
+from django.db.models.functions import Coalesce
 from rest_framework import serializers
 
 from beats.metadata_choices import INSTRUMENT_VALUES, MOOD_VALUES
@@ -258,7 +259,10 @@ class BeatSerializer(MoodTypesSerializerMixin, InstrumentTypesSerializerMixin, s
         return obj.likes.count()
 
     def get_play_count(self, obj):
-        aggregate = obj.listening_events.aggregate(total=Sum("play_count"))
+        annotated_value = getattr(obj, "_play_count", None)
+        if annotated_value is not None:
+            return annotated_value
+        aggregate = obj.listening_events.aggregate(total=Coalesce(Sum("play_count"), 0))
         return aggregate["total"] or 0
 
     def get_is_featured(self, obj):
@@ -289,10 +293,20 @@ class BeatSerializer(MoodTypesSerializerMixin, InstrumentTypesSerializerMixin, s
         if not cleaned_ids:
             return []
 
-        producers = {
-            producer.id: producer
-            for producer in User.objects.filter(id__in=cleaned_ids, is_producer=True).select_related("producer_profile")
-        }
+        producer_cache = getattr(self, "_featured_producer_cache", None)
+        if producer_cache is None:
+            producer_cache = {}
+            self._featured_producer_cache = producer_cache
+
+        cache_key = tuple(cleaned_ids)
+        if cache_key in producer_cache:
+            producers = producer_cache[cache_key]
+        else:
+            producers = {
+                producer.id: producer
+                for producer in User.objects.filter(id__in=cleaned_ids, is_producer=True).select_related("producer_profile")
+            }
+            producer_cache[cache_key] = producers
         payload = []
         for producer_id in cleaned_ids:
             producer = producers.get(producer_id)

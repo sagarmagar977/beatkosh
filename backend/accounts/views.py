@@ -1,7 +1,8 @@
 from django.conf import settings
 from django.shortcuts import get_object_or_404
 from django.contrib.auth import get_user_model
-from django.db.models import Count, Q
+from django.db.models import Count, Prefetch, Q, Sum
+from django.db.models.functions import Coalesce
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -99,15 +100,30 @@ def _build_library_payload(user: User):
     }
 
 
-def build_producer_trust_summary(user: User):
-    profile, _ = ProducerProfile.objects.get_or_create(user=user)
-    payout_profile = ProducerPayoutProfile.objects.filter(producer=user).first()
-    verification_exists = VerificationRequest.objects.filter(
-        user=user,
-        verification_type=VerificationRequest.TYPE_PRODUCER,
-        status=VerificationRequest.STATUS_APPROVED,
-    ).exists()
-    agreement = ProducerSellerAgreement.objects.filter(producer=user).first()
+def build_producer_trust_summary(user: User, profile: ProducerProfile | None = None):
+    profile = profile or getattr(user, "producer_profile", None)
+    if profile is None:
+        profile, _ = ProducerProfile.objects.get_or_create(user=user)
+
+    try:
+        payout_profile = user.payout_profile
+    except ProducerPayoutProfile.DoesNotExist:
+        payout_profile = None
+
+    approved_requests = getattr(user, "approved_producer_verifications", None)
+    if approved_requests is not None:
+        verification_exists = bool(approved_requests)
+    else:
+        verification_exists = VerificationRequest.objects.filter(
+            user=user,
+            verification_type=VerificationRequest.TYPE_PRODUCER,
+            status=VerificationRequest.STATUS_APPROVED,
+        ).exists()
+
+    try:
+        agreement = user.seller_agreement
+    except ProducerSellerAgreement.DoesNotExist:
+        agreement = None
 
     profile_checks = [
         bool(profile.producer_name.strip()),
@@ -149,17 +165,15 @@ def build_producer_trust_summary(user: User):
     )
 
     featured_ids = profile.featured_beat_ids if isinstance(profile.featured_beat_ids, list) else []
-    featured_beats = list(
-        Beat.objects.filter(producer=user, is_active=True, id__in=featured_ids)
-        .select_related("producer")
-        .prefetch_related("available_licenses")[:4]
+    featured_queryset = (
+        Beat.objects.filter(producer=user, is_active=True)
+        .select_related("producer", "producer__producer_profile")
+        .prefetch_related("available_licenses", "likes")
+        .annotate(_play_count=Coalesce(Sum("listening_events__play_count"), 0))
     )
+    featured_beats = list(featured_queryset.filter(id__in=featured_ids)[:4])
     if not featured_beats:
-        featured_beats = list(
-            Beat.objects.filter(producer=user, is_active=True)
-            .select_related("producer")
-            .prefetch_related("available_licenses")[:4]
-        )
+        featured_beats = list(featured_queryset[:4])
 
     return {
         "producer_id": user.id,
@@ -587,7 +601,16 @@ class ProducerTrustPublicView(APIView):
     permission_classes = [permissions.AllowAny]
 
     def get(self, request, user_id: int):
-        producer = User.objects.get(id=user_id, is_producer=True)
+        producer = User.objects.select_related("producer_profile", "payout_profile", "seller_agreement").prefetch_related(
+            Prefetch(
+                "verification_requests",
+                queryset=VerificationRequest.objects.filter(
+                    verification_type=VerificationRequest.TYPE_PRODUCER,
+                    status=VerificationRequest.STATUS_APPROVED,
+                ),
+                to_attr="approved_producer_verifications",
+            )
+        ).get(id=user_id, is_producer=True)
         summary = build_producer_trust_summary(producer)
         return Response(ProducerTrustSummarySerializer(summary).data)
 
@@ -598,7 +621,17 @@ class ProducerDiscoveryListView(generics.ListAPIView):
 
     def get_queryset(self):
         return (
-            ProducerProfile.objects.select_related("user")
+            ProducerProfile.objects.select_related("user", "user__payout_profile", "user__seller_agreement")
+            .prefetch_related(
+                Prefetch(
+                    "user__verification_requests",
+                    queryset=VerificationRequest.objects.filter(
+                        verification_type=VerificationRequest.TYPE_PRODUCER,
+                        status=VerificationRequest.STATUS_APPROVED,
+                    ),
+                    to_attr="approved_producer_verifications",
+                )
+            )
             .annotate(follower_count=Count("user__follower_relations"))
             .filter(user__is_producer=True)
             .order_by("-verified", "-total_sales", "-follower_count", "producer_name")[:8]
@@ -608,7 +641,8 @@ class ProducerDiscoveryListView(generics.ListAPIView):
         queryset = self.get_queryset()
         data = []
         for profile in queryset:
-            summary = build_producer_trust_summary(profile.user)
+            summary = build_producer_trust_summary(profile.user, profile=profile)
+            profile._prefetched_featured_beats = summary["featured_beats"]
             serialized = self.get_serializer(profile).data
             serialized["trust_score"] = summary["trust_score"]
             serialized["badges"] = summary["badges"]

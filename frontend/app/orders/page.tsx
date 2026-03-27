@@ -355,16 +355,16 @@ export default function OrdersPage() {
         <aside className="theme-surface sticky top-4 h-fit self-start rounded-[32px] border border-white/8 bg-[radial-gradient(circle_at_top,rgba(39,204,51,0.16),transparent_32%),linear-gradient(180deg,rgba(18,20,18,0.98),rgba(13,15,13,0.98))] p-5 shadow-[0_22px_54px_rgba(0,0,0,0.28)]">
           <div className="space-y-5">
             <div>
-              <p className="text-[11px] font-semibold uppercase tracking-[0.28em] text-[#9be4a2]">Payment summary</p>
+              <p className="orders-summary-kicker text-[11px] font-semibold uppercase tracking-[0.28em] text-[#9be4a2]">Payment summary</p>
               <h2 className="theme-text-main mt-3 text-[1.9rem] font-semibold leading-tight">Ready to checkout</h2>
               <p className="theme-text-muted mt-2 text-sm leading-6">
                 Your totals are grouped clearly so the final amount stands out first.
               </p>
             </div>
-            <div className="space-y-3 rounded-[24px] border border-white/8 bg-black/20 p-4 text-lg">
+            <div className="orders-summary-panel space-y-3 rounded-[24px] border border-white/8 bg-black/20 p-4 text-lg">
               <div className="flex items-center justify-between gap-4"><span className="theme-text-muted">Total of Beats</span><span className="theme-text-main font-semibold">{cartPrice(cart?.beat_total_display, cart?.beat_total)}</span></div>
               <div className="flex items-center justify-between gap-4"><span className="theme-text-muted">Total of Sound kits</span><span className="theme-text-main font-semibold">{cartPrice(cart?.soundkit_total_display, cart?.soundkit_total)}</span></div>
-              <div className="flex items-center justify-between gap-4 border-t pt-4" style={{ borderColor: "var(--line)" }}><span className="theme-text-main text-xl font-semibold">Total Fee</span><span className="text-[2.2rem] font-black text-[#35f04b]">{cartPrice(cart?.total_display, cart?.total)}</span></div>
+              <div className="orders-summary-total-row flex items-center justify-between gap-4 border-t pt-4" style={{ borderColor: "var(--line)" }}><span className="orders-summary-total-label theme-text-main text-xl font-semibold">Total Fee</span><span className="orders-summary-total-amount text-[2.2rem] font-black text-[#35f04b]">{cartPrice(cart?.total_display, cart?.total)}</span></div>
             </div>
             <button type="button" disabled={!cart?.item_count || busyItemId === -1} onClick={() => void handleCheckout()} className="inline-flex w-full items-center justify-center gap-3 rounded-2xl bg-[#27cc33] px-4 py-4 text-lg font-black uppercase tracking-wide text-black shadow-[0_18px_36px_rgba(39,204,51,0.24)] transition hover:brightness-105 disabled:opacity-50">
               <ShieldCheck className="h-5 w-5" strokeWidth={2} aria-hidden="true" />

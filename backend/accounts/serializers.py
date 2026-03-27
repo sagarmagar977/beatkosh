@@ -223,8 +223,15 @@ class ProducerDiscoveryCardSerializer(serializers.ModelSerializer):
     def get_featured_beats(self, obj):
         if isinstance(obj, dict):
             return obj.get("featured_beats", [])
+        prefetched_beats = getattr(obj, "_prefetched_featured_beats", None)
+        if prefetched_beats is not None:
+            return BeatSerializer(prefetched_beats, many=True).data
         beat_ids = obj.featured_beat_ids[:3] if isinstance(obj.featured_beat_ids, list) else []
-        beats = Beat.objects.filter(id__in=beat_ids, producer=obj.user).select_related("producer").prefetch_related("available_licenses")
+        beats = (
+            Beat.objects.filter(id__in=beat_ids, producer=obj.user)
+            .select_related("producer", "producer__producer_profile")
+            .prefetch_related("available_licenses", "likes")
+        )
         return BeatSerializer(beats, many=True).data
 
 
