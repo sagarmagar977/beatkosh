@@ -3,7 +3,7 @@
 import { ChevronRight, Compass, FileAudio, FileImage, FileText, Home, LogOut, MessageSquareMore, Paperclip, Search, Send, Settings, ShoppingCart, SunMoon, UserRound, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { type ChangeEvent, type CSSProperties, type FormEvent, type KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type ChangeEvent, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { AuthScreen } from "@/app/auth-screen";
 import { useAuth } from "@/app/auth-context";
@@ -15,6 +15,7 @@ import {
   type ConversationItem,
   type MessageAttachmentItem,
   formatAttachmentSize,
+  getAttachmentContentType,
   getLatestMessage,
   isConversationUnread,
   loadSeenMessageMap,
@@ -38,7 +39,7 @@ type AppNotification = {
 };
 
 function getMessageAttachmentIcon(attachment: Pick<MessageAttachmentItem, "content_type"> | File) {
-  const contentType = attachment.content_type || attachment.type || "";
+  const contentType = getAttachmentContentType(attachment);
   if (contentType.startsWith("image/")) {
     return FileImage;
   }
@@ -176,7 +177,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, [hasSession, isProducerWorkspaceRoute, isProtectedRoute, isPublicAuthRoute, loading, router, user]);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
+    const onKeyDown = (event: globalThis.KeyboardEvent) => {
       if (event.key === "Escape") {
         setPinnedMenuOpen(null);
         setHoverMenuOpen(null);
@@ -396,7 +397,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     }
   }, [loadConversations, messageDraft, pendingMessageFiles, selectedConversation, token]);
 
-  const handleMessageComposerKeyDown = useCallback((event: KeyboardEvent<HTMLTextAreaElement>) => {
+  const handleMessageComposerKeyDown = useCallback((event: ReactKeyboardEvent<HTMLTextAreaElement>) => {
     if (event.key !== "Enter" || event.shiftKey) {
       return;
     }

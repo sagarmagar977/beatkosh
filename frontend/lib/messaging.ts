@@ -29,6 +29,10 @@ export type ConversationItem = {
 
 export type SeenMessageMap = Record<number, number>;
 
+export function getAttachmentContentType(attachment: Pick<MessageAttachmentItem, "content_type"> | File) {
+  return "content_type" in attachment ? attachment.content_type : attachment.type || "";
+}
+
 export function getLatestMessage(conversation: ConversationItem) {
   return conversation.messages[conversation.messages.length - 1] ?? null;
 }

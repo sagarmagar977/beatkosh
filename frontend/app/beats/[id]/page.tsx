@@ -361,7 +361,7 @@ export default function BeatDetailPage() {
             onClick={() => beat && openLicenseModal(beat, selectedLicenseId)}
             className="brand-btn mt-5 w-full px-4 py-3 text-lg font-semibold disabled:opacity-50"
           >
-            {currentBeatInCart ? "Added to cart" : `Rs ${selectedLicense ? resolveLicensePrice(beat, selectedLicense) : beat?.base_price ?? "--"}`}
+            {currentBeatInCart ? "Added to cart" : `Rs ${beat && selectedLicense ? resolveLicensePrice(beat, selectedLicense) : beat?.base_price ?? "--"}`}
           </button>
 
           <div className="mt-6 grid gap-3 text-sm text-white/82">

@@ -216,9 +216,12 @@ export default function ProducerPrivateProfilePage() {
   const [draftBusyId, setDraftBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const tab = isPrivateTab(searchParams.get("tab")) ? searchParams.get("tab") : "beats";
-  const selectedRange = isRangeKey(searchParams.get("range")) ? searchParams.get("range") : "30d";
-  const trackView = isTrackView(searchParams.get("view")) ? searchParams.get("view") : "recent";
+  const tabParam = searchParams.get("tab");
+  const rangeParam = searchParams.get("range");
+  const viewParam = searchParams.get("view");
+  const tab: PrivateTab = isPrivateTab(tabParam) ? tabParam : "beats";
+  const selectedRange: RangeKey = isRangeKey(rangeParam) ? rangeParam : "30d";
+  const trackView: TrackView = isTrackView(viewParam) ? viewParam : "recent";
 
   const buildProfileUrl = useCallback((updates: Partial<{ tab: PrivateTab; range: RangeKey | null; view: TrackView | null }>) => {
     const params = new URLSearchParams(searchParams.toString());

@@ -12,6 +12,7 @@ import {
   type ConversationItem,
   type MessageAttachmentItem,
   formatAttachmentSize,
+  getAttachmentContentType,
   getLatestMessage,
   isConversationUnread,
   loadSeenMessageMap,
@@ -21,7 +22,7 @@ import {
 } from "@/lib/messaging";
 
 function getAttachmentIcon(attachment: Pick<MessageAttachmentItem, "content_type"> | File) {
-  const contentType = attachment.content_type || attachment.type || "";
+  const contentType = getAttachmentContentType(attachment);
   if (contentType.startsWith("image/")) {
     return FileImage;
   }
@@ -32,13 +33,11 @@ function getAttachmentIcon(attachment: Pick<MessageAttachmentItem, "content_type
 }
 
 function isImageAttachment(attachment: Pick<MessageAttachmentItem, "content_type"> | File) {
-  const contentType = attachment.content_type || attachment.type || "";
-  return contentType.startsWith("image/");
+  return getAttachmentContentType(attachment).startsWith("image/");
 }
 
 function isAudioAttachment(attachment: Pick<MessageAttachmentItem, "content_type"> | File) {
-  const contentType = attachment.content_type || attachment.type || "";
-  return contentType.startsWith("audio/");
+  return getAttachmentContentType(attachment).startsWith("audio/");
 }
 
 export default function MessagesPage() {
