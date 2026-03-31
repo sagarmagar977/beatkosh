@@ -426,18 +426,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }, []);
 
   useEffect(() => {
-    if (!token) {
-      setNotifications([]);
+    if (token) {
       return;
     }
-
-    void loadNotifications();
-    const intervalId = window.setInterval(() => {
-      void loadNotifications();
-    }, 30000);
-
-    return () => window.clearInterval(intervalId);
-  }, [loadNotifications, token]);
+    setNotifications([]);
+  }, [token]);
 
   useEffect(() => {
     if (!token || !messagesOpen) {
@@ -688,6 +681,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   if (loading) {
     return <AppBootSkeleton />;
+  }
+
+  if (!hasSession) {
+    return <AuthScreen mode={normalizedPath === "/auth/register" ? "register" : "login"} />;
   }
 
   if (hasSession && !user && !allowDegradedSession) {

@@ -142,6 +142,7 @@ export default function HomePage() {
   const { token, user } = useAuth();
   const [feed, setFeed] = useState<HomeFeed | null>(null);
   const [loading, setLoading] = useState(true);
+  const [feedLoading, setFeedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [discovery, setDiscovery] = useState<DiscoveryState>({
     beats: [],
@@ -156,11 +157,10 @@ export default function HomePage() {
     const run = async () => {
       setLoading(true);
       try {
-        const [catalogBeats, dailyTrending, weeklyTrending, homeFeed] = await Promise.all([
+        const [catalogBeats, dailyTrending, weeklyTrending] = await Promise.all([
           apiRequest<HomeBeat[]>("/beats/"),
           apiRequest<TrendingBeat[]>("/beats/trending/daily/"),
           apiRequest<TrendingBeat[]>("/beats/trending/weekly/"),
-          token ? apiRequest<HomeFeed>("/analytics/listening/home/", { token }) : Promise.resolve<HomeFeed | null>(null),
         ]);
 
         if (cancelled) {
@@ -173,7 +173,6 @@ export default function HomePage() {
           weeklyTrending,
         });
         setDiscoveryError(null);
-        setFeed(homeFeed ? { ...homeFeed, shelves: withHomeCategoryPaths(homeFeed.shelves) } : null);
         setError(null);
       } catch (err) {
         if (cancelled) {
@@ -188,6 +187,43 @@ export default function HomePage() {
       } finally {
         if (!cancelled) {
           setLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!token) {
+      setFeed(null);
+      setFeedLoading(false);
+      return;
+    }
+
+    const run = async () => {
+      setFeedLoading(true);
+      try {
+        const homeFeed = await apiRequest<HomeFeed>("/analytics/listening/home/", { token });
+        if (cancelled) {
+          return;
+        }
+        setFeed({ ...homeFeed, shelves: withHomeCategoryPaths(homeFeed.shelves) });
+        setError(null);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : "Failed to load home feed";
+        setError(message);
+      } finally {
+        if (!cancelled) {
+          setFeedLoading(false);
         }
       }
     };
@@ -273,6 +309,7 @@ export default function HomePage() {
         <ShelfRail key={shelf.key} shelf={shelf} />
       ))}
 
+      {feedLoading ? <p className="text-sm text-white/55">Loading your personalized shelves...</p> : null}
       {error ? <p className="text-sm text-[#ffb4a9]">{error}</p> : null}
       {discoveryError ? <p className="text-sm text-[#ffb4a9]">{discoveryError}</p> : null}
     </div>

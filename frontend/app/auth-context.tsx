@@ -160,6 +160,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [bootstrapped, setBootstrapped] = useState(false);
   const [meError, setMeError] = useState<{ status: number; bodyText: string } | null>(null);
   const refreshingRef = useRef(false);
+  const ensureMeInFlightRef = useRef<Promise<void> | null>(null);
+  const ensureMeTokenRef = useRef<string | null>(null);
+  const loadedProfileTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     debugAuth("provider-mounted", { hasStoredToken: Boolean(readStoredToken()) });
@@ -188,6 +191,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(null);
     setUser(null);
     setMeError(null);
+    ensureMeInFlightRef.current = null;
+    ensureMeTokenRef.current = null;
+    loadedProfileTokenRef.current = null;
     setLoading(false);
   }, []);
 
@@ -225,44 +231,70 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      try {
-        debugAuth("ensureMe-start");
-        const me = await apiJson<User>("/account/me/", { token: current });
-        setUser(me);
-        setMeError(null);
-        debugAuth("ensureMe-success", { username: me.username });
-      } catch (err) {
-        const failure = err as Partial<ApiFailure>;
-        const status = typeof failure.status === "number" ? failure.status : 0;
-        debugAuth("ensureMe-failed", { status });
+      if (loadedProfileTokenRef.current === current && user) {
+        return;
+      }
 
-        if (status === 401 && !refreshingRef.current) {
-          refreshingRef.current = true;
-          try {
-            const next = await tryRefreshAccess();
-            if (next) {
-              const me = await apiJson<User>("/account/me/", { token: next });
-              setUser(me);
-              setMeError(null);
-              debugAuth("ensureMe-recovered-after-refresh", { username: me.username });
-              return;
+      if (ensureMeInFlightRef.current && ensureMeTokenRef.current === current) {
+        await ensureMeInFlightRef.current;
+        return;
+      }
+
+      const run = (async () => {
+        try {
+          debugAuth("ensureMe-start");
+          const me = await apiJson<User>("/account/me/", { token: current });
+          setUser(me);
+          setMeError(null);
+          loadedProfileTokenRef.current = current;
+          debugAuth("ensureMe-success", { username: me.username });
+        } catch (err) {
+          const failure = err as Partial<ApiFailure>;
+          const status = typeof failure.status === "number" ? failure.status : 0;
+          debugAuth("ensureMe-failed", { status });
+
+          if (status === 401 && !refreshingRef.current) {
+            refreshingRef.current = true;
+            try {
+              const next = await tryRefreshAccess();
+              if (next) {
+                const me = await apiJson<User>("/account/me/", { token: next });
+                setUser(me);
+                setMeError(null);
+                loadedProfileTokenRef.current = next;
+                debugAuth("ensureMe-recovered-after-refresh", { username: me.username });
+                return;
+              }
+            } catch {
+            } finally {
+              refreshingRef.current = false;
             }
-          } catch {
-          } finally {
-            refreshingRef.current = false;
+
+            logout();
+            return;
           }
 
-          logout();
-          return;
+          const bodyText = typeof failure.bodyText === "string" ? failure.bodyText : "";
+          setMeError({ status, bodyText: bodyText.slice(0, 1200) });
+          console.warn("[auth] failed to load /account/me", { status, body: bodyText });
+          loadedProfileTokenRef.current = null;
+          setUser(null);
         }
+      })();
 
-        const bodyText = typeof failure.bodyText === "string" ? failure.bodyText : "";
-        setMeError({ status, bodyText: bodyText.slice(0, 1200) });
-        console.warn("[auth] failed to load /account/me", { status, body: bodyText });
-        setUser(null);
+      ensureMeInFlightRef.current = run;
+      ensureMeTokenRef.current = current;
+
+      try {
+        await run;
+      } finally {
+        if (ensureMeInFlightRef.current === run) {
+          ensureMeInFlightRef.current = null;
+          ensureMeTokenRef.current = null;
+        }
       }
     },
-    [logout, token, tryRefreshAccess],
+    [logout, token, tryRefreshAccess, user],
   );
 
   useEffect(() => {

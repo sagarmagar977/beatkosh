@@ -2,7 +2,7 @@ from collections import Counter
 from datetime import timedelta
 
 from django.db.models import Avg, Count, Q, Sum
-from django.db.models.functions import TruncDate
+from django.db.models.functions import Coalesce, TruncDate
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from rest_framework import generics, permissions, status
@@ -78,6 +78,7 @@ def build_daily_series(*, start_date, end_date, labels, plays_by_date, sales_by_
 
 
 BEAT_PREFETCH = ("available_licenses", "likes", "tags")
+TASTE_PROFILE_REFRESH_WINDOW = timedelta(minutes=15)
 
 
 def build_greeting() -> str:
@@ -90,7 +91,15 @@ def build_greeting() -> str:
 
 
 def beat_queryset():
-    return Beat.objects.filter(is_active=True).select_related("producer", "producer__producer_profile").prefetch_related(*BEAT_PREFETCH)
+    return (
+        Beat.objects.filter(is_active=True)
+        .select_related("producer", "producer__producer_profile")
+        .prefetch_related(*BEAT_PREFETCH)
+        .annotate(
+            _like_count=Count("likes", distinct=True),
+            _play_count=Coalesce(Sum("listening_events__play_count"), 0),
+        )
+    )
 
 
 def extract_moods(beat: Beat) -> set[str]:
@@ -104,6 +113,9 @@ def extract_instruments(beat: Beat) -> set[str]:
 
 
 def extract_tags(beat: Beat) -> set[str]:
+    prefetched = getattr(beat, "_prefetched_objects_cache", {})
+    if "tags" in prefetched:
+        return {tag.name for tag in prefetched["tags"] if tag.name}
     return {value for value in beat.tags.values_list("name", flat=True) if value}
 
 
@@ -190,9 +202,12 @@ def update_listening_history(*, user, beat, source: str = ""):
 
 def refresh_user_taste_profile(user):
     profile, _created = UserTasteProfile.objects.get_or_create(user=user)
+    if profile.updated_at and profile.updated_at >= timezone.now() - TASTE_PROFILE_REFRESH_WINDOW:
+        return profile
     sessions = list(
         ListeningSession.objects.filter(user=user)
         .select_related("beat", "beat__producer")
+        .prefetch_related("beat__tags")
         .order_by("-started_at")[:240]
     )
     meaningful_sessions = [
@@ -334,11 +349,12 @@ def recommend_beats_for_user(user, *, today_only: bool = False, limit: int = 8):
 
     ranked = []
     now = timezone.now()
+    liked_genres = set(profile.liked_genres)
     for beat in candidate_queryset.exclude(id__in=exclude_ids)[:180]:
         score = 0
         if beat.genre in genre_targets:
             score += 38
-        if beat.genre in set(profile.liked_genres):
+        if beat.genre in liked_genres:
             score += 18
         if beat.genre in seed_genres:
             score += 22
@@ -360,8 +376,8 @@ def recommend_beats_for_user(user, *, today_only: bool = False, limit: int = 8):
             score += max(0, 18 - min(abs(beat.bpm - bpm_average), 18))
         if seed_bpm_average and beat.bpm:
             score += max(0, 12 - min(abs(beat.bpm - seed_bpm_average), 12))
-        score += min(beat.likes.count(), 12)
-        score += min(beat.listening_events.aggregate(total=Sum("play_count"))["total"] or 0, 18)
+        score += min(getattr(beat, "_like_count", 0) or 0, 12)
+        score += min(getattr(beat, "_play_count", 0) or 0, 18)
         freshness_bonus = 6 if beat.created_at >= now - timedelta(days=14) else 0
         ranked.append((score + freshness_bonus, beat.created_at, beat))
 
@@ -816,23 +832,21 @@ class SimilarBeatsView(APIView):
 
     def get(self, request, beat_id: int):
         beat = get_object_or_404(
-            Beat.objects.select_related("producer", "producer__producer_profile").prefetch_related("tags", "available_licenses", "likes"),
+            beat_queryset(),
             id=beat_id,
             is_active=True,
         )
         candidates = list(
-            Beat.objects.filter(is_active=True)
-            .exclude(id=beat.id)
-            .select_related("producer", "producer__producer_profile")
-            .prefetch_related("available_licenses", "likes", "tags")[:80]
+            beat_queryset()
+            .exclude(id=beat.id)[:80]
         )
-        beat_tags = set(beat.tags.values_list("name", flat=True))
+        beat_tags = extract_tags(beat)
         beat_instruments = extract_instruments(beat)
         beat_moods = extract_moods(beat)
 
         def score(candidate: Beat):
             score_value = 0
-            candidate_tags = {tag.name for tag in candidate.tags.all()}
+            candidate_tags = extract_tags(candidate)
             candidate_instruments = extract_instruments(candidate)
             candidate_moods = extract_moods(candidate)
             if candidate.genre == beat.genre:
@@ -850,8 +864,8 @@ class SimilarBeatsView(APIView):
             score_value += len(beat_tags.intersection(candidate_tags)) * 8
             if candidate.producer_id == beat.producer_id:
                 score_value += 10
-            score_value += min(candidate.likes.count(), 10)
-            score_value += min(candidate.listening_events.aggregate(total=Count("id"))["total"] or 0, 8)
+            score_value += min(getattr(candidate, "_like_count", 0) or 0, 10)
+            score_value += min(getattr(candidate, "_play_count", 0) or 0, 8)
             return score_value
 
         ranked = sorted(candidates, key=lambda item: (score(item), item.created_at), reverse=True)

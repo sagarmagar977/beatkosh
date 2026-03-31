@@ -6,14 +6,6 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/app/auth-context";
 import { apiRequest } from "@/lib/api";
 
-type Me = {
-  is_artist: boolean;
-  is_producer: boolean;
-  active_role: "artist" | "producer";
-  artist_profile?: { stage_name?: string };
-  producer_profile?: { producer_name?: string };
-};
-
 export default function CreatorOnboardingPage() {
   const router = useRouter();
   const { token, user, loading, refreshMe } = useAuth();
@@ -46,14 +38,12 @@ export default function CreatorOnboardingPage() {
   }, [sameName, stageName]);
 
   useEffect(() => {
-    const run = async () => {
-      if (!token) return;
-      const me = await apiRequest<Me>("/account/me/", { token });
-      setStageName(me.artist_profile?.stage_name ?? "");
-      setProducerName(me.producer_profile?.producer_name ?? "");
-    };
-    void run();
-  }, [token]);
+    if (!user) {
+      return;
+    }
+    setStageName(user.artist_profile?.stage_name ?? "");
+    setProducerName(user.producer_profile?.producer_name ?? "");
+  }, [user]);
 
   const onSubmit = async (e: FormEvent) => {
     e.preventDefault();
