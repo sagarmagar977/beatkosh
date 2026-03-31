@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: beatkosh-backend
+    runtime: python
+    rootDir: backend
+    buildCommand: bash build.sh
+    startCommand: bash start.sh
+    envVars:
+      - key: DJANGO_DEBUG
+        value: "False"
+      - key: DJANGO_SECURE_SSL_REDIRECT
+        value: "True"
+      - key: DJANGO_DB_SSL_REQUIRE
+        value: "True"
+      - key: DB_CONN_MAX_AGE
+        value: "0"
+      - key: DJANGO_TIME_ZONE
+        value: Asia/Kathmandu
+      - key: IMAGEKIT_ENABLED
+        value: "True"
+      - key: IMAGEKIT_MEDIA_ROOT
+        value: BeatKosh

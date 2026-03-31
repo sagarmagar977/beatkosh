@@ -142,6 +142,7 @@ type UploadWizardPickerProps = {
 function UploadWizardPicker({ label, options, selectedValues, onToggle, placeholder, error, multiple = false }: UploadWizardPickerProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
+  const pickerFieldClass = `upload-wizard-field flex h-12 w-full items-center justify-between rounded-lg border px-4 text-sm ${error ? "border-[#f2be43] shadow-[0_0_0_1px_rgba(242,190,67,0.25)]" : ""}`;
 
   const filteredOptions = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -161,20 +162,20 @@ function UploadWizardPicker({ label, options, selectedValues, onToggle, placehol
         <button
           type="button"
           onClick={() => setOpen((prev) => !prev)}
-          className={`flex h-12 w-full items-center justify-between rounded-lg border bg-[#2f3138] px-4 text-sm text-white/85 ${error ? "border-[#f2be43] shadow-[0_0_0_1px_rgba(242,190,67,0.25)]" : "border-white/10"}`}
+          className={pickerFieldClass}
         >
-          <span className={selectedValues.length === 0 ? "text-white/38" : "text-white/85"}>{selectedLabel}</span>
+          <span className={selectedValues.length === 0 ? "theme-text-faint" : ""}>{selectedLabel}</span>
           <ChevronDown className={`h-4 w-4 transition ${open ? "rotate-180" : ""}`} strokeWidth={1.8} aria-hidden="true" />
         </button>
         {open ? (
-          <div className="absolute z-20 mt-2 w-full rounded-xl border border-white/10 bg-[#24262d] p-3 shadow-2xl shadow-black/35">
+          <div className="upload-wizard-menu absolute z-20 mt-2 w-full rounded-xl p-3">
             <div className="relative">
-              <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-white/38" strokeWidth={1.8} aria-hidden="true" />
+              <Search className="theme-text-faint pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2" strokeWidth={1.8} aria-hidden="true" />
               <input
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 placeholder={`Search ${label.toLowerCase()}`}
-                className="h-11 w-full rounded-lg border border-white/10 bg-[#1e2026] pl-10 pr-3 text-sm text-white/85 outline-none placeholder:text-white/30"
+                className="upload-wizard-search h-11 w-full rounded-lg pl-10 pr-3 text-sm outline-none"
               />
             </div>
             <div className="mt-3 max-h-64 space-y-2 overflow-y-auto pr-1">
@@ -191,14 +192,14 @@ function UploadWizardPicker({ label, options, selectedValues, onToggle, placehol
                         setQuery("");
                       }
                     }}
-                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${active ? "border-[#8b28ff]/60 bg-[#8b28ff]/12 text-white" : "border-white/8 bg-white/[0.03] text-white/76"}`}
+                    className={`flex w-full items-center justify-between rounded-lg border px-3 py-2 text-left text-sm ${active ? "upload-wizard-picker-option-active" : "upload-wizard-picker-option"}`}
                   >
                     <span>{item}</span>
-                    <span className={`h-4 w-4 rounded-sm border ${active ? "border-[#8b28ff] bg-[#8b28ff]" : "border-white/25 bg-transparent"}`} />
+                    <span className={`h-4 w-4 rounded-sm border ${active ? "border-current bg-current" : "border-white/25 bg-transparent"}`} />
                   </button>
                 );
               })}
-              {filteredOptions.length === 0 ? <p className="px-2 py-3 text-sm text-white/45">No matches found.</p> : null}
+              {filteredOptions.length === 0 ? <p className="theme-text-muted px-2 py-3 text-sm">No matches found.</p> : null}
             </div>
           </div>
         ) : null}
@@ -206,7 +207,7 @@ function UploadWizardPicker({ label, options, selectedValues, onToggle, placehol
       {selectedValues.length > 0 ? (
         <div className="flex flex-wrap gap-2">
           {selectedValues.map((item) => (
-            <span key={item} className="rounded-full border border-white/10 bg-white/[0.03] px-3 py-1 text-xs text-white/75">{item}</span>
+            <span key={item} className="upload-wizard-tag rounded-full px-3 py-1 text-xs">{item}</span>
           ))}
         </div>
       ) : null}
@@ -218,14 +219,14 @@ function UploadWizardPicker({ label, options, selectedValues, onToggle, placehol
 function UploadAssetCard({ icon, title, status, fileName, href, previewUrl, compactPreview = false }: { icon: ReactNode; title: string; status: string; fileName?: string; href?: string; previewUrl?: string | null; compactPreview?: boolean }) {
   if (!fileName && !href) return null;
   return (
-    <div className="mt-3 rounded-lg border border-white/10 bg-[#17191f] px-3 py-3 text-sm text-white/75">
+    <div className="upload-wizard-asset mt-3 rounded-lg px-3 py-3 text-sm">
       <div className="flex items-start gap-3">
         {previewUrl ? <img src={previewUrl} alt={title} className={`${compactPreview ? "h-12 w-12 rounded-lg" : "h-16 w-16 rounded-xl"} object-cover`} /> : null}
-        <div className="mt-0.5 text-white/55">{icon}</div>
+        <div className="theme-text-muted mt-0.5">{icon}</div>
         <div className="min-w-0 flex-1">
-          <p className="font-medium text-white/82">{title}</p>
-          <p className="truncate text-white/55">{fileName ?? "Saved file"}</p>
-          <p className="mt-1 text-xs text-white/38">{status}</p>
+          <p className="theme-text-main font-medium">{title}</p>
+          <p className="theme-text-muted truncate">{fileName ?? "Saved file"}</p>
+          <p className="theme-text-faint mt-1 text-xs">{status}</p>
           {href ? <a href={href} target="_blank" rel="noreferrer" className="mt-2 inline-flex text-xs text-[#b784ff] hover:text-[#d2b0ff]">Open saved file</a> : null}
         </div>
       </div>
@@ -351,7 +352,12 @@ export default function ProducerUploadWizardPage() {
   const selectedFeaturedCoverUrl = useMemo(() => resolveMediaUrl(selectedFeaturedCover?.image_url), [selectedFeaturedCover]);
   const customCoverPreviewUrl = useMemo(() => (coverArt ? URL.createObjectURL(coverArt) : null), [coverArt]);
   const producerModeReady = Boolean(user?.is_producer && user?.active_role === "producer");
-  const beat22SelectClass = "h-12 w-full rounded-lg border border-white/10 bg-[#2f3138] px-4 text-sm text-white/85 outline-none";
+  const beat22FieldClass = "upload-wizard-field w-full rounded-lg border px-4 text-sm outline-none";
+  const beat22SelectClass = `h-12 ${beat22FieldClass}`;
+  const beat22InputClass = `h-12 ${beat22FieldClass}`;
+  const beat22CompactInputClass = `h-10 ${beat22FieldClass}`;
+  const beat22SoftPanelClass = "upload-wizard-soft-panel rounded-xl";
+  const beat22CheckboxClass = "upload-wizard-checkbox h-5 w-5";
   const beat22InvalidClass = "border-[#f2be43] shadow-[0_0_0_1px_rgba(242,190,67,0.25)]";
 
   const syncBeatFromDraft = (item: BeatDraft) => {
@@ -890,13 +896,13 @@ export default function ProducerUploadWizardPage() {
   }, [hasBeatWizardProgress]);
 
   return (
-    <div className="space-y-5">
+    <div className="upload-wizard-scope space-y-5">
       <section className="grid gap-5 lg:grid-cols-[260px_1fr]">
         <aside className="surface-panel rounded-xl p-4">
-          <h2 className="text-sm font-semibold uppercase tracking-wider text-white/60">Steps</h2>
+          <h2 className="theme-text-muted text-sm font-semibold uppercase tracking-wider">Steps</h2>
           <div className="mt-3 space-y-2">
             {steps.map((item, idx) => (
-              <button key={item} type="button" onClick={() => setStep(idx)} className={`w-full rounded-md border px-3 py-3 text-left text-sm ${step === idx ? "border-[#8b28ff]/70 bg-[#8b28ff]/20" : "border-white/10 bg-[#121522]"}`}>
+              <button key={item} type="button" onClick={() => setStep(idx)} className={`w-full rounded-md px-3 py-3 text-left text-sm ${step === idx ? "upload-wizard-step-active" : "upload-wizard-step-idle"}`}>
                 {item}
               </button>
             ))}
@@ -911,7 +917,7 @@ export default function ProducerUploadWizardPage() {
                 <div className="grid gap-3 md:grid-cols-2">
                   <div className="space-y-1 md:col-span-2">
                     <input
-                      className={`h-10 w-full rounded-md border bg-white/5 px-3 text-sm ${metaErrors.title ? beat22InvalidClass : "border-white/10"}`}
+                      className={`${beat22CompactInputClass} ${metaErrors.title ? beat22InvalidClass : ""}`}
                       placeholder="Beat title*"
                       value={title}
                       onChange={(e) => {
@@ -955,7 +961,7 @@ export default function ProducerUploadWizardPage() {
                   />
                   <div className="space-y-1">
                     <input
-                      className={`h-12 w-full rounded-lg border bg-[#2f3138] px-4 text-sm text-white/85 outline-none ${metaErrors.bpm ? beat22InvalidClass : "border-white/10"}`}
+                      className={`${beat22InputClass} ${metaErrors.bpm ? beat22InvalidClass : ""}`}
                       placeholder="Tempo (BPM)"
                       value={bpm}
                       onChange={(e) => {
@@ -974,7 +980,7 @@ export default function ProducerUploadWizardPage() {
                   </div>
                   <div className="space-y-1 md:col-span-2">
                     <input
-                      className={`h-10 w-full rounded-md border bg-white/5 px-3 text-sm ${metaErrors.basePrice ? beat22InvalidClass : "border-white/10"}`}
+                      className={`${beat22CompactInputClass} ${metaErrors.basePrice ? beat22InvalidClass : ""}`}
                       placeholder="Base price*"
                       value={basePrice}
                       onChange={(e) => {
@@ -986,12 +992,12 @@ export default function ProducerUploadWizardPage() {
                   </div>
                   <div className="space-y-2 md:col-span-2">
                     <div className="flex items-center justify-between gap-3">
-                      <p className="text-sm font-medium text-white/82">Add Tags</p>
-                      <p className="text-xs text-white/42">Press Enter or Add</p>
+                      <p className="theme-text-soft text-sm font-medium">Add Tags</p>
+                      <p className="theme-text-faint text-xs">Press Enter or Add</p>
                     </div>
                     <div className="flex gap-3">
                       <input
-                        className="h-12 flex-1 rounded-lg border border-white/10 bg-[#2f3138] px-4 text-sm text-white/85 outline-none placeholder:text-white/30"
+                        className={`${beat22InputClass} flex-1`}
                         placeholder="Enter tags"
                         value={tagInput}
                         onChange={(e) => setTagInput(e.target.value)}
@@ -1002,12 +1008,12 @@ export default function ProducerUploadWizardPage() {
                           }
                         }}
                       />
-                      <button type="button" onClick={addBeatTag} className="rounded-lg border border-white/10 bg-white/5 px-5 text-sm text-white/82 hover:bg-white/10">Add</button>
+                      <button type="button" onClick={addBeatTag} className="upload-wizard-secondary-btn rounded-lg px-5 text-sm">Add</button>
                     </div>
                     {beatTags.length > 0 ? (
                       <div className="flex flex-wrap gap-2">
                         {beatTags.map((tag) => (
-                          <button key={tag} type="button" onClick={() => removeBeatTag(tag)} className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-sm text-white/78 hover:bg-white/[0.08]">
+                          <button key={tag} type="button" onClick={() => removeBeatTag(tag)} className="upload-wizard-tag inline-flex items-center gap-2 rounded-md px-3 py-1.5 text-sm">
                             <span>{tag}</span>
                             <X className="h-3.5 w-3.5" strokeWidth={1.8} aria-hidden="true" />
                           </button>
@@ -1015,13 +1021,13 @@ export default function ProducerUploadWizardPage() {
                       </div>
                     ) : null}
                   </div>
-                  <div className="rounded-[20px] border border-white/10 bg-[#17191f] p-4 md:col-span-2">
+                  <div className="upload-wizard-featured-panel rounded-[20px] p-4 md:col-span-2">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <p className="text-sm font-medium text-white/86">Featured producers</p>
-                        <p className="mt-1 text-xs text-white/45">Pick collaborators from producers you follow, producers who follow you, or mutual follow-backs.</p>
+                        <p className="theme-text-soft text-sm font-medium">Featured producers</p>
+                        <p className="theme-text-muted mt-1 text-xs">Pick collaborators from producers you follow, producers who follow you, or mutual follow-backs.</p>
                       </div>
-                      <p className="text-xs uppercase tracking-[0.16em] text-white/38">{featuredProducerIds.length} selected</p>
+                      <p className="theme-text-faint text-xs uppercase tracking-[0.16em]">{featuredProducerIds.length} selected</p>
                     </div>
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
                       {featuredProducerCandidates.map((producer) => {
@@ -1032,27 +1038,27 @@ export default function ProducerUploadWizardPage() {
                             key={producer.producer_id}
                             type="button"
                             onClick={() => toggleFeaturedProducer(producer.producer_id)}
-                            className={`flex items-start gap-3 rounded-2xl border px-3 py-3 text-left transition ${active ? "border-[#8b28ff] bg-[#8b28ff]/12" : "border-white/10 bg-white/[0.03] hover:bg-white/[0.05]"}`}
+                            className={`flex items-start gap-3 rounded-2xl border px-3 py-3 text-left transition ${active ? "upload-wizard-featured-card upload-wizard-featured-card-active" : "upload-wizard-featured-card"}`}
                           >
                             {avatarUrl ? (
                               <img src={avatarUrl} alt={producer.producer_name} className="h-12 w-12 rounded-full object-cover" />
                             ) : (
-                              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white/80">
+                              <div className="upload-wizard-avatar-fallback flex h-12 w-12 items-center justify-center rounded-full text-sm font-semibold">
                                 {producer.producer_name.slice(0, 1).toUpperCase()}
                               </div>
                             )}
                             <div className="min-w-0 flex-1">
-                              <p className="line-clamp-1 text-sm font-medium text-white/88">{producer.producer_name}</p>
-                              <p className="mt-1 line-clamp-2 text-xs text-white/48">{producer.headline || `@${producer.username}`}</p>
-                              <span className="mt-2 inline-flex rounded-full border border-white/10 px-2 py-1 text-[10px] uppercase tracking-[0.14em] text-white/48">{producer.relation.replace("_", " ")}</span>
+                              <p className="theme-text-main line-clamp-1 text-sm font-medium">{producer.producer_name}</p>
+                              <p className="theme-text-muted mt-1 line-clamp-2 text-xs">{producer.headline || `@${producer.username}`}</p>
+                              <span className="upload-wizard-outline-pill mt-2 inline-flex rounded-full px-2 py-1 text-[10px] uppercase tracking-[0.14em]">{producer.relation.replace("_", " ")}</span>
                             </div>
                           </button>
                         );
                       })}
-                      {featuredProducerCandidates.length === 0 ? <p className="sm:col-span-2 text-sm text-white/55">No eligible producer collaborators yet. Follow other producers or wait for follow-backs to see candidates here.</p> : null}
+                      {featuredProducerCandidates.length === 0 ? <p className="theme-text-muted sm:col-span-2 text-sm">No eligible producer collaborators yet. Follow other producers or wait for follow-backs to see candidates here.</p> : null}
                     </div>
                   </div>
-                  <textarea className="min-h-24 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm md:col-span-2" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
+                  <textarea className="upload-wizard-field min-h-24 rounded-md border px-3 py-2 text-sm md:col-span-2" placeholder="Description" value={description} onChange={(e) => setDescription(e.target.value)} />
                   <button
                     type="button"
                     onClick={() => void withBusy(async () => {
@@ -1095,27 +1101,27 @@ export default function ProducerUploadWizardPage() {
                     <p className="mt-0.5 text-[#d7c08b]">Saved draft uploads stay here across steps. Cover art can come from a square-cropped custom upload or a featured cover from the backend.</p>
                   </div>
                   <div className="grid gap-3 md:grid-cols-2">
-                    <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
-                      <p className="text-sm text-white/80">Optional tagged preview MP3 (.mp3)</p>
-                      <input type="file" accept=".mp3,audio/mpeg" onChange={(e) => { const file = e.target.files?.[0] ?? null; setTaggedMp3(file); updateUploadCard("tagged_mp3", file); }} className="mt-3 h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
-                      <p className="mt-2 text-xs text-white/45">This is the preview artists hear before purchase. If you do not upload a separate beat file, this MP3 will also be used as the main audio.</p>
+                    <label className="upload-wizard-upload-tile rounded-xl px-4 py-5">
+                      <p className="theme-text-soft text-sm">Optional tagged preview MP3 (.mp3)</p>
+                      <input type="file" accept=".mp3,audio/mpeg" onChange={(e) => { const file = e.target.files?.[0] ?? null; setTaggedMp3(file); updateUploadCard("tagged_mp3", file); }} className="upload-wizard-field mt-3 h-10 w-full rounded-md px-3 text-sm" />
+                      <p className="theme-text-muted mt-2 text-xs">This is the preview artists hear before purchase. If you do not upload a separate beat file, this MP3 will also be used as the main audio.</p>
                       <UploadAssetCard icon={<Music2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Preview MP3" status={taggedMp3 ? "Selected in this browser session" : beatDraft?.preview_audio_obj ? "Saved to draft" : uploadCardState?.tagged_mp3 ? "Remembered for this tab" : ""} fileName={taggedMp3?.name ?? uploadCardState?.tagged_mp3 ?? fileNameFromUrl(beatDraft?.preview_audio_obj)} href={resolveMediaUrl(beatDraft?.preview_audio_obj)} />
                     </label>
-                    <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
-                      <p className="text-sm text-white/80">Cover art</p>
-                      <button type="button" onClick={() => setCoverPickerOpen(true)} className="mt-3 flex h-10 w-full items-center justify-center rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80 hover:bg-white/10">Choose cover art</button>
-                      <p className="mt-2 text-xs text-white/45">Custom uploads are auto-cropped to a 1:1 square. You can also pick any featured cover below.</p>
+                    <label className="upload-wizard-upload-tile rounded-xl px-4 py-5">
+                      <p className="theme-text-soft text-sm">Cover art</p>
+                      <button type="button" onClick={() => setCoverPickerOpen(true)} className="upload-wizard-secondary-btn mt-3 flex h-10 w-full items-center justify-center rounded-md px-3 text-sm">Choose cover art</button>
+                      <p className="theme-text-muted mt-2 text-xs">Custom uploads are auto-cropped to a 1:1 square. You can also pick any featured cover below.</p>
                       <UploadAssetCard icon={<ImageIcon className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Cover Art" status={coverArt ? "Custom cover cropped to square and ready" : selectedFeaturedCover ? "Featured cover selected" : beatDraft?.cover_art_obj ? "Saved to draft" : uploadCardState?.cover_art ? "Remembered for this tab" : ""} fileName={coverArt?.name ?? (selectedFeaturedCover ? "Featured cover" : uploadCardState?.cover_art ?? fileNameFromUrl(beatDraft?.cover_art_obj))} href={selectedFeaturedCoverUrl ?? resolveMediaUrl(beatDraft?.cover_art_obj)} previewUrl={customCoverPreviewUrl ?? selectedFeaturedCoverUrl ?? resolveMediaUrl(beatDraft?.cover_art_obj)} compactPreview />
                     </label>
-                    <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
-                      <p className="text-sm text-white/80">Upload main beat file (.wav or .mp3)</p>
-                      <input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" onChange={(e) => { const file = e.target.files?.[0] ?? null; setWavFile(file); updateUploadCard("wav", file); }} className="mt-3 h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
-                      <p className="mt-2 text-xs text-white/45">Required before publish. This is the audio saved to the beat record.</p>
+                    <label className="upload-wizard-upload-tile rounded-xl px-4 py-5">
+                      <p className="theme-text-soft text-sm">Upload main beat file (.wav or .mp3)</p>
+                      <input type="file" accept=".wav,.mp3,audio/wav,audio/mpeg" onChange={(e) => { const file = e.target.files?.[0] ?? null; setWavFile(file); updateUploadCard("wav", file); }} className="upload-wizard-field mt-3 h-10 w-full rounded-md px-3 text-sm" />
+                      <p className="theme-text-muted mt-2 text-xs">Required before publish. This is the audio saved to the beat record.</p>
                       <UploadAssetCard icon={<FileAudio className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="Beat File" status={wavFile ? "Selected in this browser session" : beatDraft?.audio_file_obj ? "Saved to draft" : uploadCardState?.wav ? "Remembered for this tab" : ""} fileName={wavFile?.name ?? uploadCardState?.wav ?? fileNameFromUrl(beatDraft?.audio_file_obj)} href={resolveMediaUrl(beatDraft?.audio_file_obj)} />
                     </label>
-                    <label className="rounded-xl border border-dashed border-white/25 bg-white/[0.03] px-4 py-5">
-                      <p className="text-sm text-white/80">Upload STEM files (.zip, .rar)</p>
-                      <input type="file" accept=".zip,.rar,application/zip" onChange={(e) => { const file = e.target.files?.[0] ?? null; setStemsFile(file); updateUploadCard("stems", file); }} className="mt-3 h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
+                    <label className="upload-wizard-upload-tile rounded-xl px-4 py-5">
+                      <p className="theme-text-soft text-sm">Upload STEM files (.zip, .rar)</p>
+                      <input type="file" accept=".zip,.rar,application/zip" onChange={(e) => { const file = e.target.files?.[0] ?? null; setStemsFile(file); updateUploadCard("stems", file); }} className="upload-wizard-field mt-3 h-10 w-full rounded-md px-3 text-sm" />
                       <UploadAssetCard icon={<Package className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />} title="STEM Archive" status={stemsFile ? "Selected in this browser session" : beatDraft?.stems_file_obj ? "Saved to draft" : uploadCardState?.stems ? "Remembered for this tab" : ""} fileName={stemsFile?.name ?? uploadCardState?.stems ?? fileNameFromUrl(beatDraft?.stems_file_obj)} href={resolveMediaUrl(beatDraft?.stems_file_obj)} />
                     </label>
                   </div>
@@ -1123,7 +1129,7 @@ export default function ProducerUploadWizardPage() {
                     <button
                       type="button"
                       onClick={() => setStep(0)}
-                      className="rounded-md border border-white/12 bg-white/5 px-4 py-2 text-sm text-white/80"
+                      className="upload-wizard-secondary-btn rounded-md px-4 py-2 text-sm"
                     >
                       Back
                     </button>
@@ -1143,7 +1149,7 @@ export default function ProducerUploadWizardPage() {
                           setMessage("Beat media saved as draft.");
                         })}
                         disabled={!producerModeReady || busy}
-                        className="rounded-md border border-white/12 bg-white/5 px-4 py-2 text-sm text-white/85 disabled:opacity-60"
+                        className="upload-wizard-secondary-btn rounded-md px-4 py-2 text-sm disabled:opacity-60"
                       >
                         Save as draft
                       </button>
@@ -1181,55 +1187,55 @@ export default function ProducerUploadWizardPage() {
                   <h4 className="text-xl font-semibold">License Details</h4>
                   <div className="flex items-center justify-between">
                     <div className="space-x-4">
-                      <button type="button" onClick={() => setCommercialMode("Manual")} className={`text-lg ${commercialMode === "Manual" ? "text-white" : "text-white/55"}`}>Manual</button>
-                      <button type="button" onClick={() => setCommercialMode("Presets")} className={`text-lg ${commercialMode === "Presets" ? "text-[#f2be43]" : "text-white/55"}`}>Presets</button>
+                      <button type="button" onClick={() => setCommercialMode("Manual")} className={`text-lg ${commercialMode === "Manual" ? "text-white theme-text-main" : "text-white/55 theme-text-muted"}`}>Manual</button>
+                      <button type="button" onClick={() => setCommercialMode("Presets")} className={`text-lg ${commercialMode === "Presets" ? "text-[#f2be43]" : "text-white/55 theme-text-muted"}`}>Presets</button>
                     </div>
                     <p className="text-[#b48eff]">Upgrade to Premium</p>
                   </div>
 
-                  <div className="rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3">
+                  <div className={`${beat22SoftPanelClass} px-4 py-3`}>
                     <label className="flex items-center justify-between">
                       <span>Enable Free MP3 Download?</span>
-                      <input type="checkbox" checked={enableFreeMp3Download} onChange={(e) => setEnableFreeMp3Download(e.target.checked)} className="h-5 w-5 accent-[#8b28ff]" />
+                      <input type="checkbox" checked={enableFreeMp3Download} onChange={(e) => setEnableFreeMp3Download(e.target.checked)} className={beat22CheckboxClass} />
                     </label>
                   </div>
 
-                  <section className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                  <section className={`${beat22SoftPanelClass} p-4`}>
                     <h5 className="text-3xl font-semibold">Non Exclusive License</h5>
                     <div className="mt-4 grid gap-4 md:grid-cols-2">
                       <div className="space-y-3">
-                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                        <div className="upload-wizard-soft-panel rounded-lg p-3">
                           <label className="mb-2 flex items-center justify-between">
                             <span>WAV</span>
-                            <input type="checkbox" checked={nonExclusiveWavEnabled} onChange={(e) => setNonExclusiveWavEnabled(e.target.checked)} className="h-5 w-5 accent-[#8b28ff]" />
+                            <input type="checkbox" checked={nonExclusiveWavEnabled} onChange={(e) => setNonExclusiveWavEnabled(e.target.checked)} className={beat22CheckboxClass} />
                           </label>
-                          <input value={nonExclusiveWavFee} onChange={(e) => setNonExclusiveWavFee(e.target.value)} className="h-11 w-full rounded-md border border-white/10 bg-[#12141b] px-3 text-white/85" placeholder="₹ 0" />
+                          <input value={nonExclusiveWavFee} onChange={(e) => setNonExclusiveWavFee(e.target.value)} className="upload-wizard-field h-11 w-full rounded-md px-3" placeholder="₹ 0" />
                         </div>
-                        <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+                        <div className="upload-wizard-soft-panel rounded-lg p-3">
                           <label className="mb-2 flex items-center justify-between">
                             <span>WAV + STEMS</span>
-                            <input type="checkbox" checked={nonExclusiveStemsEnabled} onChange={(e) => setNonExclusiveStemsEnabled(e.target.checked)} className="h-5 w-5 accent-[#8b28ff]" />
+                            <input type="checkbox" checked={nonExclusiveStemsEnabled} onChange={(e) => setNonExclusiveStemsEnabled(e.target.checked)} className={beat22CheckboxClass} />
                           </label>
-                          <input value={nonExclusiveStemsFee} onChange={(e) => setNonExclusiveStemsFee(e.target.value)} className="h-11 w-full rounded-md border border-white/10 bg-[#12141b] px-3 text-white/85" placeholder="₹ 0" />
+                          <input value={nonExclusiveStemsFee} onChange={(e) => setNonExclusiveStemsFee(e.target.value)} className="upload-wizard-field h-11 w-full rounded-md px-3" placeholder="₹ 0" />
                         </div>
                       </div>
                       <div className="space-y-3">
                         <div>
-                          <p className="mb-1 text-sm text-white/75">Publishing Rights (%)</p>
+                          <p className="theme-text-soft mb-1 text-sm">Publishing Rights (%)</p>
                           <select className={beat22SelectClass} value={nonExclusivePublishingRights} onChange={(e) => setNonExclusivePublishingRights(e.target.value)}>
                             <option value="">Select Publishing Rights</option>
                             {beatMetadataOptions.publishing_rights.map((item) => <option key={item} value={item}>{item}</option>)}
                           </select>
                         </div>
                         <div>
-                          <p className="mb-1 text-sm text-white/75">No. of master recordings</p>
+                          <p className="theme-text-soft mb-1 text-sm">No. of master recordings</p>
                           <select className={beat22SelectClass} value={nonExclusiveMasterRecordings} onChange={(e) => setNonExclusiveMasterRecordings(e.target.value)}>
                             <option value="">Select Master Recording</option>
                             {beatMetadataOptions.master_recordings.map((item) => <option key={item} value={item}>{item}</option>)}
                           </select>
                         </div>
                         <div>
-                          <p className="mb-1 text-sm text-white/75">License Period</p>
+                          <p className="theme-text-soft mb-1 text-sm">License Period</p>
                           <select className={beat22SelectClass} value={nonExclusiveLicensePeriod} onChange={(e) => setNonExclusiveLicensePeriod(e.target.value)}>
                             <option value="">Select License Period</option>
                             {beatMetadataOptions.license_periods.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -1239,13 +1245,13 @@ export default function ProducerUploadWizardPage() {
                     </div>
                   </section>
 
-                  <section className="rounded-xl border border-white/10 bg-white/[0.04] p-4">
+                  <section className={`${beat22SoftPanelClass} p-4`}>
                     <div className="mb-3 flex items-center justify-between">
                       <h5 className="text-3xl font-semibold">Exclusive License</h5>
-                      <input type="checkbox" checked={exclusiveEnabled} onChange={(e) => setExclusiveEnabled(e.target.checked)} className="h-5 w-5 accent-[#8b28ff]" />
+                      <input type="checkbox" checked={exclusiveEnabled} onChange={(e) => setExclusiveEnabled(e.target.checked)} className={beat22CheckboxClass} />
                     </div>
                     <div className="grid gap-3 md:grid-cols-2">
-                      <input value={exclusiveLicenseFee} onChange={(e) => setExclusiveLicenseFee(e.target.value)} className="h-12 rounded-lg border border-white/10 bg-[#2f3138] px-3 text-white/85" placeholder="₹ 0" />
+                      <input value={exclusiveLicenseFee} onChange={(e) => setExclusiveLicenseFee(e.target.value)} className={beat22InputClass} placeholder="₹ 0" />
                       <select className={beat22SelectClass} value={exclusivePublishingRights} onChange={(e) => setExclusivePublishingRights(e.target.value)}>
                         <option value="">Select Publishing Rights</option>
                         {beatMetadataOptions.publishing_rights.map((item) => <option key={item} value={item}>{item}</option>)}
@@ -1253,17 +1259,17 @@ export default function ProducerUploadWizardPage() {
                     </div>
                     <label className="mt-3 inline-flex items-center gap-2">
                       <span>Is it negotiable?</span>
-                      <input type="checkbox" checked={exclusiveNegotiable} onChange={(e) => setExclusiveNegotiable(e.target.checked)} className="h-5 w-5 accent-[#8b28ff]" />
+                      <input type="checkbox" checked={exclusiveNegotiable} onChange={(e) => setExclusiveNegotiable(e.target.checked)} className={beat22CheckboxClass} />
                     </label>
                   </section>
 
-                  <label className="mt-2 inline-flex items-start gap-3 text-sm text-white/70">
-                    <input type="checkbox" checked={declarationAccepted} onChange={(e) => setDeclarationAccepted(e.target.checked)} className="mt-1 h-4 w-4 accent-[#8b28ff]" />
+                  <label className="theme-text-soft mt-2 inline-flex items-start gap-3 text-sm">
+                    <input type="checkbox" checked={declarationAccepted} onChange={(e) => setDeclarationAccepted(e.target.checked)} className="upload-wizard-checkbox mt-1 h-4 w-4" />
                     <span>I hereby state that the instrumental being uploaded by me does not contain any pornographic or seditious content in audio/visual manner.</span>
                   </label>
 
                   <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
-                    <button type="button" onClick={() => setStep(1)} className="rounded-md border border-white/12 bg-white/5 px-4 py-2 text-sm text-white/80">Back</button>
+                    <button type="button" onClick={() => setStep(1)} className="upload-wizard-secondary-btn rounded-md px-4 py-2 text-sm">Back</button>
                     <div className="flex gap-2">
                       <button
                         type="button"
@@ -1325,7 +1331,7 @@ export default function ProducerUploadWizardPage() {
                           setMessage("License details saved as draft.");
                         })}
                         disabled={!producerModeReady || busy}
-                        className="rounded-md border border-white/12 bg-white/5 px-4 py-2 text-sm text-white/85 disabled:opacity-60"
+                        className="upload-wizard-secondary-btn rounded-md px-4 py-2 text-sm disabled:opacity-60"
                       >
                         Save as draft
                       </button>
@@ -1382,7 +1388,7 @@ export default function ProducerUploadWizardPage() {
               <h3 className="text-lg font-semibold">{kitSteps[step]}</h3>
               {step === 0 ? (
                 <div className="space-y-3">
-                  <select className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm" value={kitType} onChange={(e) => setKitType(e.target.value)}>
+                  <select className={beat22CompactInputClass} value={kitType} onChange={(e) => setKitType(e.target.value)}>
                     <option value="">Select pack type</option>
                     <option value="Melody loops kit">Melody loops kit</option>
                     <option value="Drum kit">Drum kit</option>
@@ -1404,13 +1410,13 @@ export default function ProducerUploadWizardPage() {
               ) : null}
               {step === 1 ? (
                 <div className="grid gap-3 md:grid-cols-2">
-                  <input className="h-10 rounded-md border border-white/10 bg-white/5 px-3 text-sm md:col-span-2" placeholder="Title" value={kitTitle} onChange={(e) => setKitTitle(e.target.value)} />
-                  <input className="h-10 rounded-md border border-white/10 bg-white/5 px-3 text-sm" placeholder="Genre" value={kitGenre} onChange={(e) => setKitGenre(e.target.value)} />
-                  <input className="h-10 rounded-md border border-white/10 bg-white/5 px-3 text-sm" placeholder="Mood" value={kitMood} onChange={(e) => setKitMood(e.target.value)} />
-                  <input className="h-10 rounded-md border border-white/10 bg-white/5 px-3 text-sm" placeholder="Min BPM" value={kitBpmMin} onChange={(e) => setKitBpmMin(e.target.value)} />
-                  <input className="h-10 rounded-md border border-white/10 bg-white/5 px-3 text-sm" placeholder="Max BPM" value={kitBpmMax} onChange={(e) => setKitBpmMax(e.target.value)} />
-                  <input className="h-10 rounded-md border border-white/10 bg-white/5 px-3 text-sm md:col-span-2" placeholder="Base price" value={kitBasePrice} onChange={(e) => setKitBasePrice(e.target.value)} />
-                  <textarea className="min-h-24 rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm md:col-span-2" placeholder="Description" value={kitDescription} onChange={(e) => setKitDescription(e.target.value)} />
+                  <input className={`${beat22CompactInputClass} md:col-span-2`} placeholder="Title" value={kitTitle} onChange={(e) => setKitTitle(e.target.value)} />
+                  <input className={beat22CompactInputClass} placeholder="Genre" value={kitGenre} onChange={(e) => setKitGenre(e.target.value)} />
+                  <input className={beat22CompactInputClass} placeholder="Mood" value={kitMood} onChange={(e) => setKitMood(e.target.value)} />
+                  <input className={beat22CompactInputClass} placeholder="Min BPM" value={kitBpmMin} onChange={(e) => setKitBpmMin(e.target.value)} />
+                  <input className={beat22CompactInputClass} placeholder="Max BPM" value={kitBpmMax} onChange={(e) => setKitBpmMax(e.target.value)} />
+                  <input className={`${beat22CompactInputClass} md:col-span-2`} placeholder="Base price" value={kitBasePrice} onChange={(e) => setKitBasePrice(e.target.value)} />
+                  <textarea className="upload-wizard-field min-h-24 rounded-md px-3 py-2 text-sm md:col-span-2" placeholder="Description" value={kitDescription} onChange={(e) => setKitDescription(e.target.value)} />
                   <button
                     type="button"
                     onClick={() => void withBusy(async () => {
@@ -1436,11 +1442,11 @@ export default function ProducerUploadWizardPage() {
               ) : null}
               {step === 2 ? (
                 <div className="space-y-3">
-                  <input type="file" accept=".zip,.rar,application/zip" onChange={(e) => setKitArchiveFile(e.target.files?.[0] ?? null)} className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
-                  <input type="file" accept="audio/*" onChange={(e) => setKitPreviewAudio(e.target.files?.[0] ?? null)} className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
-                  <input type="file" accept="image/*" onChange={(e) => setKitCoverArt(e.target.files?.[0] ?? null)} className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm text-white/80" />
-                  <input className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm" placeholder="Reference link" value={kitReference} onChange={(e) => setKitReference(e.target.value)} />
-                  <input className="h-10 w-full rounded-md border border-white/10 bg-white/5 px-3 text-sm" placeholder="Tags (comma separated)" value={kitTags} onChange={(e) => setKitTags(e.target.value)} />
+                  <input type="file" accept=".zip,.rar,application/zip" onChange={(e) => setKitArchiveFile(e.target.files?.[0] ?? null)} className="upload-wizard-field h-10 w-full rounded-md px-3 text-sm" />
+                  <input type="file" accept="audio/*" onChange={(e) => setKitPreviewAudio(e.target.files?.[0] ?? null)} className="upload-wizard-field h-10 w-full rounded-md px-3 text-sm" />
+                  <input type="file" accept="image/*" onChange={(e) => setKitCoverArt(e.target.files?.[0] ?? null)} className="upload-wizard-field h-10 w-full rounded-md px-3 text-sm" />
+                  <input className={beat22CompactInputClass} placeholder="Reference link" value={kitReference} onChange={(e) => setKitReference(e.target.value)} />
+                  <input className={beat22CompactInputClass} placeholder="Tags (comma separated)" value={kitTags} onChange={(e) => setKitTags(e.target.value)} />
                   <button
                     type="button"
                     onClick={() => void withBusy(async () => {
@@ -1464,7 +1470,7 @@ export default function ProducerUploadWizardPage() {
               ) : null}
               {step === 3 ? (
                 <div className="space-y-3">
-                  <p className="text-sm text-white/70">Licensing is captured via base price and metadata in current backend model.</p>
+                  <p className="theme-text-soft text-sm">Licensing is captured via base price and metadata in current backend model.</p>
                   <button
                     type="button"
                     onClick={() => void withBusy(async () => {
@@ -1489,31 +1495,31 @@ export default function ProducerUploadWizardPage() {
 
       {coverPickerOpen ? (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/70 px-4 py-6 backdrop-blur-sm">
-          <div className="w-full max-w-[760px] rounded-[24px] border border-white/10 bg-[#202126] p-5 shadow-2xl shadow-black/40 max-h-[88vh] overflow-hidden">
+          <div className="upload-wizard-modal w-full max-w-[760px] rounded-[24px] p-5 max-h-[88vh] overflow-hidden">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <p className="text-xs uppercase tracking-[0.24em] text-white/45">Cover Art</p>
+                <p className="theme-text-faint text-xs uppercase tracking-[0.24em]">Cover Art</p>
                 <h3 className="mt-2 text-xl font-semibold">Choose a square cover</h3>
-                <p className="mt-2 text-sm text-white/62">Upload your own art or pick one featured cover. Everything is cropped or displayed in 1:1.</p>
+                <p className="theme-text-muted mt-2 text-sm">Upload your own art or pick one featured cover. Everything is cropped or displayed in 1:1.</p>
               </div>
-              <button type="button" onClick={() => setCoverPickerOpen(false)} className="rounded-lg border border-white/12 px-3 py-2 text-sm text-white/72 hover:bg-white/5">Close</button>
+              <button type="button" onClick={() => setCoverPickerOpen(false)} className="upload-wizard-modal-close rounded-lg px-3 py-2 text-sm">Close</button>
             </div>
 
-            <div className="mt-4 rounded-[20px] border border-white/10 bg-[#17191f] p-4">
+            <div className="upload-wizard-modal-card mt-4 rounded-[20px] p-4">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-white/86">Upload custom cover</p>
-                  <p className="mt-1 text-xs text-white/45">Best for your own art. The image is cropped to a square automatically.</p>
+                  <p className="theme-text-soft text-sm font-medium">Upload custom cover</p>
+                  <p className="theme-text-muted mt-1 text-xs">Best for your own art. The image is cropped to a square automatically.</p>
                 </div>
                 <button type="button" onClick={() => customCoverInputRef.current?.click()} className="brand-btn px-4 py-2 text-sm">Upload Custom Cover</button>
                 <input ref={customCoverInputRef} type="file" accept="image/png,image/jpg,image/jpeg,image/webp" onChange={(event) => void handleCustomCoverChange(event)} className="hidden" />
               </div>
               {customCoverPreviewUrl ? (
-                <div className="mt-4 flex items-center gap-4 rounded-2xl border border-white/10 bg-black/10 p-4">
+                <div className="upload-wizard-modal-preview mt-4 flex items-center gap-4 rounded-2xl p-4">
                   <img src={customCoverPreviewUrl} alt="Custom cover preview" className="h-24 w-24 rounded-2xl object-cover" />
                   <div>
-                    <p className="text-sm font-medium text-white/84">{coverArt?.name}</p>
-                    <p className="mt-1 text-xs text-white/45">Square crop ready for upload</p>
+                    <p className="theme-text-soft text-sm font-medium">{coverArt?.name}</p>
+                    <p className="theme-text-muted mt-1 text-xs">Square crop ready for upload</p>
                   </div>
                 </div>
               ) : null}
@@ -1522,8 +1528,8 @@ export default function ProducerUploadWizardPage() {
             <div className="mt-4 min-h-0 flex-1 overflow-hidden">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-medium text-white/86">Featured covers</p>
-                  <p className="mt-1 text-xs text-white/45">Choose from the featured cover photos already available in the backend.</p>
+                  <p className="theme-text-soft text-sm font-medium">Featured covers</p>
+                  <p className="theme-text-muted mt-1 text-xs">Choose from the featured cover photos already available in the backend.</p>
                 </div>
               </div>
               <div className="mt-4 max-h-[42vh] overflow-y-auto pr-1">
@@ -1532,12 +1538,12 @@ export default function ProducerUploadWizardPage() {
                     const active = selectedFeaturedCoverId === cover.id;
                     const coverUrl = resolveMediaUrl(cover.image_url);
                     return (
-                      <button key={cover.id} type="button" onClick={() => handleFeaturedCoverSelect(cover)} className={`aspect-square overflow-hidden rounded-[18px] border transition ${active ? "border-[#8b28ff] ring-2 ring-[#8b28ff]/50" : "border-white/10 hover:border-white/25"}`}>
-                        {coverUrl ? <img src={coverUrl} alt="Featured cover" className="h-full w-full object-cover" /> : <div className="flex h-full w-full items-center justify-center bg-white/5 text-xs text-white/40">No image</div>}
+                      <button key={cover.id} type="button" onClick={() => handleFeaturedCoverSelect(cover)} className={`upload-wizard-cover-option aspect-square overflow-hidden rounded-[18px] transition ${active ? "upload-wizard-cover-option-active" : ""}`}>
+                        {coverUrl ? <img src={coverUrl} alt="Featured cover" className="h-full w-full object-cover" /> : <div className="theme-text-faint flex h-full w-full items-center justify-center bg-white/5 text-xs">No image</div>}
                       </button>
                     );
                   })}
-                  {featuredCovers.length === 0 ? <p className="col-span-full text-sm text-white/55">No featured covers are available yet.</p> : null}
+                  {featuredCovers.length === 0 ? <p className="theme-text-muted col-span-full text-sm">No featured covers are available yet.</p> : null}
                 </div>
               </div>
             </div>
@@ -1547,18 +1553,18 @@ export default function ProducerUploadWizardPage() {
 
       {leaveModalOpen ? (
         <div className="fixed inset-0 z-[140] flex items-center justify-center bg-black/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-[520px] rounded-[28px] border border-white/10 bg-[#202126] p-8 text-center shadow-2xl shadow-black/40">
-            <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-white/8 text-white/85">
+          <div className="upload-wizard-modal w-full max-w-[520px] rounded-[28px] p-8 text-center">
+            <div className="upload-wizard-tag mx-auto flex h-16 w-16 items-center justify-center rounded-full text-current">
               <AlertTriangle className="h-8 w-8" strokeWidth={1.8} aria-hidden="true" />
             </div>
             <h3 className="mt-6 text-2xl font-semibold">Are you sure you want to leave?</h3>
-            <p className="mt-3 text-sm text-white/62">Unsaved changes in this upload card will be lost. Saved drafts will remain available in Media Uploads.</p>
+            <p className="theme-text-muted mt-3 text-sm">Unsaved changes in this upload card will be lost. Saved drafts will remain available in Media Uploads.</p>
             <div className="mt-6 flex items-center justify-center gap-3">
               <button type="button" onClick={() => {
                 setLeaveModalOpen(false);
                 if (pendingHref) router.push(pendingHref);
-              }} className="rounded-lg bg-white/12 px-8 py-3 text-sm text-white/88 hover:bg-white/18">Leave</button>
-              <button type="button" onClick={() => { setPendingHref(null); setLeaveModalOpen(false); }} className="rounded-lg border border-white/12 px-8 py-3 text-sm text-white/80 hover:bg-white/5">Stay here</button>
+              }} className="upload-wizard-secondary-btn rounded-lg px-8 py-3 text-sm">Leave</button>
+              <button type="button" onClick={() => { setPendingHref(null); setLeaveModalOpen(false); }} className="upload-wizard-modal-close rounded-lg px-8 py-3 text-sm">Stay here</button>
             </div>
           </div>
         </div>
@@ -1567,14 +1573,14 @@ export default function ProducerUploadWizardPage() {
       {publishedBeat ? (
         <section className="surface-panel rounded-xl p-4">
           <h3 className="text-lg font-semibold">Last Published Beat</h3>
-          <p className="mt-1 text-sm text-white/65">{publishedBeat.title} by {publishedBeat.producer_username}</p>
+          <p className="theme-text-muted mt-1 text-sm">{publishedBeat.title} by {publishedBeat.producer_username}</p>
         </section>
       ) : null}
 
       {publishedKit ? (
         <section className="surface-panel rounded-xl p-4">
           <h3 className="text-lg font-semibold">Last Published Sound Kit</h3>
-          <p className="mt-1 text-sm text-white/65">{publishedKit.title} by {publishedKit.producer_username}</p>
+          <p className="theme-text-muted mt-1 text-sm">{publishedKit.title} by {publishedKit.producer_username}</p>
         </section>
       ) : null}
 

@@ -37,6 +37,6 @@ urlpatterns = [
     path("api/v1/resources/", include("resources_app.urls")),
 ]
 
-# Dev-only: serve uploaded media via Django when DEBUG=True.
-if settings.DEBUG:
+# Dev-only: serve uploaded media via Django when DEBUG=True and uploads are still local.
+if settings.DEBUG and not settings.IMAGEKIT_ENABLED:
     urlpatterns += static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
