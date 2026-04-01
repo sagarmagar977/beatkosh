@@ -7,7 +7,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { ChangeEvent, KeyboardEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
-import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import { apiCachedRequest, apiRequest, invalidateApiCache, resolveMediaUrl } from "@/lib/api";
 import {
   type ConversationItem,
   type MessageAttachmentItem,
@@ -64,7 +64,13 @@ export default function MessagesPage() {
     }
     setLoading(true);
     try {
-      const data = sortConversationsByLatestActivity(await apiRequest<ConversationItem[]>("/conversations/", { token }));
+      const data = sortConversationsByLatestActivity(
+        await apiCachedRequest<ConversationItem[]>(
+          "/conversations/",
+          { token },
+          { ttlMs: 15_000, scope: "session" },
+        ),
+      );
       setConversations(data);
       const hasPreferred = preferredConversationId && data.some((item) => item.id === preferredConversationId);
       if (hasPreferred) {
@@ -148,6 +154,7 @@ export default function MessagesPage() {
           },
         });
       }
+      invalidateApiCache("/conversations/");
       setDraft("");
       setPendingFiles([]);
       if (attachmentInputRef.current) {

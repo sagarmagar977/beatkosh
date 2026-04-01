@@ -13,6 +13,15 @@ from accounts.models import ProducerProfile
 User = get_user_model()
 
 
+def _safe_file_url(file_field):
+    if not file_field:
+        return ""
+    try:
+        return file_field.url
+    except (AttributeError, ValueError):
+        return ""
+
+
 class LicenseTypeSerializer(serializers.ModelSerializer):
     class Meta:
         model = LicenseType
@@ -42,7 +51,7 @@ class FeaturedCoverPhotoSerializer(serializers.ModelSerializer):
         fields = ("id", "title", "image", "image_url", "is_active", "created_at")
 
     def get_image_url(self, obj):
-        return obj.image.url if obj.image else ""
+        return _safe_file_url(obj.image)
 
 
 class InstrumentTypesField(serializers.ListField):
@@ -438,8 +447,8 @@ class BeatTrendSnapshotSerializer(serializers.ModelSerializer):
     genre = serializers.CharField(source="beat.genre", read_only=True)
     bpm = serializers.IntegerField(source="beat.bpm", read_only=True)
     base_price = serializers.DecimalField(source="beat.base_price", max_digits=10, decimal_places=2, read_only=True)
-    cover_art_obj = serializers.CharField(source="beat.cover_art_obj", read_only=True)
-    preview_audio_obj = serializers.CharField(source="beat.preview_audio_obj", read_only=True)
+    cover_art_obj = serializers.SerializerMethodField()
+    preview_audio_obj = serializers.SerializerMethodField()
     created_at = serializers.DateTimeField(source="beat.created_at", read_only=True)
     trending_score = serializers.FloatField(source="score", read_only=True)
     play_count = serializers.IntegerField(source="plays", read_only=True)
@@ -466,4 +475,10 @@ class BeatTrendSnapshotSerializer(serializers.ModelSerializer):
             "purchase_count",
             "calculated_at",
         )
+
+    def get_cover_art_obj(self, obj):
+        return _safe_file_url(getattr(obj.beat, "cover_art_obj", None))
+
+    def get_preview_audio_obj(self, obj):
+        return _safe_file_url(getattr(obj.beat, "preview_audio_obj", None))
 

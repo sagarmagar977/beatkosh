@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 
-import { apiRequest } from "@/lib/api";
+import { apiCachedRequest, apiRequest, invalidateApiCache } from "@/lib/api";
 
 export type SavedBeatEntry = {
   id: number;
@@ -82,7 +82,11 @@ function setState(userId: number, next: BeatLibraryState) {
 }
 
 async function fetchLibrary(userId: number, token: string) {
-  const payload = await apiRequest<{ listen_later: SavedBeatEntry[]; playlists: SavedPlaylist[] }>("/account/library/me/", { token });
+  const payload = await apiCachedRequest<{ listen_later: SavedBeatEntry[]; playlists: SavedPlaylist[] }>(
+    "/account/library/me/",
+    { token },
+    { ttlMs: 30_000, scope: "session" },
+  );
   setState(userId, {
     listenLater: Array.isArray(payload.listen_later) ? payload.listen_later : [],
     playlists: Array.isArray(payload.playlists) ? payload.playlists : [],
@@ -138,6 +142,7 @@ export function useBeatLibrary(userId?: number | null, token?: string | null) {
         return;
       }
       await apiRequest("/account/library/listen-later/" + beat.id + "/", { method: "POST", token, body: {} });
+      invalidateApiCache("/account/library/me/");
       await refreshLibrary(userId, token);
     },
     [token, userId],
@@ -149,6 +154,7 @@ export function useBeatLibrary(userId?: number | null, token?: string | null) {
         return;
       }
       await apiRequest("/account/library/listen-later/" + beatId + "/", { method: "DELETE", token });
+      invalidateApiCache("/account/library/me/");
       await refreshLibrary(userId, token);
     },
     [token, userId],
@@ -168,6 +174,7 @@ export function useBeatLibrary(userId?: number | null, token?: string | null) {
           new_playlist_name: payload.newPlaylistName ?? "",
         },
       });
+      invalidateApiCache("/account/library/me/");
       await refreshLibrary(userId, token);
     },
     [token, userId],
@@ -179,6 +186,7 @@ export function useBeatLibrary(userId?: number | null, token?: string | null) {
         return;
       }
       await apiRequest("/account/library/playlists/" + playlistId + "/beats/" + beatId + "/", { method: "DELETE", token });
+      invalidateApiCache("/account/library/me/");
       await refreshLibrary(userId, token);
     },
     [token, userId],
@@ -194,6 +202,7 @@ export function useBeatLibrary(userId?: number | null, token?: string | null) {
         return;
       }
       await apiRequest("/account/library/playlists/", { method: "POST", token, body: { name: cleaned } });
+      invalidateApiCache("/account/library/me/");
       await refreshLibrary(userId, token);
     },
     [token, userId],

@@ -9,7 +9,7 @@ import { useAuth } from "@/app/auth-context";
 import { BeatListRow } from "@/components/beat-list-row";
 import { useCart } from "@/context/cart-context";
 import { usePlayer } from "@/context/player-context";
-import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import { apiCachedRequest, apiRequest, invalidateApiCache, resolveMediaUrl } from "@/lib/api";
 import type { HomeBeat } from "@/lib/home-shelves";
 import { useBeatLibrary } from "@/lib/beat-library";
 
@@ -246,32 +246,45 @@ export default function ActivityPage() {
   const load = useCallback(async () => {
     if (!token) return;
     try {
-        const [likeData, beatData, licenses, hiringData, hiringMeta, applicationData, downloadData, orderData] = await Promise.all([
-          apiRequest<LikeItem[]>("/account/likes/beats/me/", { token }),
-          apiRequest<Beat[]>("/beats/"),
-          apiRequest<License[]>("/beats/licenses/"),
-          apiRequest<HiringBrief[]>("/projects/requests/", { token }),
-          apiRequest<HiringMetadata>("/projects/metadata-options/", { token }),
-          activeRole === "producer" ? apiRequest<ProducerApplication[]>("/projects/proposals/mine/", { token }) : Promise.resolve([] as ProducerApplication[]),
-          apiRequest<PurchasedBeat[]>("/orders/downloads/", { token }),
-          apiRequest<HistoryOrder[]>("/orders/history/", { token }),
-        ]);
+      const needsHiringData = sidebarMode === "hiring";
+      const needsAudioAssetData = sidebarMode === "audioAssets";
+
+      const [likeData, beatData, licenses, hiringData, hiringMeta, applicationData, downloadData, orderData] = await Promise.all([
+        apiCachedRequest<LikeItem[]>("/account/likes/beats/me/", { token }, { ttlMs: 30_000, scope: "session" }),
+        apiCachedRequest<Beat[]>("/beats/", {}, { ttlMs: 60_000, scope: "public" }),
+        apiCachedRequest<License[]>("/beats/licenses/", {}, { ttlMs: 5 * 60_000, scope: "public" }),
+        needsHiringData
+          ? apiCachedRequest<HiringBrief[]>("/projects/requests/", { token }, { ttlMs: 20_000, scope: "session" })
+          : Promise.resolve(hiringBriefs),
+        needsHiringData
+          ? apiCachedRequest<HiringMetadata>("/projects/metadata-options/", { token }, { ttlMs: 5 * 60_000, scope: "session" })
+          : Promise.resolve(hiringMetadata),
+        needsHiringData && activeRole === "producer"
+          ? apiCachedRequest<ProducerApplication[]>("/projects/proposals/mine/", { token }, { ttlMs: 20_000, scope: "session" })
+          : Promise.resolve(producerApplications),
+        needsAudioAssetData
+          ? apiCachedRequest<PurchasedBeat[]>("/orders/downloads/", { token }, { ttlMs: 20_000, scope: "session" })
+          : Promise.resolve(purchasedBeats),
+        needsAudioAssetData
+          ? apiCachedRequest<HistoryOrder[]>("/orders/history/", { token }, { ttlMs: 20_000, scope: "session" })
+          : Promise.resolve(purchaseOrders),
+      ]);
       setLikes(likeData);
       setBeats(beatData);
-        setLicenseCatalog(licenses);
-        setHiringBriefs(hiringData);
-        setHiringMetadata(hiringMeta);
-        setProducerApplications(applicationData);
-        setPurchasedBeats(downloadData);
-        setPurchaseOrders(orderData);
+      setLicenseCatalog(licenses);
+      setHiringBriefs(hiringData);
+      setHiringMetadata(hiringMeta);
+      setProducerApplications(applicationData);
+      setPurchasedBeats(downloadData);
+      setPurchaseOrders(orderData);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load activity");
     }
-  }, [activeRole, token]);
+  }, [activeRole, hiringBriefs, hiringMetadata, producerApplications, purchaseOrders, purchasedBeats, sidebarMode, token]);
 
   useEffect(() => {
     void load();
-  }, [activeRole, load]);
+  }, [activeRole, load, sidebarMode]);
 
   useEffect(() => {
     const loadCart = async () => {
@@ -280,7 +293,7 @@ export default function ActivityPage() {
         return;
       }
       try {
-        const cart = await apiRequest<CartSummary>("/orders/cart/me/", { token });
+        const cart = await apiCachedRequest<CartSummary>("/orders/cart/me/", { token }, { ttlMs: 15_000, scope: "session" });
         setCartBeatIds(cart.items.filter((item) => item.product_type === "beat").map((item) => item.product_id));
       } catch {
         setCartBeatIds([]);
@@ -581,6 +594,7 @@ export default function ActivityPage() {
           license_id: effectiveSelectedLicenseId,
         },
       });
+      invalidateApiCache("/orders/cart/me/");
       setCartBeatIds((current) => (current.includes(licenseModalBeat.id) ? current : [...current, licenseModalBeat.id]));
       await refreshCart();
       notify("Added to cart.");
@@ -748,6 +762,9 @@ export default function ActivityPage() {
           message: proposalMessages[brief.id] ?? "",
         },
       });
+      invalidateApiCache("/projects/requests/");
+      invalidateApiCache("/projects/proposals/mine/");
+      invalidateApiCache("/projects/");
       setMessage(`Offer sent for ${brief.title}.`);
       setActiveProposalBriefId(null);
       await load();
@@ -765,6 +782,9 @@ export default function ActivityPage() {
       setAcceptingProposalId(proposalId);
       setError(null);
       await apiRequest(`/projects/proposal/${proposalId}/accept/`, { method: "POST", token });
+      invalidateApiCache("/projects/requests/");
+      invalidateApiCache("/projects/proposals/mine/");
+      invalidateApiCache("/projects/");
       setMessage("Offer accepted. Messaging is now unlocked for this collaboration.");
       await load();
       setExpandedHiringBriefId(briefId);

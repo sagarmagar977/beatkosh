@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 
-import { API_BASE } from "@/lib/api";
+import { API_BASE, clearSessionApiCache } from "@/lib/api";
 
 export type User = {
   id: number;
@@ -173,29 +173,37 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     debugAuth("loading-changed", { loading, bootstrapped, hasToken: Boolean(token), hasUser: Boolean(user) });
   }, [loading, bootstrapped, token, user]);
 
+  const invalidateProfileCache = useCallback(() => {
+    ensureMeInFlightRef.current = null;
+    ensureMeTokenRef.current = null;
+    loadedProfileTokenRef.current = null;
+  }, []);
+
   const refreshMe = useCallback(async () => {
     if (!token) {
       return;
     }
     debugAuth("refreshMe-start");
+    clearSessionApiCache();
+    invalidateProfileCache();
     const me = await apiJson<User>("/account/me/", { token });
     setUser(me);
     setMeError(null);
+    loadedProfileTokenRef.current = token;
     debugAuth("refreshMe-success", { username: me.username });
-  }, [token]);
+  }, [invalidateProfileCache, token]);
 
   const logout = useCallback(() => {
     debugAuth("logout");
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(REFRESH_KEY);
+    clearSessionApiCache();
     setToken(null);
     setUser(null);
     setMeError(null);
-    ensureMeInFlightRef.current = null;
-    ensureMeTokenRef.current = null;
-    loadedProfileTokenRef.current = null;
+    invalidateProfileCache();
     setLoading(false);
-  }, []);
+  }, [invalidateProfileCache]);
 
   const tryRefreshAccess = useCallback(async () => {
     const refresh = localStorage.getItem(REFRESH_KEY);
@@ -225,17 +233,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const ensureMe = useCallback(
-    async (access?: string | null) => {
+    async (access?: string | null, options: { force?: boolean } = {}) => {
       const current = access ?? token;
+      const force = options.force ?? false;
       if (!current) {
         return;
       }
 
-      if (loadedProfileTokenRef.current === current && user) {
+      if (!force && loadedProfileTokenRef.current === current && user) {
         return;
       }
 
-      if (ensureMeInFlightRef.current && ensureMeTokenRef.current === current) {
+      if (!force && ensureMeInFlightRef.current && ensureMeTokenRef.current === current) {
         await ensureMeInFlightRef.current;
         return;
       }
@@ -378,14 +387,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     async (tokens: { access: string; refresh: string }, debugLabel: string) => {
       localStorage.setItem(TOKEN_KEY, tokens.access);
       localStorage.setItem(REFRESH_KEY, tokens.refresh);
+      clearSessionApiCache();
       setToken(tokens.access);
       setLoading(true);
 
-      await ensureMe(tokens.access);
+      invalidateProfileCache();
+      await ensureMe(tokens.access, { force: true });
       setLoading(false);
       debugAuth(debugLabel);
     },
-    [ensureMe],
+    [ensureMe, invalidateProfileCache],
   );
 
   const login = useCallback(
@@ -435,9 +446,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         token,
         body: { role },
       });
-      await ensureMe(token);
+      clearSessionApiCache();
+      invalidateProfileCache();
+      await ensureMe(token, { force: true });
     },
-    [ensureMe, token],
+    [ensureMe, invalidateProfileCache, token],
   );
 
   const startSelling = useCallback(async () => {
@@ -449,8 +462,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       token,
       body: {},
     });
+    clearSessionApiCache();
     setUser(me);
-  }, [token]);
+    setMeError(null);
+    invalidateProfileCache();
+    await ensureMe(token, { force: true });
+  }, [ensureMe, invalidateProfileCache, token]);
 
   const value = useMemo(
     () => ({ user, token, loading, meError, login, loginWithGoogle, register, switchRole, startSelling, logout, refreshMe }),

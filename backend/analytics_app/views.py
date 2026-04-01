@@ -1,6 +1,7 @@
 from collections import Counter
 from datetime import timedelta
 
+from django.core.cache import cache
 from django.db.models import Avg, Count, Q, Sum
 from django.db.models.functions import Coalesce, TruncDate
 from django.shortcuts import get_object_or_404
@@ -79,6 +80,7 @@ def build_daily_series(*, start_date, end_date, labels, plays_by_date, sales_by_
 
 BEAT_PREFETCH = ("available_licenses", "likes", "tags")
 TASTE_PROFILE_REFRESH_WINDOW = timedelta(minutes=15)
+HOME_FEED_CACHE_TTL_SECONDS = 60
 
 
 def build_greeting() -> str:
@@ -88,6 +90,15 @@ def build_greeting() -> str:
     if hour < 18:
         return "Good afternoon"
     return "Good evening"
+
+
+def get_home_feed_cache_key(user_id: int, scope: str = "full") -> str:
+    return f"analytics:home-feed:{scope}:{user_id}"
+
+
+def invalidate_home_feed_cache(user_id: int) -> None:
+    cache.delete(get_home_feed_cache_key(user_id, "core"))
+    cache.delete(get_home_feed_cache_key(user_id, "full"))
 
 
 def beat_queryset():
@@ -190,6 +201,7 @@ def update_listening_history(*, user, beat, source: str = ""):
     history, _created = ListeningHistory.objects.get_or_create(user=user, beat=beat)
     history.play_count = history.play_count + 1
     history.save(update_fields=["play_count", "last_played_at"])
+    invalidate_home_feed_cache(user.id)
     AnalyticsEvent.objects.create(
         event_type=AnalyticsEvent.EVENT_PLAY,
         user=user,
@@ -426,12 +438,7 @@ def recommend_beats_for_user(user, *, today_only: bool = False, limit: int = 8):
     return based_on, beats
 
 
-def build_home_feed_payload(user):
-    playlists = list(
-        LibraryPlaylist.objects.filter(owner=user)
-        .prefetch_related("items__beat", "items__beat__producer", "items__beat__producer__producer_profile", "items__beat__available_licenses", "items__beat__likes", "items__beat__tags")[:8]
-    )
-
+def build_home_feed_payload(user, *, scope: str = "full"):
     session_queryset = list(
         ListeningSession.objects.filter(user=user)
         .select_related("beat", "beat__producer", "beat__producer__producer_profile")
@@ -455,42 +462,45 @@ def build_home_feed_payload(user):
     )
     jump_back_map = {session.beat_id: session for session in jump_back_sessions}
 
-    based_on, made_for_you_beats = recommend_beats_for_user(user, today_only=False, limit=8)
-    today_based_on, today_beats = recommend_beats_for_user(user, today_only=True, limit=8)
-
-    followed_producer_ids = list(ProducerFollow.objects.filter(artist=user).values_list("producer_id", flat=True))
-    followed_beats = list(beat_queryset().filter(producer_id__in=followed_producer_ids).order_by("-created_at")[:8])
-
-    return {
-        "greeting": build_greeting(),
-        "user_label": user.username,
-        "shelves": [
-            {
-                "key": "recently-played",
-                "title": "Recently played",
-                "subtitle": "Your latest listening history across the beats you played most recently.",
-                "see_more_path": "/library",
-                "beats": [
-                    {
-                        "beat": entry.beat,
-                        "note": f"Played {entry.play_count} time{'s' if entry.play_count != 1 else ''}",
-                    }
-                    for entry in recent_history
-                ],
-            },
-            {
-                "key": "jump-back-in",
-                "title": "Jump back in",
-                "subtitle": "Pick up the beats you started but did not finish yet.",
-                "see_more_path": "/library",
-                "beats": serialize_home_beat_items(
-                    [session.beat for session in jump_back_sessions],
-                    session_map=jump_back_map,
-                    note_builder=lambda _beat, session: (
-                        f"{session.completion_percent}% finished" if session else ""
-                    ),
+    shelves = [
+        {
+            "key": "recently-played",
+            "title": "Recently played",
+            "subtitle": "Your latest listening history across the beats you played most recently.",
+            "see_more_path": "/library",
+            "beats": [
+                {
+                    "beat": entry.beat,
+                    "note": f"Played {entry.play_count} time{'s' if entry.play_count != 1 else ''}",
+                }
+                for entry in recent_history
+            ],
+        },
+        {
+            "key": "jump-back-in",
+            "title": "Jump back in",
+            "subtitle": "Pick up the beats you started but did not finish yet.",
+            "see_more_path": "/library",
+            "beats": serialize_home_beat_items(
+                [session.beat for session in jump_back_sessions],
+                session_map=jump_back_map,
+                note_builder=lambda _beat, session: (
+                    f"{session.completion_percent}% finished" if session else ""
                 ),
-            },
+            ),
+        },
+    ]
+
+    if scope == "full":
+        based_on, made_for_you_beats = recommend_beats_for_user(user, today_only=False, limit=8)
+        today_based_on, today_beats = recommend_beats_for_user(user, today_only=True, limit=8)
+        playlists = list(
+            LibraryPlaylist.objects.filter(owner=user)
+            .prefetch_related("items__beat", "items__beat__producer", "items__beat__producer__producer_profile", "items__beat__available_licenses", "items__beat__likes", "items__beat__tags")[:8]
+        )
+        followed_producer_ids = list(ProducerFollow.objects.filter(artist=user).values_list("producer_id", flat=True))
+        followed_beats = list(beat_queryset().filter(producer_id__in=followed_producer_ids).order_by("-created_at")[:8])
+        shelves.extend([
             {
                 "key": "top-picks-today",
                 "title": "Recommended for today",
@@ -519,7 +529,12 @@ def build_home_feed_payload(user):
                 "see_more_path": "/activity",
                 "beats": serialize_home_beat_items(followed_beats),
             },
-        ],
+        ])
+
+    return {
+        "greeting": build_greeting(),
+        "user_label": user.username,
+        "shelves": shelves,
     }
 
 
@@ -769,6 +784,7 @@ class ListeningSessionFinishView(generics.GenericAPIView):
             )
 
         refresh_user_taste_profile(request.user)
+        invalidate_home_feed_cache(request.user.id)
         return Response(ListeningSessionSerializer(session).data, status=status.HTTP_200_OK)
 
 
@@ -776,7 +792,14 @@ class ListeningHomeFeedView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        payload = build_home_feed_payload(request.user)
+        scope = (request.query_params.get("scope") or "full").strip().lower()
+        if scope not in {"core", "full"}:
+            scope = "full"
+        cache_key = get_home_feed_cache_key(request.user.id, scope)
+        payload = cache.get(cache_key)
+        if payload is None:
+            payload = build_home_feed_payload(request.user, scope=scope)
+            cache.set(cache_key, payload, HOME_FEED_CACHE_TTL_SECONDS)
         return Response(HomeFeedSerializer(payload).data)
 
 

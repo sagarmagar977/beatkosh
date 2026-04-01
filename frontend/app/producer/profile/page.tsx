@@ -8,7 +8,7 @@ import { useAuth } from "@/app/auth-context";
 import { useTheme } from "@/app/providers";
 import { BeatListRow } from "@/components/beat-list-row";
 import { usePlayer } from "@/context/player-context";
-import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import { apiCachedRequest, apiRequest, invalidateApiCache, resolveMediaUrl } from "@/lib/api";
 import { SavedBeatEntry, useBeatLibrary } from "@/lib/beat-library";
 
 type ProducerProfile = {
@@ -216,6 +216,13 @@ export default function ProducerPrivateProfilePage() {
   const [draftBusyId, setDraftBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [initialLoading, setInitialLoading] = useState(true);
+  const [analyticsLoading, setAnalyticsLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [draftsLoading, setDraftsLoading] = useState(false);
+  const [hasLoadedAnalytics, setHasLoadedAnalytics] = useState(false);
+  const [hasLoadedHistory, setHasLoadedHistory] = useState(false);
+  const [hasLoadedDrafts, setHasLoadedDrafts] = useState(false);
   const tabParam = searchParams.get("tab");
   const rangeParam = searchParams.get("range");
   const viewParam = searchParams.get("view");
@@ -269,18 +276,19 @@ export default function ProducerPrivateProfilePage() {
       return;
     }
 
+    let cancelled = false;
     const run = async () => {
+      setInitialLoading(true);
       try {
-        const [profileResult, beatsResult, trustResult, dashboardResult, historyResult, metadataOptions, beatDraftResults, kitDraftResults] = await Promise.all([
-          apiRequest<ProducerProfile>("/account/producer-profile/", { token }),
-          apiRequest<Beat[]>(`/beats/?producer=${user.id}`),
-          apiRequest<TrustSummary>(`/account/producer-trust/${user.id}/`),
-          apiRequest<DashboardSummary>(`/analytics/producer/${user.id}/dashboard-summary/?range=${selectedRange}`, { token }),
-          apiRequest<ListeningHistoryItem[]>("/analytics/listening/recent/", { token }),
-          apiRequest<BeatMetadataOptions>("/beats/metadata-options/"),
-          apiRequest<BeatDraft[]>("/beats/upload-drafts/", { token }),
-          apiRequest<SoundKitDraft[]>("/soundkits/upload-drafts/", { token }),
+        const [profileResult, beatsResult, trustResult, metadataOptions] = await Promise.all([
+          apiCachedRequest<ProducerProfile>("/account/producer-profile/", { token }, { ttlMs: 30_000, scope: "session" }),
+          apiCachedRequest<Beat[]>(`/beats/?producer=${user.id}`, {}, { ttlMs: 60_000, scope: "public" }),
+          apiCachedRequest<TrustSummary>(`/account/producer-trust/${user.id}/`, {}, { ttlMs: 60_000, scope: "public" }),
+          apiCachedRequest<BeatMetadataOptions>("/beats/metadata-options/", {}, { ttlMs: 5 * 60_000, scope: "public" }),
         ]);
+        if (cancelled) {
+          return;
+        }
         setProfile(profileResult);
         setProfileName(profileResult.producer_name || "");
         setProfileBio(profileResult.bio || "");
@@ -293,19 +301,140 @@ export default function ProducerPrivateProfilePage() {
         setAvatarPreview(resolveMediaUrl(profileResult.avatar_obj));
         setBeats(beatsResult);
         setTrust(trustResult);
-        setDashboard(dashboardResult);
-        setHistory(historyResult);
         setGenreOptions(metadataOptions.genres);
-        setBeatDrafts(beatDraftResults.filter((item) => item.status === "draft"));
-        setKitDrafts(kitDraftResults.filter((item) => item.status === "draft"));
         setError(null);
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load your producer profile");
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load your producer profile");
+        }
+      } finally {
+        if (!cancelled) {
+          setInitialLoading(false);
+        }
       }
     };
 
     void run();
-  }, [selectedRange, token, user]);
+    return () => {
+      cancelled = true;
+    };
+  }, [token, user]);
+
+  useEffect(() => {
+    if (!token || !user?.is_producer || initialLoading) {
+      return;
+    }
+
+    const shouldLoad = tab === "analytics" || !hasLoadedAnalytics;
+    if (!shouldLoad) {
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      setAnalyticsLoading(true);
+      try {
+        const dashboardResult = await apiCachedRequest<DashboardSummary>(
+          `/analytics/producer/${user.id}/dashboard-summary/?range=${selectedRange}`,
+          { token },
+          { ttlMs: 60_000, scope: "session" },
+        );
+        if (cancelled) {
+          return;
+        }
+        setDashboard(dashboardResult);
+        setHasLoadedAnalytics(true);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load analytics");
+        }
+      } finally {
+        if (!cancelled) {
+          setAnalyticsLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasLoadedAnalytics, initialLoading, selectedRange, tab, token, user]);
+
+  useEffect(() => {
+    if (!token || tab !== "history" || hasLoadedHistory) {
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      setHistoryLoading(true);
+      try {
+        const historyResult = await apiCachedRequest<ListeningHistoryItem[]>(
+          "/analytics/listening/recent/",
+          { token },
+          { ttlMs: 20_000, scope: "session" },
+        );
+        if (cancelled) {
+          return;
+        }
+        setHistory(historyResult);
+        setHasLoadedHistory(true);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load listening history");
+        }
+      } finally {
+        if (!cancelled) {
+          setHistoryLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasLoadedHistory, tab, token]);
+
+  useEffect(() => {
+    if (!token || tab !== "drafts" || hasLoadedDrafts) {
+      return;
+    }
+
+    let cancelled = false;
+    const run = async () => {
+      setDraftsLoading(true);
+      try {
+        const [beatDraftResults, kitDraftResults] = await Promise.all([
+          apiCachedRequest<BeatDraft[]>("/beats/upload-drafts/", { token }, { ttlMs: 20_000, scope: "session" }),
+          apiCachedRequest<SoundKitDraft[]>("/soundkits/upload-drafts/", { token }, { ttlMs: 20_000, scope: "session" }),
+        ]);
+        if (cancelled) {
+          return;
+        }
+        setBeatDrafts(beatDraftResults.filter((item) => item.status === "draft"));
+        setKitDrafts(kitDraftResults.filter((item) => item.status === "draft"));
+        setHasLoadedDrafts(true);
+        setError(null);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : "Failed to load drafts");
+        }
+      } finally {
+        if (!cancelled) {
+          setDraftsLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [hasLoadedDrafts, tab, token]);
 
   const notify = (text: string) => {
     setMessage(text);
@@ -356,6 +485,8 @@ export default function ProducerPrivateProfilePage() {
         body: form,
         isFormData: true,
       });
+      invalidateApiCache("/account/producer-profile/");
+      invalidateApiCache(`/account/producers/by-user/${user.id}/`);
       setProfile(updatedProfile);
       setProfileName(updatedProfile.producer_name || "");
       setProfileBio(updatedProfile.bio || "");
@@ -463,6 +594,7 @@ export default function ProducerPrivateProfilePage() {
     setDraftBusyId(`beat-${draftId}`);
     try {
       await apiRequest(`/beats/upload-drafts/${draftId}/`, { method: "DELETE", token });
+      invalidateApiCache("/beats/upload-drafts/");
       setBeatDrafts((current) => current.filter((item) => item.id !== draftId));
       notify("Beat draft deleted.");
     } catch (err) {
@@ -477,6 +609,7 @@ export default function ProducerPrivateProfilePage() {
     setDraftBusyId(`kit-${draftId}`);
     try {
       await apiRequest(`/soundkits/upload-drafts/${draftId}/`, { method: "DELETE", token });
+      invalidateApiCache("/soundkits/upload-drafts/");
       setKitDrafts((current) => current.filter((item) => item.id !== draftId));
       notify("Sound-kit draft deleted.");
     } catch (err) {
@@ -755,6 +888,7 @@ export default function ProducerPrivateProfilePage() {
 
   const renderHistoryTab = () => (
     <section className="space-y-3">
+      {historyLoading ? <p className="text-sm text-white/55">Loading listening history...</p> : null}
       {history.map((item) => {
         const isCurrent = currentTrack?.id === item.beat.id;
         return (
@@ -773,13 +907,18 @@ export default function ProducerPrivateProfilePage() {
           />
         );
       })}
-      {history.length === 0 ? <p className="text-sm text-white/55">No listening history yet.</p> : null}
+      {!historyLoading && history.length === 0 ? <p className="text-sm text-white/55">No listening history yet.</p> : null}
       {history.length > 0 ? <p className="text-xs text-white/42">Showing the most recent listening history saved for this account.</p> : null}
     </section>
   );
 
   const renderAnalyticsTab = () => (
     <section className="producer-analytics-hero mt-4 overflow-hidden rounded-[28px] p-5 sm:p-6">
+      {analyticsLoading && !dashboard ? (
+        <div className="rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-8 text-sm text-white/58">
+          Loading analytics overview...
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="theme-text-faint text-xs uppercase tracking-[0.24em]">Producer analytics</p>
@@ -956,6 +1095,11 @@ export default function ProducerPrivateProfilePage() {
 
   const renderDraftsTab = () => (
     <section className="producer-drafts-hero mt-4 overflow-hidden rounded-[28px] p-5 sm:p-6">
+      {draftsLoading ? (
+        <div className="rounded-[20px] border border-white/10 bg-white/[0.03] px-4 py-8 text-sm text-white/58">
+          Loading saved drafts...
+        </div>
+      ) : null}
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="text-xs uppercase tracking-[0.24em] text-white/45">Upload drafts</p>

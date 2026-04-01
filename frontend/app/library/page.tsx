@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
 import { usePlayer } from "@/context/player-context";
-import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import { apiCachedRequest, apiRequest, resolveMediaUrl } from "@/lib/api";
 
 type Beat = {
   id: number;
@@ -70,8 +70,8 @@ export default function LibraryPage() {
     if (!token) return;
     try {
       const [downloadData, orderData] = await Promise.all([
-        apiRequest<DownloadItem[]>("/orders/downloads/", { token }),
-        apiRequest<HistoryOrder[]>("/orders/history/", { token }),
+        apiCachedRequest<DownloadItem[]>("/orders/downloads/", { token }, { ttlMs: 20_000, scope: "session" }),
+        apiCachedRequest<HistoryOrder[]>("/orders/history/", { token }, { ttlMs: 20_000, scope: "session" }),
       ]);
       setDownloads(downloadData);
       setOrders(orderData);

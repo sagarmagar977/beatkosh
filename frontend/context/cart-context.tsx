@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 
 import { useAuth } from "@/app/auth-context";
-import { apiRequest } from "@/lib/api";
+import { apiCachedRequest } from "@/lib/api";
 
 type CartSummary = {
   item_count: number;
@@ -26,7 +26,7 @@ export function CartProvider({ children }: { children: React.ReactNode }) {
       return;
     }
     try {
-      const cart = await apiRequest<CartSummary>("/orders/cart/me/", { token });
+      const cart = await apiCachedRequest<CartSummary>("/orders/cart/me/", { token }, { ttlMs: 15_000, scope: "session" });
       setItemCount(cart.item_count ?? 0);
     } catch {
       setItemCount(0);

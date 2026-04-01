@@ -11,7 +11,7 @@ import { BeatListRowSkeleton } from "@/components/beat-list-row-skeleton";
 import type { TrendingBeat } from "@/components/trending-beat-shelf";
 import { useCart } from "@/context/cart-context";
 import { usePlayer } from "@/context/player-context";
-import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import { apiCachedRequest, apiRequest, invalidateApiCache, resolveMediaUrl } from "@/lib/api";
 import {
   buildLatestUploadsShelf,
   buildGenreShelves,
@@ -157,6 +157,7 @@ export default function HomeCategoryPage() {
   const { currentTrack, isPlaying, playTrack, togglePlay, canPlay } = usePlayer();
   const [catalogBeats, setCatalogBeats] = useState<HomeBeat[]>([]);
   const [feed, setFeed] = useState<HomeFeed | null>(null);
+  const [feedLoading, setFeedLoading] = useState(false);
   const [dailyTrending, setDailyTrending] = useState<TrendingBeat[]>([]);
   const [weeklyTrending, setWeeklyTrending] = useState<TrendingBeat[]>([]);
   const [loading, setLoading] = useState(true);
@@ -166,23 +167,22 @@ export default function HomeCategoryPage() {
   const [selectedLicenseId, setSelectedLicenseId] = useState<number | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [cartBeatIds, setCartBeatIds] = useState<number[]>([]);
+  const needsPersonalizedFeed = !slug.startsWith("genre-") && slug !== "latest-uploads" && slug !== "trending-daily" && slug !== "trending-weekly";
 
   useEffect(() => {
     const run = async () => {
       try {
-        const [beats, daily, weekly, licenses, homeFeed] = await Promise.all([
-          apiRequest<HomeBeat[]>("/beats/"),
-          apiRequest<TrendingBeat[]>("/beats/trending/daily/"),
-          apiRequest<TrendingBeat[]>("/beats/trending/weekly/"),
-          apiRequest<License[]>("/beats/licenses/"),
-          token ? apiRequest<HomeFeed>("/analytics/listening/home/", { token }) : Promise.resolve<HomeFeed | null>(null),
+        const [beats, daily, weekly, licenses] = await Promise.all([
+          apiCachedRequest<HomeBeat[]>("/beats/", {}, { ttlMs: 60_000, scope: "public" }),
+          apiCachedRequest<TrendingBeat[]>("/beats/trending/daily/", {}, { ttlMs: 45_000, scope: "public" }),
+          apiCachedRequest<TrendingBeat[]>("/beats/trending/weekly/", {}, { ttlMs: 45_000, scope: "public" }),
+          apiCachedRequest<License[]>("/beats/licenses/", {}, { ttlMs: 5 * 60_000, scope: "public" }),
         ]);
 
         setCatalogBeats(beats);
         setDailyTrending(daily);
         setWeeklyTrending(weekly);
         setLicenseCatalog(licenses);
-        setFeed(homeFeed ? { ...homeFeed, shelves: withHomeCategoryPaths(homeFeed.shelves) } : null);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load category");
@@ -192,7 +192,46 @@ export default function HomeCategoryPage() {
     };
 
     void run();
-  }, [token]);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!token || !needsPersonalizedFeed) {
+      setFeed(null);
+      setFeedLoading(false);
+      return;
+    }
+
+    const run = async () => {
+      setFeedLoading(true);
+      try {
+        const homeFeed = await apiCachedRequest<HomeFeed>(
+          "/analytics/listening/home/",
+          { token },
+          { ttlMs: 45_000, scope: "session" },
+        );
+        if (cancelled) {
+          return;
+        }
+        setFeed({ ...homeFeed, shelves: withHomeCategoryPaths(homeFeed.shelves) });
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        setError(err instanceof Error ? err.message : "Failed to load category");
+      } finally {
+        if (!cancelled) {
+          setFeedLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [needsPersonalizedFeed, token]);
 
   useEffect(() => {
     const loadCart = async () => {
@@ -201,7 +240,7 @@ export default function HomeCategoryPage() {
         return;
       }
       try {
-        const cart = await apiRequest<CartSummary>("/orders/cart/me/", { token });
+        const cart = await apiCachedRequest<CartSummary>("/orders/cart/me/", { token }, { ttlMs: 15_000, scope: "session" });
         setCartBeatIds(cart.items.filter((item) => item.product_type === "beat").map((item) => item.product_id));
       } catch {
         setCartBeatIds([]);
@@ -309,6 +348,7 @@ export default function HomeCategoryPage() {
           license_id: selectedLicenseId,
         },
       });
+      invalidateApiCache("/orders/cart/me/");
       setCartBeatIds((current) => (current.includes(licenseModalBeat.id) ? current : [...current, licenseModalBeat.id]));
       await refreshCart();
       notify("Added to cart.");
@@ -337,12 +377,13 @@ export default function HomeCategoryPage() {
                 : detail?.subtitle ?? "This category could not be found from the current homepage feed."}
             </p>
             {detailHeroBeat ? (
-              <div className="mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
+          <div className="mt-5 inline-flex w-fit flex-wrap items-center gap-3 rounded-full border border-white/14 bg-black/20 px-4 py-2 text-sm text-white/82 backdrop-blur-md">
                 <span className="text-white/58">Featured cover</span>
                 <span className="font-medium text-white">{detailHeroBeat.title}</span>
                 <span className="text-white/58">{detailHeroBeat.producer_username}</span>
               </div>
             ) : null}
+            {feedLoading ? <p className="mt-4 text-sm text-white/62">Loading more tailored picks for this category...</p> : null}
           </div>
           <Link
             href="/"

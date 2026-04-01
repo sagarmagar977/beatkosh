@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/app/auth-context";
 import { HomePageSkeleton } from "@/app/page-skeletons";
 import { TrendingBeatShelf, type TrendingBeat } from "@/components/trending-beat-shelf";
-import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import { apiCachedRequest, resolveMediaUrl } from "@/lib/api";
 import {
   buildGenreShelves,
   type HomeBeat,
@@ -143,6 +143,7 @@ export default function HomePage() {
   const [feed, setFeed] = useState<HomeFeed | null>(null);
   const [loading, setLoading] = useState(true);
   const [feedLoading, setFeedLoading] = useState(false);
+  const [fullFeedLoading, setFullFeedLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [discovery, setDiscovery] = useState<DiscoveryState>({
     beats: [],
@@ -158,9 +159,9 @@ export default function HomePage() {
       setLoading(true);
       try {
         const [catalogBeats, dailyTrending, weeklyTrending] = await Promise.all([
-          apiRequest<HomeBeat[]>("/beats/"),
-          apiRequest<TrendingBeat[]>("/beats/trending/daily/"),
-          apiRequest<TrendingBeat[]>("/beats/trending/weekly/"),
+          apiCachedRequest<HomeBeat[]>("/beats/", {}, { ttlMs: 60_000, scope: "public" }),
+          apiCachedRequest<TrendingBeat[]>("/beats/trending/daily/", {}, { ttlMs: 45_000, scope: "public" }),
+          apiCachedRequest<TrendingBeat[]>("/beats/trending/weekly/", {}, { ttlMs: 45_000, scope: "public" }),
         ]);
 
         if (cancelled) {
@@ -203,13 +204,18 @@ export default function HomePage() {
     if (!token) {
       setFeed(null);
       setFeedLoading(false);
+      setFullFeedLoading(false);
       return;
     }
 
     const run = async () => {
       setFeedLoading(true);
       try {
-        const homeFeed = await apiRequest<HomeFeed>("/analytics/listening/home/", { token });
+        const homeFeed = await apiCachedRequest<HomeFeed>(
+          "/analytics/listening/home/?scope=core",
+          { token },
+          { ttlMs: 45_000, scope: "session" },
+        );
         if (cancelled) {
           return;
         }
@@ -224,6 +230,45 @@ export default function HomePage() {
       } finally {
         if (!cancelled) {
           setFeedLoading(false);
+        }
+      }
+    };
+
+    void run();
+    return () => {
+      cancelled = true;
+    };
+  }, [token]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!token) {
+      return;
+    }
+
+    const run = async () => {
+      setFullFeedLoading(true);
+      try {
+        const homeFeed = await apiCachedRequest<HomeFeed>(
+          "/analytics/listening/home/",
+          { token },
+          { ttlMs: 45_000, scope: "session" },
+        );
+        if (cancelled) {
+          return;
+        }
+        setFeed({ ...homeFeed, shelves: withHomeCategoryPaths(homeFeed.shelves) });
+        setError(null);
+      } catch (err) {
+        if (cancelled) {
+          return;
+        }
+        const message = err instanceof Error ? err.message : "Failed to load home feed";
+        setError(message);
+      } finally {
+        if (!cancelled) {
+          setFullFeedLoading(false);
         }
       }
     };
@@ -310,6 +355,7 @@ export default function HomePage() {
       ))}
 
       {feedLoading ? <p className="text-sm text-white/55">Loading your personalized shelves...</p> : null}
+      {!feedLoading && fullFeedLoading ? <p className="text-sm text-white/45">Loading more personalized picks...</p> : null}
       {error ? <p className="text-sm text-[#ffb4a9]">{error}</p> : null}
       {discoveryError ? <p className="text-sm text-[#ffb4a9]">{discoveryError}</p> : null}
     </div>

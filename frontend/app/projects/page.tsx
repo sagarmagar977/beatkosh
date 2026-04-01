@@ -6,7 +6,7 @@ import { ChevronDown, MessageSquareMore, Minus, Music2, Plus, Search, Wand2 } fr
 import { useSearchParams } from "next/navigation";
 
 import { useAuth } from "@/context/auth-context";
-import { apiRequest } from "@/lib/api";
+import { apiCachedRequest, apiRequest, invalidateApiCache } from "@/lib/api";
 
 type Deliverable = { id: number; note: string; file_url: string; version_label?: string; status: string; created_at: string; submitted_by_username?: string };
 type Milestone = {
@@ -240,7 +240,8 @@ export default function ProjectsPage() {
   const [offerPrice, setOfferPrice] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [metadataLoading, setMetadataLoading] = useState(true);
+  const [workspaceLoading, setWorkspaceLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const hasLockedProducer = Boolean(searchParams.get("producer"));
   const [showProductionType, setShowProductionType] = useState(true);
@@ -257,32 +258,43 @@ export default function ProjectsPage() {
   };
 
   const loadWorkspace = async (accessToken: string) => {
-    const [projectData, requestData] = await Promise.all([
-      apiRequest<Project[]>("/projects/", { token: accessToken }),
-      apiRequest<HiringAd[]>("/projects/requests/", { token: accessToken }),
-    ]);
-    setProjects(projectData);
-    setProjectRequests(requestData);
+    setWorkspaceLoading(true);
+    try {
+      const [projectData, requestData] = await Promise.all([
+        apiCachedRequest<Project[]>("/projects/", { token: accessToken }, { ttlMs: 20_000, scope: "session" }),
+        apiCachedRequest<HiringAd[]>("/projects/requests/", { token: accessToken }, { ttlMs: 20_000, scope: "session" }),
+      ]);
+      setProjects(projectData);
+      setProjectRequests(requestData);
+    } finally {
+      setWorkspaceLoading(false);
+    }
   };
 
   useEffect(() => {
     const run = async () => {
       if (!token) return;
       try {
-        setLoading(true);
-        const [metadataOptions] = await Promise.all([
-          apiRequest<ProjectMetadataOptions>("/projects/metadata-options/", { token }),
-          loadWorkspace(token),
-        ]);
+        setMetadataLoading(true);
+        const metadataOptions = await apiCachedRequest<ProjectMetadataOptions>(
+          "/projects/metadata-options/",
+          { token },
+          { ttlMs: 5 * 60_000, scope: "session" },
+        );
         setMetadata(metadataOptions);
         setError(null);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to load hiring workspace");
       } finally {
-        setLoading(false);
+        setMetadataLoading(false);
       }
     };
     void run();
+  }, [token]);
+
+  useEffect(() => {
+    if (!token) return;
+    void loadWorkspace(token);
   }, [token]);
 
   useEffect(() => {
@@ -293,7 +305,11 @@ export default function ProjectsPage() {
     }
     const run = async () => {
       try {
-        const result = await apiRequest<ProducerLookup>(`/account/producers/by-user/${producerId}/`);
+        const result = await apiCachedRequest<ProducerLookup>(
+          `/account/producers/by-user/${producerId}/`,
+          {},
+          { ttlMs: 5 * 60_000, scope: "public" },
+        );
         setSelectedProducer(result);
       } catch {
         setSelectedProducer(null);
@@ -380,6 +396,8 @@ export default function ProjectsPage() {
         token,
         body: requestBody,
       });
+      invalidateApiCache("/projects/");
+      invalidateApiCache("/projects/requests/");
       setMessage(selectedProducerId ? "Targeted hiring ad created." : "Hiring ad created.");
       setTitle("");
       setDescription("");
@@ -492,6 +510,7 @@ export default function ProjectsPage() {
           ...(selectedProducerId ? { producer: Number(selectedProducerId) } : {}),
         },
       });
+      invalidateApiCache("/projects/requests/");
       setMessage("Hiring draft saved.");
       await loadWorkspace(token);
     } catch (err) {
@@ -509,6 +528,8 @@ export default function ProjectsPage() {
       setAcceptingProposalId(proposalId);
       setError(null);
       await apiRequest(`/projects/proposal/${proposalId}/accept/`, { method: "POST", token });
+      invalidateApiCache("/projects/");
+      invalidateApiCache("/projects/requests/");
       setMessage("Offer accepted. The project moved into the active projects list.");
       await loadWorkspace(token);
     } catch (err) {
@@ -703,11 +724,11 @@ export default function ProjectsPage() {
             </div>
             <p className="mt-4 text-center text-xs text-white/45">{selectedProducerId ? "This brief is locked to one producer until they respond." : "This is an open hiring brief. A producer is assigned only after you accept an offer."}</p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
-              <button type="button" onClick={handleSaveDraft} disabled={submitting || loading} className="flex w-full items-center justify-center gap-2 rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4 text-sm font-semibold text-white disabled:opacity-60">
+              <button type="button" onClick={handleSaveDraft} disabled={submitting || metadataLoading} className="flex w-full items-center justify-center gap-2 rounded-[20px] border border-white/10 bg-white/[0.04] px-4 py-4 text-sm font-semibold text-white disabled:opacity-60">
                 <Plus className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                 Save Draft
               </button>
-              <button type="submit" form="hiring-form" disabled={submitting || loading} className="flex w-full items-center justify-center gap-2 rounded-[20px] bg-[linear-gradient(135deg,#c1c7cf,#8f98a3)] px-4 py-4 text-sm font-semibold text-[#11151a] disabled:opacity-60">
+              <button type="submit" form="hiring-form" disabled={submitting || metadataLoading} className="flex w-full items-center justify-center gap-2 rounded-[20px] bg-[linear-gradient(135deg,#c1c7cf,#8f98a3)] px-4 py-4 text-sm font-semibold text-[#11151a] disabled:opacity-60">
                 <Wand2 className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
                 {submitting ? "Posting hiring ad..." : selectedProducerId ? "Post Targeted Hiring Ad" : "Post Open Hiring Ad"}
               </button>
@@ -716,7 +737,7 @@ export default function ProjectsPage() {
         </aside>
       </section>
 
-      {draftRequests.length > 0 || loading || postedRequests.length > 0 ? (
+      {draftRequests.length > 0 || workspaceLoading || postedRequests.length > 0 ? (
         <section className="surface-panel rounded-[30px] p-6">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -747,8 +768,8 @@ export default function ProjectsPage() {
                 </div>
               </div>
             ))}
-            {loading ? <p className="text-sm text-white/55">Loading hiring ads...</p> : null}
-            {!loading && postedRequests.map((request) => (
+            {workspaceLoading ? <p className="text-sm text-white/55">Loading hiring ads...</p> : null}
+            {!workspaceLoading && postedRequests.map((request) => (
               <div key={`request-${request.id}`} className="rounded-[24px] border border-white/10 bg-[#0d1218] p-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>
@@ -795,19 +816,19 @@ export default function ProjectsPage() {
                 </div>
               </div>
             ))}
-            {!loading && postedRequests.length === 0 && draftRequests.length === 0 ? <p className="text-sm text-white/55">No hiring ads or drafts yet.</p> : null}
+            {!workspaceLoading && postedRequests.length === 0 && draftRequests.length === 0 ? <p className="text-sm text-white/55">No hiring ads or drafts yet.</p> : null}
           </div>
         </section>
       ) : null}
 
-      {loading || projects.length > 0 ? (
+      {workspaceLoading || projects.length > 0 ? (
         <section className="surface-panel rounded-[30px] p-6">
           <div className="flex items-center justify-between gap-4">
             <span className="rounded-full border border-white/10 bg-white/5 px-3 py-1.5 text-sm text-white/72">{projects.length} projects</span>
           </div>
           <div className="mt-5 space-y-4">
-            {loading ? <p className="text-sm text-white/55">Loading projects...</p> : null}
-            {!loading && projects.map((project) => (
+            {workspaceLoading ? <p className="text-sm text-white/55">Loading projects...</p> : null}
+            {!workspaceLoading && projects.map((project) => (
               <div key={project.id} className="rounded-[24px] border border-white/10 bg-[#0d1218] p-4">
                 <div className="flex flex-wrap items-start justify-between gap-4">
                   <div>

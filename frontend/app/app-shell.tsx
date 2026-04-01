@@ -10,7 +10,7 @@ import { useAuth } from "@/app/auth-context";
 import { AppBootSkeleton } from "@/app/page-skeletons";
 import { useTheme } from "@/app/providers";
 import { GlobalPlayer } from "@/components/global-player";
-import { apiRequest, resolveMediaUrl } from "@/lib/api";
+import { apiCachedRequest, apiRequest, invalidateApiCache, resolveMediaUrl } from "@/lib/api";
 import {
   type ConversationItem,
   type MessageAttachmentItem,
@@ -254,7 +254,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     setNotificationsLoading(true);
     try {
-      const data = await apiRequest<AppNotification[]>("/account/notifications/me/", { token });
+      const data = await apiCachedRequest<AppNotification[]>(
+        "/account/notifications/me/",
+        { token },
+        { ttlMs: 15_000, scope: "session" },
+      );
       setNotifications(data);
     } catch {
       // Ignore transient notification failures so the rest of the shell stays usable.
@@ -271,7 +275,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     setMessagesLoading(true);
     setMessagesError(null);
     try {
-      const data = sortConversationsByLatestActivity(await apiRequest<ConversationItem[]>("/conversations/", { token }));
+      const data = sortConversationsByLatestActivity(
+        await apiCachedRequest<ConversationItem[]>(
+          "/conversations/",
+          { token },
+          { ttlMs: 15_000, scope: "session" },
+        ),
+      );
       setConversations(data);
       const preferredConversationId = preferredTarget?.conversationId;
       const preferredParticipantId = preferredTarget?.participantId;
@@ -304,6 +314,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
     try {
       await apiRequest(`/account/notifications/${notificationId}/read/`, { method: "POST", token, body: {} });
+      invalidateApiCache("/account/notifications/me/");
       setNotifications((current) => current.map((item) => (
         item.id === notificationId ? { ...item, is_read: true } : item
       )));
@@ -384,6 +395,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           },
         });
       }
+      invalidateApiCache("/conversations/");
       setMessageDraft("");
       setPendingMessageFiles([]);
       if (messageAttachmentInputRef.current) {
