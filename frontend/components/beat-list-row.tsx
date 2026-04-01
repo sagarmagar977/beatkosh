@@ -204,11 +204,11 @@ export function BeatListRow({
               <button
                 type="button"
                 onClick={onAction}
-                className={`rounded-full px-4 py-2 text-sm font-semibold ${
+                className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
                   actionTone === "brand"
                     ? actionState === "success"
-                      ? "beat-row-action-success border border-emerald-300/30 bg-emerald-500/15 text-emerald-100"
-                      : "bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#5b48ff] text-white"
+                      ? "beat-row-action-success"
+                      : "beat-row-action-brand"
                     : "theme-soft theme-text-soft"
                 }`}
               >
@@ -307,7 +307,7 @@ export function BeatListRow({
               <button type="button" onClick={() => setPlaylistOpen(false)} className="theme-soft theme-text-soft rounded-full px-4 py-2 text-sm">
                 Cancel
               </button>
-              <button type="button" onClick={handlePlaylistSave} className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#5b48ff] px-5 py-2 text-sm font-semibold text-white">
+              <button type="button" onClick={handlePlaylistSave} className="brand-btn rounded-full px-5 py-2 text-sm font-semibold">
                 Save
               </button>
             </div>
@@ -317,6 +317,7 @@ export function BeatListRow({
     </>
   );
 }
+
 
 
 

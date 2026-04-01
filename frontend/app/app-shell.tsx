@@ -1425,7 +1425,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 type="button"
                 onClick={() => void saveArtistProfile()}
                 disabled={artistProfileSaving}
-                className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#4b7dff] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-60"
+                className="brand-btn rounded-full px-5 py-2.5 text-sm font-semibold disabled:opacity-60"
               >
                 {artistProfileSaving ? "Saving..." : "Save changes"}
               </button>
@@ -1529,4 +1529,5 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     </div>
   );
 }
+
 

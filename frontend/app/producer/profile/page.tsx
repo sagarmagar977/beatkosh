@@ -1341,7 +1341,7 @@ export default function ProducerPrivateProfilePage() {
                     });
                   }}
                   disabled={savingProfile}
-                  className="rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#5b48ff] px-5 py-2.5 text-sm font-semibold text-white disabled:opacity-70"
+                  className="brand-btn rounded-full px-5 py-2.5 text-sm font-semibold disabled:opacity-70"
                 >
                   {savingProfile ? "Saving..." : "Save profile changes"}
                 </button>
@@ -1416,7 +1416,7 @@ export default function ProducerPrivateProfilePage() {
             <button
               type="button"
               onClick={() => setIsEditModalOpen(true)}
-              className="mt-3 flex w-full items-center justify-center gap-2 rounded-full bg-gradient-to-r from-[#8b28ff] via-[#7b32ff] to-[#5b48ff] px-4 py-2.5 text-sm font-semibold text-white"
+              className="brand-btn mt-3 flex w-full items-center justify-center gap-2 rounded-full px-4 py-2.5 text-sm font-semibold"
             >
               <PencilLine className="h-4 w-4" strokeWidth={1.8} aria-hidden="true" />
               Edit profile
@@ -1475,3 +1475,4 @@ export default function ProducerPrivateProfilePage() {
     </>
   );
 }
+
