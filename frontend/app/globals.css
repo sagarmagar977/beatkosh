@@ -160,11 +160,11 @@ body {
 
 .brand-btn {
   border-radius: 9px;
-  border: 1px solid #f7b05f;
-  background: color-mix(in srgb, var(--panel) 92%, transparent);
+  border: 1px solid var(--brand);
+  background: transparent;
   color: var(--brand);
   font-weight: 600;
-  box-shadow: 0 10px 24px rgba(247, 176, 95, 0.12);
+  box-shadow: none;
   transition:
     background-color 160ms ease,
     border-color 160ms ease,
@@ -173,8 +173,8 @@ body {
 }
 
 .brand-btn:hover {
-  background: color-mix(in srgb, #f7b05f 10%, var(--panel) 90%);
-  box-shadow: 0 14px 28px rgba(247, 176, 95, 0.16);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
+  box-shadow: none;
 }
 
 .brand-btn:active {
@@ -182,14 +182,14 @@ body {
 }
 
 .beat-row-action-brand {
-  border: 1px solid #f7b05f;
-  background: color-mix(in srgb, var(--panel) 94%, transparent);
+  border: 1px solid var(--brand);
+  background: transparent;
   color: var(--brand);
-  box-shadow: 0 10px 24px rgba(247, 176, 95, 0.1);
+  box-shadow: none;
 }
 
 .beat-row-action-brand:hover {
-  background: color-mix(in srgb, #f7b05f 10%, var(--panel) 90%);
+  background: color-mix(in srgb, var(--brand) 8%, transparent);
 }
 
 .beat-row-action-success {
@@ -2641,25 +2641,25 @@ body {
 }
 
 :root[data-theme="light"] .brand-btn {
-  border-color: #f7b05f;
-  background: rgba(255, 255, 255, 0.92);
-  color: #8f67e8;
-  box-shadow: 0 10px 22px rgba(247, 176, 95, 0.12);
+  border-color: var(--brand);
+  background: transparent;
+  color: var(--brand);
+  box-shadow: none;
 }
 
 :root[data-theme="light"] .brand-btn:hover {
-  background: rgba(247, 176, 95, 0.1);
+  background: rgba(175, 137, 255, 0.08);
 }
 
 :root[data-theme="light"] .beat-row-action-brand {
-  border-color: #f7b05f;
-  background: rgba(255, 255, 255, 0.92);
-  color: #8f67e8;
-  box-shadow: 0 10px 22px rgba(247, 176, 95, 0.1);
+  border-color: var(--brand);
+  background: transparent;
+  color: var(--brand);
+  box-shadow: none;
 }
 
 :root[data-theme="light"] .beat-row-action-brand:hover {
-  background: rgba(247, 176, 95, 0.1);
+  background: rgba(175, 137, 255, 0.08);
 }
 
 :root[data-theme="light"] .beat-row-action-success {
