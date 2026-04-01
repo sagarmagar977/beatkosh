@@ -486,7 +486,9 @@ export default function ProducerPrivateProfilePage() {
         isFormData: true,
       });
       invalidateApiCache("/account/producer-profile/");
-      invalidateApiCache(`/account/producers/by-user/${user.id}/`);
+      if (user?.id) {
+        invalidateApiCache(`/account/producers/by-user/${user.id}/`);
+      }
       setProfile(updatedProfile);
       setProfileName(updatedProfile.producer_name || "");
       setProfileBio(updatedProfile.bio || "");
